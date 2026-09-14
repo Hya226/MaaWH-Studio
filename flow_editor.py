@@ -495,10 +495,25 @@ def entry_name(flow):
     return f"VF_{flow['name']}"
 
 
+def node_key(flow, nid):
+    """节点名后缀 —— 节点身份，与它在链上的位置解耦。
+
+    缺省（节点没有 key 字段）= 两位链序号，与旧版 jname 的位置化命名逐字符相同，
+    因此 v1 流程文件不需要任何迁移动作，生成结果也不变。
+    只有显式写了 key（用户主动改名）才会偏离位置化命名 —— 那是有意为之。
+
+    key 的字符集与同流程内唯一性由 validate_flow 负责校验（见 P0-4 不变量）。"""
+    nd = flow["nodes"].get(nid) or {}
+    k = str(nd.get("key") or "").strip()
+    if k:
+        return k
+    return f"{flow['chain'].index(nid) + 1:02d}"
+
+
 def jname(flow, nid):
     """链上节点的 pipeline 名。
     switch 节点展开为 J1..JN 级联容器，故链上前驱的 next 指向首个判定 J1。"""
-    base = f"{entry_name(flow)}_{flow['chain'].index(nid) + 1:02d}"
+    base = f"{entry_name(flow)}_{node_key(flow, nid)}"
     if flow["nodes"][nid].get("type") == "switch":
         return f"{base}_J1"
     return base
