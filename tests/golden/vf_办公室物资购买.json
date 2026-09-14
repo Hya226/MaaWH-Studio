@@ -1,0 +1,123 @@
+{
+  "VF_办公室物资购买": {
+    "next": [
+      "VF_办公室物资购买_01"
+    ]
+  },
+  "VF_办公室物资购买_01": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_01_Hit"
+    ],
+    "on_error": [
+      "VF_办公室物资购买_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_办公室物资购买_01_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "bangongshi_biaozhi.png",
+    "threshold": 0.55
+  },
+  "VF_办公室物资购买_02": {
+    "action": "Click",
+    "next": [
+      "VF_办公室物资购买_03"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "bangongshi.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  },
+  "VF_办公室物资购买_03": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_03_Hit"
+    ],
+    "on_error": [
+      "VF_办公室物资购买_07"
+    ],
+    "timeout": 3000
+  },
+  "VF_办公室物资购买_03_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_04"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "yiwujigoumai.png",
+    "threshold": 0.55
+  },
+  "VF_办公室物资购买_04": {
+    "action": "Click",
+    "next": [
+      "VF_办公室物资购买_05"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "yiwujigoumai.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  },
+  "VF_办公室物资购买_05": {
+    "action": "Click",
+    "next": [
+      "VF_办公室物资购买_06"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "dianjitoubi.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  },
+  "VF_办公室物资购买_06": {
+    "action": "Click",
+    "next": [
+      "VF_办公室物资购买_07"
+    ],
+    "post_delay": 800,
+    "target": [
+      836,
+      360
+    ]
+  },
+  "VF_办公室物资购买_07": {
+    "action": "Click",
+    "next": [
+      "VF_办公室物资购买_08"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tuichubangongshi.png",
+    "threshold": 0.5,
+    "timeout": 8000
+  },
+  "VF_办公室物资购买_08": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_08_Hit"
+    ],
+    "on_error": [
+      "VF_办公室物资购买_End"
+    ],
+    "timeout": 1500
+  },
+  "VF_办公室物资购买_08_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_办公室物资购买_07"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "tuichubangongshi.png",
+    "threshold": 0.5
+  },
+  "VF_办公室物资购买_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}

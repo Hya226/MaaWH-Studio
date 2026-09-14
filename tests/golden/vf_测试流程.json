@@ -1,0 +1,16 @@
+{
+  "VF_测试流程": {
+    "next": [
+      "VF_测试流程_01"
+    ]
+  },
+  "VF_测试流程_01": {
+    "action": "Click",
+    "post_delay": 600,
+    "recognition": "OCR",
+    "text": [
+      "博物研学"
+    ],
+    "timeout": 8000
+  }
+}

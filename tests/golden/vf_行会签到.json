@@ -1,0 +1,26 @@
+{
+  "VF_行会签到": {
+    "next": [
+      "VF_行会签到_01"
+    ]
+  },
+  "VF_行会签到_01": {
+    "action": "Click",
+    "next": [
+      "VF_行会签到_02"
+    ],
+    "post_delay": 1000,
+    "recognition": "TemplateMatch",
+    "template": "hanghui_main.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  },
+  "VF_行会签到_02": {
+    "action": "Click",
+    "post_delay": 1000,
+    "recognition": "TemplateMatch",
+    "template": "hanghui_fanhui.png",
+    "threshold": 0.6,
+    "timeout": 3000
+  }
+}

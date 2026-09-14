@@ -1,0 +1,602 @@
+{
+  "VF_装卸装备": {
+    "next": [
+      "VF_装卸装备_01"
+    ]
+  },
+  "VF_装卸装备_01": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "qizhe.png",
+    "threshold": 0.72,
+    "timeout": 5000
+  },
+  "VF_装卸装备_02": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_03"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85,
+    "timeout": 4000
+  },
+  "VF_装卸装备_03": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_04"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "wuqizhuangbei.png",
+    "threshold": 0.72,
+    "timeout": 5000
+  },
+  "VF_装卸装备_04": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_05"
+    ],
+    "post_delay": 500,
+    "target": [
+      316,
+      600
+    ]
+  },
+  "VF_装卸装备_05": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_06"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "chuandai.png",
+    "threshold": 0.55,
+    "timeout": 5000
+  },
+  "VF_装卸装备_06": {
+    "action": "Click",
+    "next": [
+      "VF_装卸装备_07"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "xiexia.png",
+    "threshold": 0.65,
+    "timeout": 5000
+  },
+  "VF_装卸装备_07": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_装卸装备_08": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_08_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装卸装备_08_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_06"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "xiexia.png",
+    "threshold": 0.65
+  },
+  "VF_装卸装备_09": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_09_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装卸装备_09_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_05"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "chuandai.png",
+    "threshold": 0.55
+  },
+  "VF_装卸装备_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_10_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装卸装备_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_03"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "wuqizhuangbei.png",
+    "threshold": 0.72
+  },
+  "VF_装卸装备_11": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_11_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_12"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_11_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_12": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_13"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_13": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_13_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_14"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_13_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_14": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_15"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_15": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_15_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_16"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_15_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_16": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_17"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_17": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_17_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_18"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_17_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_18": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_19"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_19": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_19_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_20"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_19_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_20": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_21"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_21": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_21_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_22"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_21_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_22": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_23"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_23": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_23_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_24"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_23_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_24": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_25"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_25": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_25_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_26"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_25_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_26": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_27"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_27": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_27_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_28"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_27_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_28": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_29"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_29": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_29_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_30"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_29_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_30": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_31"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_31": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_31_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_32"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_31_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_32": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_33"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_33": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_33_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_34"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_33_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_34": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_装卸装备_35"
+    ],
+    "post_delay": 600
+  },
+  "VF_装卸装备_35": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_35_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_装卸装备_35_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_装卸装备_36": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_36_Hit"
+    ],
+    "on_error": [
+      "VF_装卸装备_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装卸装备_36_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装卸装备_01"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "qizhe.png",
+    "threshold": 0.72
+  },
+  "VF_装卸装备_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}

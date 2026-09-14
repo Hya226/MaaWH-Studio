@@ -1,0 +1,59 @@
+{
+  "VF_征集": {
+    "next": [
+      "VF_征集_01"
+    ]
+  },
+  "VF_征集_01": {
+    "action": "Click",
+    "next": [
+      "VF_征集_02"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "qizhezhengji.png",
+    "threshold": 0.65,
+    "timeout": 8000
+  },
+  "VF_征集_02": {
+    "action": "Click",
+    "next": [
+      "VF_征集_03"
+    ],
+    "post_delay": 600,
+    "recognition": "TemplateMatch",
+    "template": "quanbuqueren.png",
+    "threshold": 0.6,
+    "timeout": 4000
+  },
+  "VF_征集_03": {
+    "action": "Click",
+    "next": [
+      "VF_征集_04"
+    ],
+    "order_by": "Score",
+    "post_delay": 1000,
+    "pre_delay": 1000,
+    "rate_limit": 500,
+    "recognition": "TemplateMatch",
+    "template": "tiaoguochouka.png",
+    "threshold": 0.55,
+    "timeout": 20000
+  },
+  "VF_征集_04": {
+    "action": "Click",
+    "next": [
+      "VF_征集_05"
+    ],
+    "post_delay": 900,
+    "recognition": "TemplateMatch",
+    "template": "duigou.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  },
+  "VF_征集_05": {
+    "next": [
+      "Common_点中间回主页"
+    ]
+  }
+}

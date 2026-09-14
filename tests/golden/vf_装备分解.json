@@ -1,0 +1,162 @@
+{
+  "VF_装备分解": {
+    "next": [
+      "VF_装备分解_01"
+    ]
+  },
+  "VF_装备分解_01": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_02"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "wuziku.png",
+    "threshold": 0.55,
+    "timeout": 5000
+  },
+  "VF_装备分解_02": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_03"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "fenjie.png",
+    "threshold": 0.55,
+    "timeout": 5000
+  },
+  "VF_装备分解_03": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_04"
+    ],
+    "post_delay": 800,
+    "target": [
+      548,
+      175
+    ]
+  },
+  "VF_装备分解_04": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_05"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "duigou1.png",
+    "threshold": 0.6,
+    "timeout": 5000
+  },
+  "VF_装备分解_05": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_06"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "duigou2.png",
+    "threshold": 0.6,
+    "timeout": 5000
+  },
+  "VF_装备分解_06": {
+    "action": "Click",
+    "next": [
+      "VF_装备分解_07"
+    ],
+    "post_delay": 800,
+    "target": [
+      640,
+      360
+    ]
+  },
+  "VF_装备分解_07": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_装备分解_08": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_08_Hit"
+    ],
+    "on_error": [
+      "VF_装备分解_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装备分解_08_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_05"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duigou2.png",
+    "threshold": 0.6
+  },
+  "VF_装备分解_09": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_09_Hit"
+    ],
+    "on_error": [
+      "VF_装备分解_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装备分解_09_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_04"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duigou1.png",
+    "threshold": 0.6
+  },
+  "VF_装备分解_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_10_Hit"
+    ],
+    "on_error": [
+      "VF_装备分解_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装备分解_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "fenjie.png",
+    "threshold": 0.55
+  },
+  "VF_装备分解_11": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_11_Hit"
+    ],
+    "on_error": [
+      "VF_装备分解_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_装备分解_11_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_装备分解_01"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "wuziku.png",
+    "threshold": 0.55
+  },
+  "VF_装备分解_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}

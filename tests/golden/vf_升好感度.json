@@ -1,0 +1,551 @@
+{
+  "VF_升好感度": {
+    "next": [
+      "VF_升好感度_01"
+    ]
+  },
+  "VF_升好感度_01": {
+    "action": "Click",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "qizhe.png",
+    "threshold": 0.72,
+    "timeout": 5000
+  },
+  "VF_升好感度_02": {
+    "action": "Click",
+    "next": [
+      "VF_升好感度_03"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85,
+    "timeout": 4000
+  },
+  "VF_升好感度_03": {
+    "action": "Click",
+    "next": [
+      "VF_升好感度_04"
+    ],
+    "post_delay": 800,
+    "target": [
+      48,
+      200
+    ]
+  },
+  "VF_升好感度_04": {
+    "action": "Click",
+    "next": [
+      "VF_升好感度_05"
+    ],
+    "post_delay": 800,
+    "target": [
+      1170,
+      425
+    ]
+  },
+  "VF_升好感度_05": {
+    "action": "Click",
+    "next": [
+      "VF_升好感度_06"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tongxiang.png",
+    "threshold": 0.65,
+    "timeout": 4000
+  },
+  "VF_升好感度_06": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_升好感度_07": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_07_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_升好感度_07_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_05"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "tongxiang.png",
+    "threshold": 0.65
+  },
+  "VF_升好感度_08": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_08_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_09"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_08_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_09": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_10"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_10_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_11"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_11": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_12"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_12": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_12_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_13"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_12_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_13": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_14"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_14": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_14_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_15"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_14_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_15": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_16"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_16": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_16_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_17"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_16_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_17": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_18"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_18": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_18_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_19"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_18_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_19": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_20"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_20": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_20_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_21"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_20_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_21": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_22"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_22": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_22_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_23"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_22_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_23": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_24"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_24": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_24_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_25"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_24_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_25": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_26"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_26": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_26_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_27"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_26_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_27": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_28"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_28": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_28_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_29"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_28_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_29": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_30"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_30": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_30_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_31"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_30_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_31": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      650
+    ],
+    "duration": 900,
+    "end": [
+      200,
+      650
+    ],
+    "next": [
+      "VF_升好感度_32"
+    ],
+    "post_delay": 600
+  },
+  "VF_升好感度_32": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_32_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_升好感度_32_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "蛙锣.png",
+    "threshold": 0.85
+  },
+  "VF_升好感度_33": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_33_Hit"
+    ],
+    "on_error": [
+      "VF_升好感度_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_升好感度_33_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_升好感度_01"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "qizhe.png",
+    "threshold": 0.72
+  },
+  "VF_升好感度_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}

@@ -1,0 +1,299 @@
+{
+  "VF_喝茶": {
+    "next": [
+      "VF_喝茶_01"
+    ]
+  },
+  "VF_喝茶_01": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_02"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "chashi_rukou.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_02": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_03"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tea_0.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_03": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_04"
+    ],
+    "post_delay": 500,
+    "target": [
+      200,
+      400
+    ]
+  },
+  "VF_喝茶_04": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_05"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tea_queren.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_05": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_06"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tea_queren2.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_06": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_07"
+    ],
+    "post_delay": 800,
+    "rate_limit": 200,
+    "recognition": "TemplateMatch",
+    "template": "tea_qipao.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_07": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_07_Hit"
+    ],
+    "on_error": [
+      "VF_喝茶_06"
+    ],
+    "timeout": 3000
+  },
+  "VF_喝茶_07_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_08"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "tea_yaoqing.png",
+    "threshold": 0.7
+  },
+  "VF_喝茶_08": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_09"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tea_yaoqing.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_喝茶_09": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_10"
+    ],
+    "post_delay": 500,
+    "target": [
+      642,
+      284
+    ]
+  },
+  "VF_喝茶_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_10_Hit"
+    ],
+    "on_error": [
+      "VF_喝茶_09"
+    ],
+    "timeout": 3000
+  },
+  "VF_喝茶_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_11"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duihua_maohao.png",
+    "threshold": 0.7
+  },
+  "VF_喝茶_11": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_12"
+    ],
+    "post_delay": 500,
+    "target": [
+      978,
+      376
+    ]
+  },
+  "VF_喝茶_12": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_13"
+    ],
+    "post_delay": 500,
+    "target": [
+      642,
+      284
+    ]
+  },
+  "VF_喝茶_13": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_13_Hit"
+    ],
+    "on_error": [
+      "VF_喝茶_12"
+    ],
+    "timeout": 3000
+  },
+  "VF_喝茶_13_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_14"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duihua_maohao.png",
+    "threshold": 0.7
+  },
+  "VF_喝茶_14": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_15"
+    ],
+    "post_delay": 1500,
+    "pre_delay": 6000,
+    "target": [
+      978,
+      376
+    ]
+  },
+  "VF_喝茶_15": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_16"
+    ],
+    "post_delay": 500,
+    "target": [
+      642,
+      284
+    ]
+  },
+  "VF_喝茶_16": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_16_Hit"
+    ],
+    "on_error": [
+      "VF_喝茶_15"
+    ],
+    "timeout": 3000
+  },
+  "VF_喝茶_16_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_17"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duihua_maohao.png",
+    "threshold": 0.7
+  },
+  "VF_喝茶_17": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_18"
+    ],
+    "post_delay": 500,
+    "target": [
+      988,
+      266
+    ]
+  },
+  "VF_喝茶_18": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_19"
+    ],
+    "post_delay": 500,
+    "target": [
+      642,
+      284
+    ]
+  },
+  "VF_喝茶_19": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_19_Hit"
+    ],
+    "on_error": [
+      "VF_喝茶_18"
+    ],
+    "timeout": 3000
+  },
+  "VF_喝茶_19_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_喝茶_20"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "duihua_maohao.png",
+    "threshold": 0.7
+  },
+  "VF_喝茶_20": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_21"
+    ],
+    "post_delay": 500,
+    "target": [
+      988,
+      266
+    ]
+  },
+  "VF_喝茶_21": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_22"
+    ],
+    "post_delay": 1500,
+    "target": [
+      642,
+      284
+    ]
+  },
+  "VF_喝茶_22": {
+    "action": "Click",
+    "next": [
+      "VF_喝茶_23"
+    ],
+    "post_delay": 500,
+    "target": [
+      136,
+      449
+    ]
+  },
+  "VF_喝茶_23": {
+    "action": "Click",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "chashi_tuichu.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  }
+}

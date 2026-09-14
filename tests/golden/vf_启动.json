@@ -1,0 +1,21 @@
+{
+  "VF_启动": {
+    "next": [
+      "VF_启动_01"
+    ]
+  },
+  "VF_启动_01": {
+    "action": "Click",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "roi": [
+      822,
+      20,
+      458,
+      220
+    ],
+    "template": "cha_x.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  }
+}

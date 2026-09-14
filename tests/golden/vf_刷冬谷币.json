@@ -1,0 +1,29 @@
+{
+  "VF_刷冬谷币": {
+    "next": [
+      "VF_刷冬谷币_01"
+    ]
+  },
+  "VF_刷冬谷币_01": {
+    "action": "StartApp",
+    "next": [
+      "VF_刷冬谷币_02"
+    ],
+    "package": "com.cipaishe.wuhua.bilibili",
+    "post_delay": 1000
+  },
+  "VF_刷冬谷币_02": {
+    "action": "Click",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "roi": [
+      822,
+      20,
+      458,
+      220
+    ],
+    "template": "cha_x.png",
+    "threshold": 0.6,
+    "timeout": 8000
+  }
+}

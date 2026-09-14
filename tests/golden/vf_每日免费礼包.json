@@ -1,0 +1,67 @@
+{
+  "VF_每日免费礼包": {
+    "next": [
+      "VF_每日免费礼包_01"
+    ]
+  },
+  "VF_每日免费礼包_01": {
+    "action": "Click",
+    "next": [
+      "VF_每日免费礼包_02"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "shangting.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_每日免费礼包_02": {
+    "action": "Click",
+    "next": [
+      "VF_每日免费礼包_03"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "libao.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_每日免费礼包_03": {
+    "action": "Click",
+    "next": [
+      "VF_每日免费礼包_04"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "xunshibuji.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_每日免费礼包_04": {
+    "action": "Click",
+    "next": [
+      "VF_每日免费礼包_05"
+    ],
+    "post_delay": 500,
+    "target": [
+      350,
+      665
+    ]
+  },
+  "VF_每日免费礼包_05": {
+    "action": "Click",
+    "next": [
+      "VF_每日免费礼包_06"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "goumai.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_每日免费礼包_06": {
+    "next": [
+      "Common_点中间回主页"
+    ]
+  }
+}

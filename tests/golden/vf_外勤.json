@@ -1,0 +1,213 @@
+{
+  "VF_外勤": {
+    "next": [
+      "VF_外勤_01"
+    ]
+  },
+  "VF_外勤_01": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_01_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_外勤_01_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "yanxun.png",
+    "threshold": 0.55
+  },
+  "VF_外勤_02": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_03"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "yanxun.png",
+    "threshold": 0.55,
+    "timeout": 5000
+  },
+  "VF_外勤_03": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_03_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_外勤_03_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_04"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "tongshikechengwaiqin.png",
+    "threshold": 0.55
+  },
+  "VF_外勤_04": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_05"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tongshikechengwaiqin.png",
+    "threshold": 0.55,
+    "timeout": 5000
+  },
+  "VF_外勤_05": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_05_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_07"
+    ],
+    "timeout": 5000
+  },
+  "VF_外勤_05_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_06"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "lingqu_waiqin.png",
+    "threshold": 0.5
+  },
+  "VF_外勤_06": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_07"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "lingqu_waiqin.png",
+    "threshold": 0.5,
+    "timeout": 4000
+  },
+  "VF_外勤_07": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_07_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_End"
+    ],
+    "timeout": 8000
+  },
+  "VF_外勤_07_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_08"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "lingqu_waiqin2.png",
+    "threshold": 0.5
+  },
+  "VF_外勤_08": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_09"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "lingqu_waiqin2.png",
+    "threshold": 0.5,
+    "timeout": 5000
+  },
+  "VF_外勤_09": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_10"
+    ],
+    "post_delay": 600,
+    "target": [
+      36,
+      565
+    ]
+  },
+  "VF_外勤_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_10_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_14"
+    ],
+    "timeout": 8000
+  },
+  "VF_外勤_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_11"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "tongyiwaiqin.png",
+    "threshold": 0.5
+  },
+  "VF_外勤_11": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_12"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "tongyiwaiqin.png",
+    "threshold": 0.5,
+    "timeout": 5000
+  },
+  "VF_外勤_12": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_12_Hit"
+    ],
+    "on_error": [
+      "VF_外勤_14"
+    ],
+    "timeout": 8000
+  },
+  "VF_外勤_12_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_外勤_13"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "querenwaiqin.png",
+    "threshold": 0.5
+  },
+  "VF_外勤_13": {
+    "action": "Click",
+    "next": [
+      "VF_外勤_14"
+    ],
+    "order_by": "Score",
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "querenwaiqin.png",
+    "threshold": 0.5,
+    "timeout": 5000
+  },
+  "VF_外勤_14": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_外勤_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}
