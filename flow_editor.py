@@ -69,6 +69,7 @@ FRAME_DISP_H = 880          # 竖屏帧的画布显示高度；横屏帧自动�
 FRAME_DISP_H_LS = 540       # 横屏帧的画布显示高度（按宽度适配，约 960 宽）
 CARD_W, CARD_H = 240, 60    # 节点卡片尺寸
 UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文本）
+LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 JSON 撑到手机端加载不动）
 
 # ---------------- 主题 ----------------
 
@@ -332,6 +333,14 @@ NODE_TYPES = {
         "defaults": {"threshold": 0.7, "ocr_text": "", "roi": "", "timeout": 3000,
                      "rate_limit": 0},
     },
+    "loop": {
+        "label": "循环(展开)", "icon": "↻", "color": "#b07d3e", "light": "#f0c48a",
+        "summary": lambda p: f"×{p.get('times', 1)}",
+        "fields": [
+            ("times", f"循环次数(1~{LOOP_MAX_TIMES})", "int"),
+        ],
+        "defaults": {"times": 3},
+    },
     "common": {
         "label": "公共节点(收口)", "icon": "⌂", "color": "#4e8f8f", "light": "#9cdcdc",
         "summary": lambda p: p.get("node", "?"),
@@ -363,7 +372,7 @@ NODE_TYPES = {
 }
 
 TYPE_ORDER = ["ocr_click", "tpl_click", "tap", "swipe", "wait_tpl", "branch",
-              "switch", "common", "startapp"]
+              "switch", "loop", "common", "startapp"]
 
 # 所有节点类型共用的可选字段（属性面板在类型专属字段之后追加渲染）。
 # notes 只是编辑器便签，不进生成物；enabled/max_hit 见 _put_common_fields。
@@ -561,7 +570,7 @@ def exits_of(flow, nid):
     p = nd.get("props") or {}
     ex = {"kind": t, "linear": linear_successor(flow, nid),
           "suppress": _suppress_reason(flow, nid),
-          "hit": None, "miss": None, "candidates": []}
+          "hit": None, "miss": None, "body_end": None, "candidates": []}
     if t == "branch":
         ex["hit"] = nd.get("hit_next") or None
         ex["miss"] = nd.get("miss_next") or None
@@ -571,7 +580,84 @@ def exits_of(flow, nid):
             item = dict(c)
             item["index"] = i
             ex["candidates"].append(item)
+    elif t == "loop":
+        ex["body_end"] = p.get("body_end") or None
     return ex
+
+
+# ---------- 循环（loop）：编译期展开 ----------
+# 循环不依赖任何引擎特性：生成时把循环体复制 times 份，逐份首尾相接，
+# 最后一份的尾部接回链上后继。这样生成结果与「手工展开」完全等价，
+# 可以纯代码推演、可逐节点比对，不需要真机验证引擎语义。
+# 代价是同一个画布节点会对应多份生成节点（名字加 _L<k> 后缀），
+# 所以下面的 I1/I3/I6 与反向映射都要认识这个后缀。
+
+def loop_instances(flow):
+    """解析全部循环节点。返回 [{nid, times, body:[节点id...], end, after}]，按链序。
+    假定流程已通过校验；字段缺失时给保守默认，不抛异常。"""
+    chain = flow.get("chain", [])
+    pos = {nid: i for i, nid in enumerate(chain)}
+    nodes = flow.get("nodes", {})
+    out = []
+    for nid in chain:
+        nd = nodes.get(nid) or {}
+        if nd.get("type") != "loop":
+            continue
+        p = nd.get("props") or {}
+        try:
+            times = int(float(p.get("times", 1)))
+        except (TypeError, ValueError):
+            times = 1
+        i = pos[nid]
+        j = pos.get(p.get("body_end"), -1)
+        body = chain[i + 1:j + 1] if j > i else []
+        after = chain[j + 1] if 0 <= j < len(chain) - 1 else None
+        out.append({"nid": nid, "times": max(1, min(times, LOOP_MAX_TIMES)),
+                    "body": body, "end": p.get("body_end"), "after": after})
+    return out
+
+
+def loop_body_nodes(flow):
+    """落在任意循环体里的节点 id 集合（主发射循环要跳过它们，改由展开时逐份发射）"""
+    s = set()
+    for lp in loop_instances(flow):
+        s |= set(lp["body"])
+    return s
+
+
+def loop_body_of(flow, nid):
+    """某个循环节点的循环体节点列表（链上从它之后一直到 body_end）"""
+    for lp in loop_instances(flow):
+        if lp["nid"] == nid:
+            return lp["body"]
+    return []
+
+
+def _strip_loop_suffix(name):
+    """去掉实例后缀：VF_x_03_L2_Hit → VF_x_03_Hit"""
+    return re.sub(r"(_L\d+)+(?=_Hit$|$)", "", str(name))
+
+
+def _node_of_generated_name(flow, name):
+    """pipeline 节点名 → 画布节点 id。认识：branch 的 _Hit、switch 展开的 _Jk/_Jk_Hit、
+    以及循环展开的 _L<k> 实例后缀。"""
+    if not name:
+        return None
+    m = _name_to_node(flow)
+    cands = [name]
+    if name.endswith("_Hit"):
+        cands.append(name[:-4])
+    stripped = _strip_loop_suffix(name)
+    cands.append(stripped)
+    if stripped.endswith("_Hit"):
+        cands.append(stripped[:-4])
+    for c in cands:
+        if c and c in m:
+            return m[c]
+    mm = re.match(r"^(.*)_J\d+(_Hit)?$", stripped)
+    if mm and f"{mm.group(1)}_J1" in m:
+        return m[f"{mm.group(1)}_J1"]
+    return None
 
 
 @dataclass
@@ -596,10 +682,15 @@ def issues_lines(issues):
 def _expected_node_names(flow):
     """本流程将生成的【全部】pipeline 节点名（模型级预测）。
     用于 I1（同流程内名字必须互不相同）与 I6（不得与任务包内既有节点撞名）。
+    循环体节点会被展开 times 份，所以同一画布节点会对应多个生成名（带 _L<k> 后缀）。
     返回 [(名字, 归属说明)]。"""
     E = entry_name(flow)
     names = [(E, "流程入口")]
     nodes = flow.get("nodes", {})
+    in_loop = {}
+    for lp in loop_instances(flow):
+        for b in lp["body"]:
+            in_loop[b] = lp
     for i, nid in enumerate(flow.get("chain", [])):
         nd = nodes.get(nid) or {}
         t = nd.get("type")
@@ -607,18 +698,23 @@ def _expected_node_names(flow):
             continue                      # 未识别的类型不产出节点
         label = f"#{i + 1}「{nd.get('title', '?')}」"
         base = f"{E}_{node_key(flow, nid)}"
+        lp = in_loop.get(nid)
+        suffixes = ([f"_L{k + 1}" for k in range(lp["times"])] if lp else [""])
         if t == "switch":
             cands = parse_switch_cands((nd.get("props") or {}).get("candidates"))
             if not cands:
                 continue                  # 空枝干不产出任何节点（已有专门的校验报错）
-            for j in range(1, len(cands) + 1):
-                names.append((f"{base}_J{j}", label))
-                names.append((f"{base}_J{j}_Hit", label))
+            for sfx in suffixes:
+                for j in range(1, len(cands) + 1):
+                    names.append((f"{base}{sfx}_J{j}", label))
+                    names.append((f"{base}{sfx}_J{j}_Hit", label))
         elif t == "branch":
-            names.append((base, label))
-            names.append((base + "_Hit", label))
+            for sfx in suffixes:
+                names.append((f"{base}{sfx}", label))
+                names.append((f"{base}{sfx}_Hit", label))
         else:
-            names.append((base, label))
+            for sfx in suffixes:
+                names.append((f"{base}{sfx}", label))
     if _needs_end_node(flow):
         names.append((f"{E}_End", "流程收口节点"))
     return names
@@ -688,6 +784,74 @@ def _check_timeout_declared(flow, issues):
             "warn", "TIMEOUT_INHERIT",
             f"{len(lack)} 个节点未设置 timeout，将继承全局 90000ms"
             f"（点完之后等下一个节点出现，最长空转 90 秒）：{shown}"))
+
+
+def _check_loops(flow, issues):
+    """循环节点校验：次数上限、循环体范围、禁止嵌套、体内禁止 枝干/循环。
+    次数上限是硬要求 —— 生成时要把循环体复制 times 份，填个 10000 会直接把
+    生成 JSON 撑爆（手机端加载不动甚至崩）。"""
+    chain = flow.get("chain", [])
+    nodes = flow.get("nodes", {})
+    pos = {nid: i for i, nid in enumerate(chain)}
+    instances = loop_instances(flow)
+    body_of = {}
+    for lp in instances:
+        for b in lp["body"]:
+            body_of[b] = lp["nid"]
+    for lp in instances:
+        nid = lp["nid"]
+        nd = nodes.get(nid) or {}
+        i = pos[nid]
+        p = nd.get("props") or {}
+        no = f"#{i + 1}「{nd.get('title', '?')}」"
+        try:
+            times = int(float(p.get("times")))
+        except (TypeError, ValueError):
+            times = None
+        if times is None:
+            issues.append(Issue("error", "LOOP_TIMES",
+                                f"{no}循环次数未填或不是数字", nid))
+        elif not (1 <= times <= LOOP_MAX_TIMES):
+            issues.append(Issue(
+                "error", "LOOP_TIMES",
+                f"{no}循环次数应为 1~{LOOP_MAX_TIMES}（当前 {times}）"
+                f"—— 展开次数过大会把生成物撑到手机端加载不动", nid))
+        end = p.get("body_end")
+        if not end:
+            issues.append(Issue(
+                "error", "LOOP_NO_BODY",
+                f"{no}未设置循环体末尾：从卡片右侧端口拖到循环体的最后一个节点", nid))
+            continue
+        if end not in pos:
+            issues.append(Issue("error", "LOOP_NO_BODY",
+                                f"{no}循环体末尾指向已删除节点", nid))
+            continue
+        j = pos[end]
+        if j <= i:
+            issues.append(Issue(
+                "error", "LOOP_BODY_ORDER",
+                f"{no}循环体末尾必须在循环节点【之后】的链上", nid))
+            continue
+        body = chain[i + 1:j + 1]
+        if not body:
+            issues.append(Issue("error", "LOOP_NO_BODY", f"{no}循环体为空", nid))
+            continue
+        if any(body_of.get(x, nid) != nid for x in [nid] + body):
+            issues.append(Issue("error", "LOOP_NESTED",
+                                f"{no}循环不能嵌套（与另一处循环共用节点）", nid))
+            continue
+        bad = [x for x in body
+               if (nodes.get(x) or {}).get("type") in ("switch", "loop")]
+        if bad:
+            titles = "、".join((nodes.get(b) or {}).get("title", b) for b in bad[:3])
+            issues.append(Issue(
+                "error", "LOOP_BODY_KIND",
+                f"{no}循环体里不能放 枝干/循环 节点（{titles}）"
+                f"—— 展开时它们的子节点名会与实例后缀冲突", nid))
+        if any((nodes.get(x) or {}).get("type") == "common" for x in body):
+            issues.append(Issue(
+                "warn", "LOOP_BODY_COMMON",
+                f"{no}循环体里有公共收口节点，第一次循环就会终止流程", nid))
 
 
 def _check_disabled(flow, issues):
@@ -826,6 +990,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
     _check_naming(flow, issues)
     _check_timeout_declared(flow, issues)
     _check_disabled(flow, issues)
+    _check_loops(flow, issues)
     if check_namespace:
         for msg in audit_namespace(flow, root):
             issues.append(Issue("error", "NS_CLASH", msg))
@@ -1193,12 +1358,14 @@ def _emit_startapp(out, name, p, nxt):
     out[name] = d
 
 
-def _emit_switch(flow, out, nid, i, p):
+def _emit_switch(flow, out, nid, name, p):
     """枝干判定：候选从左到右级联判定，命中→走该候选内容（执行完枝干结束），
-    未中→下一个候选；全部未中→ miss 出口（默认流程结束）。"""
+    未中→下一个候选；全部未中→ miss 出口（默认流程结束）。
+    name 是 jname(flow, nid)（形如 ..._J1），展开名由它推导 —— 这样带显式 key
+    的枝干节点也能得到一致的名字。"""
     E = entry_name(flow)
+    seq = name[:-3] if name.endswith("_J1") else name
     cands = exits_of(flow, nid)["candidates"]
-    seq = f"{E}_{i + 1:02d}"
     if not cands:
         return
     miss_ref = [jname(flow, p["miss_next"])] if p.get("miss_next") else [f"{E}_End"]
@@ -1223,6 +1390,77 @@ def _emit_switch(flow, out, nid, i, p):
         out[cur_hit] = hd
 
 
+def _emit_one(flow, out, nid, name, nxt):
+    """按节点类型发射一个生成节点。name 由调用方给出 —— 循环展开时同一画布节点
+    会带着 _L<k> 实例后缀被发射多次。返回是否需要生成收口节点。"""
+    nd = flow["nodes"][nid]
+    t, p = nd["type"], nd.get("props", {})
+    if t == "tpl_click":
+        _emit_tpl_click(out, name, p, nxt)
+    elif t == "ocr_click":
+        _emit_ocr_click(out, name, p, nxt)
+    elif t == "tap":
+        _emit_tap(out, name, p, nxt)
+    elif t == "swipe":
+        _emit_swipe(out, name, p, nxt)
+    elif t == "wait_tpl":
+        _emit_wait_tpl(out, name, p, nxt)
+    elif t == "branch":
+        return _emit_branch(flow, out, nid, name, p, nxt)
+    elif t == "common":
+        _emit_common(out, name, p)
+    elif t == "startapp":
+        _emit_startapp(out, name, p, nxt)
+    elif t == "switch":
+        _emit_switch(flow, out, nid, name, p)
+    elif t == "loop":
+        _emit_loop(flow, out, nid, name)
+    return False
+
+
+def _emit_loop(flow, out, nid, name):
+    """循环节点自身只是「入口标记」：展开后它唯一的作用是把控制流送进第一份循环体。
+    复制发生在 _expand_loop（编译期展开，不用引擎的循环特性）。"""
+    inst = next((lp for lp in loop_instances(flow) if lp["nid"] == nid), None)
+    d = {"action": "DoNothing"}
+    if inst and inst["body"]:
+        d["next"] = [f"{jname(flow, inst['body'][0])}_L1"]
+    out[name] = d
+
+
+def _expand_loop(flow, out, lp):
+    """把循环体复制 times 份：每份的节点名带 _L<k> 后缀，逐份首尾相接，
+    最后一份的尾部接回链上后继（= 循环体末尾节点的链上后继）。
+    返回是否需要生成收口节点。"""
+    times, body = lp["times"], lp["body"]
+    if not body:
+        return False
+    end_needed = False
+    for k in range(1, times + 1):
+        sfx = f"_L{k}"
+        for idx, nid in enumerate(body):
+            name = f"{jname(flow, nid)}{sfx}"
+            if idx + 1 < len(body):
+                nxt = [f"{jname(flow, body[idx + 1])}{sfx}"]
+            elif k < times:
+                nxt = [f"{jname(flow, body[0])}_L{k + 1}"]
+            else:
+                nxt = chain_next_names(flow, body[-1])    # 循环结束后回到链上后继
+            end_needed |= _emit_one(flow, out, nid, name, nxt)
+            _put_common_fields(out.get(name),
+                               flow["nodes"][nid].get("props") or {})
+    return end_needed
+
+
+def generated_names_for(flow, nid):
+    """该画布节点在生成物里对应的全部名字（循环体节点会展开成 times 份）"""
+    base = jname(flow, nid)
+    for lp in loop_instances(flow):
+        if nid in lp["body"]:
+            return [f"{base}_L{k + 1}" for k in range(lp["times"])]
+    return [base]
+
+
 def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
     """流程定义 → MaaFramework pipeline dict（VF_ 前缀命名空间）。"""
     errs, _ = validate_flow(flow, frame_wh)
@@ -1234,42 +1472,24 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
 
     out = {E: {"next": [jname(flow, chain[0])] if chain else []}}
     end_needed = False
+    body_nodes = loop_body_nodes(flow)      # 循环体节点由展开阶段逐份发射
 
     for i, nid in enumerate(chain):
         nd = nodes[nid]
         t, p = nd["type"], nd.get("props", {})
         base = jname(flow, nid)
         nxt = chain_next_names(flow, nid)
+        if nid in body_nodes:
+            continue
 
-        if t == "tpl_click":
-            _emit_tpl_click(out, base, p, nxt)
-
-        elif t == "ocr_click":
-            _emit_ocr_click(out, base, p, nxt)
-
-        elif t == "tap":
-            _emit_tap(out, base, p, nxt)
-
-        elif t == "swipe":
-            _emit_swipe(out, base, p, nxt)
-
-        elif t == "wait_tpl":
-            _emit_wait_tpl(out, base, p, nxt)
-
-        elif t == "branch":
-            end_needed |= _emit_branch(flow, out, nid, base, p, nxt)
-
-        elif t == "common":
-            _emit_common(out, base, p)
-
-        elif t == "startapp":
-            _emit_startapp(out, base, p, nxt)
-
-        elif t == "switch":
-            _emit_switch(flow, out, nid, i, p)
+        end_needed |= _emit_one(flow, out, nid, base, nxt)
 
         # 通用可选字段（enabled / max_hit）加在被前驱 next 引用的那一层上
         _put_common_fields(out.get(base), p)
+
+    # 循环：编译期把循环体复制 times 份（不依赖引擎的循环特性）
+    for lp in loop_instances(flow):
+        end_needed |= _expand_loop(flow, out, lp)
 
     if end_needed or any(nodes[n].get("type") == "switch" for n in chain):
         out[f"{E}_End"] = {"action": "DoNothing", "next": []}
@@ -1416,15 +1636,29 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
                 f"（引擎加载时会拒绝整个任务包，不只是这个流程）"))
 
     # ---------- I3：画布/模型表达的边 == 生成结果实际连的边 ----------
-    name2node = _name_to_node(flow)
+    # 循环展开后一个画布节点对应多份生成节点，所以「实际边」要把各份并起来；
+    # 相应地循环体末尾的期望边要同时含「回到循环体首节点」和「接回链上后继」。
+    loops = loop_instances(flow)
 
     def tgt_of(nm):
         nm = _strip_attr(nm)
         if nm == dock_n:
             return ("end", None)
-        if nm in name2node:
-            return ("node", name2node[nm])
+        hit = _node_of_generated_name(flow, nm)
+        if hit is not None:
+            return ("node", hit)
         return ("ext", nm)
+
+    def gen_targets(names, key):
+        """把若干生成节点的 next/on_error 目标并成一个集合"""
+        s = set()
+        for nm in names:
+            d = out.get(nm) or {}
+            for item in (d.get(key) or []):
+                t = item.get("name") if isinstance(item, dict) else item
+                if t:
+                    s.add(tgt_of(t))
+        return s
 
     def show(t):
         kind, val = t
@@ -1441,16 +1675,15 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
         nd = nodes.get(nid) or {}
         t = nd["type"]
         base = jname(flow, nid)
+        names = generated_names_for(flow, nid)
         ex = exits_of(flow, nid)
         expect, actual = {}, {}
         if t == "branch":
             hit = ex["hit"] or ex["linear"]
             expect["hit"] = {("node", hit)} if hit else set()
             expect["miss"] = {("node", ex["miss"])} if ex["miss"] else {("end", None)}
-            d = out.get(base) or {}
-            actual["miss"] = {tgt_of(n) for n in (d.get("on_error") or [])}
-            hd = out.get(base + "_Hit") or {}
-            actual["hit"] = {tgt_of(n) for n in (hd.get("next") or [])}
+            actual["miss"] = gen_targets(names, "on_error")
+            actual["hit"] = gen_targets([f"{nm}_Hit" for nm in names], "next")
         elif t == "switch":
             cands = ex["candidates"]
             if not cands:
@@ -1474,12 +1707,14 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
         elif t == "common":
             p = nd.get("props") or {}
             expect["next"] = {("ext", str(p.get("node")))}
-            d = out.get(base) or {}
-            actual["next"] = {tgt_of(n) for n in (d.get("next") or [])}
+            actual["next"] = gen_targets(names, "next")
         else:
             expect["next"] = {("node", ex["linear"])} if ex["linear"] else set()
-            d = out.get(base) or {}
-            actual["next"] = {tgt_of(n) for n in (d.get("next") or [])}
+            # 循环体末尾：展开后前 times-1 份的 next 是「回到循环体首节点」
+            for lp in loops:
+                if nid == lp["end"] and lp["times"] >= 2 and lp["body"]:
+                    expect["next"].add(("node", lp["body"][0]))
+            actual["next"] = gen_targets(names, "next")
 
         for role in sorted(set(expect) | set(actual)):
             e, a = expect.get(role, set()), actual.get(role, set())
@@ -2570,6 +2805,10 @@ class FlowEditor:
                 for c in op.get("candidates", []):
                     if isinstance(c, dict) and c.get("next") == nid:
                         c["next"] = None
+            if other.get("type") == "loop":
+                lop = other.get("props", {})
+                if lop.get("body_end") == nid:
+                    lop["body_end"] = None
         self.sel = None
         self.build_prop_panel()
         self.redraw()
@@ -2811,7 +3050,10 @@ class FlowEditor:
                     c.create_text(sx + 35, sy, anchor="w", fill=THEME["err"],
                                   font=FONT_SM, text="→结束")
                 max_x = max(max_x, sx + 190)
-        # 节点卡片
+            elif nd["type"] == "loop":
+                # 循环体括线 + 回边：循环体末尾 → 循环节点（虚线），
+                # 并给括线标出次数。与生成结果一致：展开后前 times-1 份的尾部回边。
+                self._draw_loop_marks(nid)
         for nid in ch:
             self._draw_node(nid)
         self._draw_branch_labels()
@@ -2927,8 +3169,21 @@ class FlowEditor:
                 c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=color,
                               outline="#ffffff", width=1,
                               tags=("port", f"port:{nid}:{port}"))
+        if nd["type"] == "loop":
+            hx, hy = self._port_pos(nd, "body_end")
+            c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
+                          fill="#2b2416", outline="")
+            c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=THEME["warn"],
+                          outline="#ffffff", width=1,
+                          tags=("port", f"port:{nid}:body_end"))
+            body = loop_body_of(self.flow, nid)
+            info = (f"循环体 {len(body)} 个节点" if body else "循环体未设置")
+            c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
+                          font=FONT_SM, text=info, tags=tags)
 
     def _port_pos(self, nd, port):
+        if nd["type"] == "loop":
+            return nd["x"] + CARD_W, nd["y"] + CARD_H * 0.5
         if nd["type"] == "switch":
             cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
             n = max(len(cands), 1)
@@ -2964,6 +3219,48 @@ class FlowEditor:
                     fill="#2a1114", outline=THEME["err"])
         c.create_text(bx + tw / 2, tip, fill="#ffb3b3", font=FONT_SM, text=txt)
         return bx + tw
+
+    def _draw_loop_marks(self, nid):
+        """画循环的「循环体括线 + 次数」与「回边」。
+        与生成结果对应：展开后前 times-1 份的尾部会回到循环体首节点，
+        最后一份才接回链上后继 —— 所以这里画虚线回边，并标注次数。"""
+        c = self.canvas
+        nd = self.flow["nodes"][nid]
+        p = nd.get("props") or {}
+        times = p.get("times", 1)
+        body = loop_body_of(self.flow, nid)
+        end = p.get("body_end")
+        if not body or not end or end not in self.flow["nodes"]:
+            sx, sy = self._port_pos(nd, "body_end")
+            c.create_line(sx, sy, sx + 26, sy, fill=THEME["warn"], width=2, dash=(5, 3))
+            _round_rect(c, sx + 28, sy - 11, sx + 28 + 12 * len("未设置循环体") + 14,
+                        sy + 11, 5, fill="#14161d", outline=THEME["card_line"])
+            c.create_text(sx + 35, sy, anchor="w", fill=THEME["warn"], font=FONT_SM,
+                          text="设置循环体末尾")
+            return
+        first = self.flow["nodes"][body[0]]
+        last = self.flow["nodes"][body[-1]]
+        # 循环体括线（画在循环体卡片的左侧）
+        bx = min(self.flow["nodes"][b]["x"] for b in body) - 16
+        top = first["y"] + 4
+        bot = last["y"] + (self._sw_h(last) if last["type"] == "switch" else CARD_H) - 4
+        c.create_line(bx, top, bx, bot, fill=THEME["warn"], width=2)
+        c.create_line(bx, top, bx + 9, top, fill=THEME["warn"], width=2)
+        c.create_line(bx, bot, bx + 9, bot, fill=THEME["warn"], width=2)
+        c.create_text(bx - 4, (top + bot) / 2, anchor="e", fill=THEME["warn"],
+                      font=FONT_SM, text=f"循环体 ×{times}")
+        # 回边：循环体末尾右下 → 绕到循环节点右侧端口（虚线）
+        sx, sy = self._port_pos(nd, "body_end")
+        ex = last["x"] + CARD_W
+        ey = last["y"] + (self._sw_h(last) if last["type"] == "switch" else CARD_H) / 2
+        mx = max(sx, ex) + 70
+        c.create_line(sx, sy, mx, sy, mx, ey, ex + 2, ey, smooth=True, dash=(6, 4),
+                      width=2, fill=THEME["warn"], arrow=tk.LAST,
+                      arrowshape=ARROW_SHAPE, splinesteps=24)
+        _round_rect(c, mx - 34, (sy + ey) / 2 - 11, mx + 40, (sy + ey) / 2 + 11, 5,
+                    fill="#14161d", outline=THEME["card_line"])
+        c.create_text(mx + 3, (sy + ey) / 2, fill=THEME["warn"], font=FONT_SM,
+                      text=f"×{times} 次")
 
     def _draw_branch_labels(self):
         c = self.canvas
@@ -3260,7 +3557,8 @@ class FlowEditor:
             ch.insert(min(idx, len(ch)), drag_id)
 
     def _set_wire(self, src, port, tgt):
-        """连线写回：branch 直接写节点字段；switch 写候选 next / 全部未中 miss_next"""
+        """连线写回：branch 直接写节点字段；switch 写候选 next / 全部未中 miss_next；
+        loop 写循环体末尾 body_end"""
         if src.get("type") == "switch":
             props = src["props"]
             if port == "miss":
@@ -3271,6 +3569,8 @@ class FlowEditor:
                 if i < len(cands):
                     cands[i]["next"] = tgt
                     props["candidates"] = cands
+        elif src.get("type") == "loop":
+            src.setdefault("props", {})["body_end"] = tgt
         else:
             src[port] = tgt
 
@@ -3705,6 +4005,21 @@ class FlowEditor:
         nd = self.flow["nodes"][nid]
         ch = self.flow["chain"]
         options = [f"#{i+1} {self.flow['nodes'][n].get('title', n)}" for i, n in enumerate(ch)]
+        if nd["type"] == "loop":
+            # 循环复用「✗」那一行的下拉来选择循环体末尾（也可在画布上拖端口）
+            self.hit_combo.config(values=[], state="disabled")
+            self.hit_combo.set("")
+            self.miss_combo.config(values=["(未设置)"] + options, state="readonly")
+            be = nd.get("props", {}).get("body_end")
+            self.miss_combo.set("(未设置)" if not be
+                                else self._branch_target_label(nid, be, False))
+            n_body = len(loop_body_of(self.flow, nid))
+            self.branch_hint.config(
+                text=f"循环体 {n_body} 个节点（从本节点之后到上面选中的那个节点）。"
+                     f"生成时循环体【复制 times 份】逐个首尾相接，不依赖引擎特性；"
+                     f"也可直接拖卡片右侧圆点连线。当前次数 "
+                     f"×{nd.get('props', {}).get('times', 1)}。")
+            return
         if nd["type"] == "switch":
             self.hit_combo.config(values=[], state="disabled")
             self.hit_combo.set("")
@@ -3733,7 +4048,7 @@ class FlowEditor:
         if not nid or nid not in self.flow["nodes"]:
             return
         nd = self.flow["nodes"][nid]
-        if nd["type"] not in ("branch", "switch"):
+        if nd["type"] not in ("branch", "switch", "loop"):
             return
         combo = self.hit_combo if port == "hit_next" else self.miss_combo
         text = combo.get()
@@ -3745,12 +4060,16 @@ class FlowEditor:
                 self._sync_branch_ui()
                 return
             self._snapshot(f"branch:{nid}:{port}")
-            if nd["type"] == "switch" and port == "miss_next":
+            if nd["type"] == "loop":
+                nd.setdefault("props", {})["body_end"] = target
+            elif nd["type"] == "switch" and port == "miss_next":
                 nd.setdefault("props", {})["miss_next"] = target
             else:
                 nd[port] = target
         else:
-            if nd["type"] == "switch" and port == "miss_next":
+            if nd["type"] == "loop":
+                nd.setdefault("props", {})["body_end"] = None
+            elif nd["type"] == "switch" and port == "miss_next":
                 nd.setdefault("props", {})["miss_next"] = None
             else:
                 nd[port] = None
