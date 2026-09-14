@@ -505,6 +505,23 @@ def normalize_flow(flow):
         # order_by 由布尔开关升级为枚举（P1-4）：旧文件的 True 等价于 Score
         # （旧实现就是写 "Score"），False 则视为未设置，保证生成结果不变。
         props = nd.get("props") or {}
+        # 节点编号：给没有编号的节点按【当时的链序】补一个（旧文件因此与之前的显示一致），
+        # 之后编号就固定了 —— 重排/删除/改接都不会改到别人的号。
+        taken = {x.get("num") for x in flow.get("nodes", {}).values()
+                 if isinstance(x.get("num"), int)}
+        for _i, _nid in enumerate(flow.get("chain", [])):
+            _nd = flow["nodes"].get(_nid)
+            if not isinstance(_nd, dict) or isinstance(_nd.get("num"), int):
+                continue
+            want = _i + 1
+            if want in taken:
+                want = max(taken, default=0) + 1
+            _nd["num"] = want
+            taken.add(want)
+        for _nid, _nd in flow.get("nodes", {}).items():
+            if isinstance(_nd, dict) and not isinstance(_nd.get("num"), int):
+                _nd["num"] = max(taken, default=0) + 1
+                taken.add(_nd["num"])
         if isinstance(props.get("order_by"), bool):
             if props["order_by"]:
                 props["order_by"] = "Score"
@@ -723,7 +740,7 @@ def _expected_node_names(flow, _depth=0):
         t = nd.get("type")
         if t not in NODE_TYPES:
             continue                      # 未识别的类型不产出节点
-        label = f"#{i + 1}「{nd.get('title', '?')}」"
+        label = f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」"
         base = f"{E}_{node_key(flow, nid)}"
         if t == "subflow" and _depth < 3:
             names.append((base, label))       # 子流程节点自身的入口标记节点
@@ -792,7 +809,8 @@ def _check_naming(flow, issues):
         if key and not re.fullmatch(r"[A-Za-z0-9_]+", key):
             issues.append(Issue(
                 "error", "KEY_CHARSET",
-                f"#{i + 1}「{nd.get('title', '?')}」节点名(key) {key!r} 只能包含"
+                f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」"
+                f"节点名(key) {key!r} 只能包含"
                 f"英文字母、数字与下划线", nid))
 
 
@@ -816,7 +834,7 @@ def _check_timeout_declared(flow, issues):
         if p.get("enabled") is False:
             continue
         if p.get("timeout") in (None, ""):
-            lack.append(f"#{i + 1}「{nd.get('title', '?')}」")
+            lack.append(f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」")
     if lack:
         shown = "、".join(lack[:6]) + (" 等" if len(lack) > 6 else "")
         issues.append(Issue(
@@ -842,7 +860,7 @@ def _check_loops(flow, issues):
         nd = nodes.get(nid) or {}
         i = pos[nid]
         p = nd.get("props") or {}
-        no = f"#{i + 1}「{nd.get('title', '?')}」"
+        no = f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」"
         try:
             times = int(float(p.get("times")))
         except (TypeError, ValueError):
@@ -903,7 +921,7 @@ def _check_subflows(flow, issues, _depth=0):
         nd = nodes.get(nid) or {}
         if nd.get("type") != "subflow":
             continue
-        no = f"#{i + 1}「{nd.get('title', '?')}」"
+        no = f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」"
         ref = str((nd.get("props") or {}).get("flow") or "").strip()
         if not ref:
             issues.append(Issue("error", "SUBFLOW_REF", f"{no}未选择子流程", nid))
@@ -967,7 +985,7 @@ def _check_disabled(flow, issues):
     for i, nid in enumerate(flow.get("chain", [])):
         nd = nodes.get(nid) or {}
         if (nd.get("props") or {}).get("enabled") is False:
-            off.append(f"#{i + 1}「{nd.get('title', '?')}」")
+            off.append(f"#{node_no(flow, nid, i + 1)}「{nd.get('title', '?')}」")
     if off:
         shown = "、".join(off[:6]) + (" 等" if len(off) > 6 else "")
         issues.append(Issue(
@@ -994,7 +1012,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                                 f"链上有失效节点引用: {nid}", nid))
             continue
         t, p = nd["type"], nd.get("props", {})
-        no = f"#{i+1}"
+        no = f"#{node_no(flow, nid, i + 1)}"
         if t == "branch" and str(p.get("ocr_text", "")).strip():
             pass   # OCR 文字判定分支无需模板图
         elif t in ("tpl_click", "wait_tpl", "branch"):
@@ -1155,6 +1173,17 @@ def entry_name(flow):
     return f"VF_{flow['name']}"
 
 
+def node_no(flow, nid, fallback=0):
+    """节点的显示编号。用持久化的 num（新建时分配、之后永不变），
+    旧文件在加载时会被 normalize_flow 按当时的链序补上 num，所以显示与以前一致。"""
+    nd = (flow.get("nodes") or {}).get(nid) or {}
+    num = nd.get("num")
+    if isinstance(num, int) and num > 0:
+        return num
+    ch = flow.get("chain") or []
+    return (ch.index(nid) + 1) if nid in ch else fallback
+
+
 def node_key(flow, nid):
     """节点名后缀 —— 节点身份，与它在链上的位置解耦。
 
@@ -1167,6 +1196,9 @@ def node_key(flow, nid):
     k = str(nd.get("key") or "").strip()
     if k:
         return k
+    num = nd.get("num")
+    if isinstance(num, int) and num > 0:
+        return f"{num:02d}"        # 用固定编号：重排链序时节点名不再跟着变
     return f"{flow['chain'].index(nid) + 1:02d}"
 
 
@@ -2835,7 +2867,21 @@ class FlowEditor:
                        font=FONT_SM).pack(side="left", padx=(12, 0))
 
         ttk.Separator(right).pack(side="top", fill="x", pady=2, padx=8)
-        ttk.Label(right, text="  分支出口（画布拖端口或下拉改接）",
+        ttk.Label(right, text="  连接（下拉可直接改接）",
+                  style="Title.TLabel").pack(side="top", anchor="w", padx=8)
+        crow = ttk.Frame(right)
+        crow.pack(side="top", fill="x", padx=12, pady=(4, 2))
+        ttk.Label(crow, text="上一个", style="Dim.TLabel").pack(side="left")
+        self.prev_combo = ttk.Combobox(crow, width=16, state="disabled", font=FONT_SM)
+        self.prev_combo.pack(side="left", padx=(2, 8))
+        self.prev_combo.bind("<<ComboboxSelected>>",
+                            lambda e: self.on_conn_combo("prev"))
+        ttk.Label(crow, text="下一个", style="Dim.TLabel").pack(side="left")
+        self.next_combo = ttk.Combobox(crow, width=16, state="disabled", font=FONT_SM)
+        self.next_combo.pack(side="left", padx=2)
+        self.next_combo.bind("<<ComboboxSelected>>",
+                            lambda e: self.on_conn_combo("next"))
+        ttk.Label(right, text="  出口（分支/枝干/循环专用）",
                   style="Title.TLabel").pack(side="top", anchor="w", padx=8)
         brow = ttk.Frame(right)
         brow.pack(side="top", fill="x", padx=12, pady=4)
@@ -3030,7 +3076,8 @@ class FlowEditor:
             else:
                 x, y = TIDY_X, GRID
         x, y = self._snap(x), self._snap(y)
-        node = {"type": ntype, "x": x, "y": y, "title": spec["label"], "props": p}
+        node = {"type": ntype, "x": x, "y": y, "title": spec["label"], "props": p,
+                "num": self._next_num()}
         if ntype == "branch":
             node["hit_next"] = hit_next
             node["miss_next"] = miss_next
@@ -3039,6 +3086,16 @@ class FlowEditor:
             self.flow["chain"].insert(self.flow["chain"].index(anchor) + 1, nid)
         else:
             self.flow["chain"].append(nid)
+        # ★ 让位：把链上【本节点之后】的节点整体下移一行。
+        #   否则新节点看着在 A 下面，链序却排在"A 后面的后面"（例如 A 与下一个节点
+        #   是并排同一行时），一拖动就被按位置重排成"挂到别的节点下"。
+        if anchor:
+            gap = (self._sw_h(node) if ntype == "switch" else CARD_H) + 26
+            idx = self.flow["chain"].index(nid)
+            for other in self.flow["chain"][idx + 1:]:
+                od = self.flow["nodes"][other]
+                if od["y"] >= a["y"]:           # 推开"在锚点这一行及以下"的
+                    od["y"] = self._snap(od["y"] + gap)
         self.sel = nid
         self.build_prop_panel()
         self.redraw()
@@ -3462,7 +3519,7 @@ class FlowEditor:
         _round_rect(c, x + 3, y + 5, x + 9, y1 - 5, 3,
                     fill=THEME["card_line"] if disabled else spec["color"],
                     outline="", tags=tags)
-        idx = self.flow["chain"].index(nid) + 1
+        idx = node_no(self.flow, nid)
         c.create_text(x + 20, y + 7, anchor="nw",
                       fill=THEME["text_dim"] if disabled else "white", font=self.f_title,
                       text=f"{idx}. {nd.get('title', spec['label'])}"
@@ -3890,6 +3947,11 @@ class FlowEditor:
             return THEME["sel"], 4
         return base_color, 2
 
+    def _next_num(self):
+        """下一个可用编号（只看已有最大号，重排/删除都不会回收号，避免两个节点同号）"""
+        return max((nd.get("num", 0) for nd in self.flow["nodes"].values()
+                    if isinstance(nd.get("num"), int)), default=0) + 1
+
     def _snap(self, v):
         """吸附到最近的网格交叉点：让节点像表格一样对齐（拖动/新建/整理布局都用它）"""
         return float(int(round(float(v) / GRID)) * GRID)
@@ -4033,7 +4095,11 @@ class FlowEditor:
         nd = self.flow["nodes"][nid]
         # 拖动前存档；若只是点选没真的移动，内容不变，_snapshot 会自动跳过
         self._snapshot(f"drag:{nid}")
-        self.drag = {"id": nid, "dx": cx - nd["x"], "dy": cy - nd["y"]}
+        ch = self.flow["chain"]
+        i = ch.index(nid)
+        self.drag = {"id": nid, "dx": cx - nd["x"], "dy": cy - nd["y"],
+                     "prev": ch[i - 1] if i > 0 else None,
+                     "next": ch[i + 1] if i + 1 < len(ch) else None}
         self.redraw()
 
     def on_motion(self, e):
@@ -4134,7 +4200,22 @@ class FlowEditor:
             self.status("就绪")
             return
         if self.drag:
+            d = self.drag
             self.drag = None
+            ch = self.flow["chain"]
+            if d["id"] in ch:
+                i = ch.index(d["id"])
+                prev = ch[i - 1] if i > 0 else None
+                nxt = ch[i + 1] if i + 1 < len(ch) else None
+                if (prev, nxt) != (d.get("prev"), d.get("next")):
+                    # 拖动会按上下位置重排链序 —— 说清楚"谁接到了谁下面"，
+                    # 不然新连好的节点会在拖完之后悄悄换到别的节点后面。
+                    nm = lambda x: ("无" if x is None else
+                                    f"#{ch.index(x)+1} {self.flow['nodes'][x].get('title', x)}")
+                    self.log(f"⚠ 拖动后链序变了：「{self.flow['nodes'][d['id']].get('title', '?')}」"
+                             f"的上一节点 {nm(d.get('prev'))} → {nm(prev)}，"
+                             f"下一节点 {nm(d.get('next'))} → {nm(nxt)}。"
+                             f"想改回可在右侧「连接」里直接选。", "warn")
             self.build_prop_panel()   # 刷新面板里的 #序号
             self.redraw()
 
@@ -4163,11 +4244,12 @@ class FlowEditor:
             ttk.Label(self.props_inner, text="点击画布上的节点，在这里编辑参数",
                       style="Dim.TLabel").grid(row=0, column=0, columnspan=2,
                                                sticky="w", pady=(2, 0))
+            self._sync_conn_ui()
             self._sync_branch_ui()
             return
         nd = self.flow["nodes"][nid]
         spec = NODE_TYPES[nd["type"]]
-        idx = self.flow["chain"].index(nid) + 1
+        idx = node_no(self.flow, nid)
         head = ttk.Frame(self.props_inner)
         head.grid(row=0, column=0, columnspan=2, sticky="w", pady=(2, 6))
         tk.Label(head, text=f"{spec['icon']} #{idx} {spec['label']}",
@@ -4210,6 +4292,7 @@ class FlowEditor:
                       wraplength=300, justify="left").grid(
                 row=row, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.props_inner.columnconfigure(1, weight=1)
+        self._sync_conn_ui()
         self._sync_branch_ui()
 
     def _bind_tip(self, widget, text):
@@ -4587,8 +4670,60 @@ class FlowEditor:
         ch = self.flow["chain"]
         if target is None:
             return "(自动→下一个)" if is_hit else "(流程结束)"
-        i = ch.index(target) + 1 if target in ch else "?"
-        return f"#{i} {self.flow['nodes'][target].get('title', target)}"
+        if target not in ch:
+            return f"#{target}"
+        return f"#{node_no(self.flow, target)} {self.flow['nodes'][target].get('title', target)}"
+
+    def _sync_conn_ui(self):
+        """同步「上一个 / 下一个」下拉：它们就是链序邻居，改它 = 把本节点移到那个邻居旁边。"""
+        nid = self.sel
+        ch = self.flow.get("chain", [])
+        if not nid or nid not in ch:
+            for cb in (getattr(self, "prev_combo", None),
+                       getattr(self, "next_combo", None)):
+                if cb is not None:
+                    cb.config(values=[], state="disabled")
+                    cb.set("")
+            return
+        options = [f"#{node_no(self.flow, n)} {self.flow['nodes'][n].get('title', n)}"
+                   for n in ch]
+        i = ch.index(nid)
+        self.prev_combo.config(values=["(无：排在第一个)"] + options, state="readonly")
+        self.prev_combo.set(self._branch_target_label(nid, ch[i - 1], False)
+                            if i > 0 else "(无：排在第一个)")
+        self.next_combo.config(values=["(无：到此结束)"] + options, state="readonly")
+        self.next_combo.set(self._branch_target_label(nid, ch[i + 1], False)
+                            if i + 1 < len(ch) else "(无：到此结束)")
+
+    def on_conn_combo(self, which):
+        """改「上一个 / 下一个」= 把本节点在链上挪到那个邻居旁边（不改变其他节点的相对顺序）"""
+        nid = self.sel
+        ch = self.flow["chain"]
+        if not nid or nid not in ch:
+            return
+        combo = self.prev_combo if which == "prev" else self.next_combo
+        m = re.match(r"#(\d+)", combo.get())
+        tgt = ch[int(m.group(1)) - 1] if (m and 1 <= int(m.group(1)) <= len(ch)) else None
+        if tgt == nid:
+            tgt = None
+        self._snapshot(f"conn:{nid}:{which}")
+        ch.remove(nid)
+        if tgt is None or tgt not in ch:
+            if which == "prev":
+                ch.insert(0, nid)          # 作为第一个
+            else:
+                ch.append(nid)             # 到此结束
+        else:
+            j = ch.index(tgt)
+            ch.insert(j if which == "prev" else j + 1, nid)
+        self.build_prop_panel()
+        self.redraw()
+        if tgt:
+            where = f"接在「{self.flow['nodes'][tgt].get('title', tgt)}」"                     f"{'之前' if which == 'next' else '之后'}"
+        else:
+            where = "排到链首（作为第一个）" if which == "prev" else "移到链尾（到此结束）"
+        self.log(f"已改接：「{self.flow['nodes'][nid].get('title', '?')}」{where}"
+                 f"（链序已变；如需按新顺序排布点「✥ 整理布局」）")
 
     def _sync_branch_ui(self):
         nid = self.sel
@@ -4604,7 +4739,8 @@ class FlowEditor:
             return
         nd = self.flow["nodes"][nid]
         ch = self.flow["chain"]
-        options = [f"#{i+1} {self.flow['nodes'][n].get('title', n)}" for i, n in enumerate(ch)]
+        options = [f"#{node_no(self.flow, n)} {self.flow['nodes'][n].get('title', n)}"
+                   for n in ch]
         if nd["type"] == "loop":
             # 循环复用「✗」那一行的下拉来选择循环体末尾（也可在画布上拖端口）
             self.hit_combo.config(values=[], state="disabled")
@@ -5130,6 +5266,7 @@ class FlowEditor:
         self._nid += 1
         nid = f"n{self._nid:03d}{os.urandom(2).hex()}"
         nd = json.loads(json.dumps(src))
+        nd["num"] = self._next_num()      # 复制品必须换号，否则两张卡片同号
         # 出口一律清空：出口指向的是具体节点，复制品沿用会指向原来的节点
         nd["hit_next"] = None
         nd["miss_next"] = None
