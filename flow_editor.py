@@ -320,6 +320,82 @@ def safe_name(name):
 
 # ================= 核心校验/生成器（纯函数，GUI 无关） =================
 
+# ---------- 出口规约：画布与生成器的唯一真相源 ----------
+# 历史教训：过去「链上后继要不要生成 next」只在 build_pipeline 里判断，画布
+# 却一律画实线箭头，于是出现「画布看着连着、生成结果却是断的」的欺骗性表现。
+# 现在两处共用 linear_successor()：生成时断开，画布上也必须断开。
+
+def _switch_content_leaves(flow):
+    """被 switch 候选引用的「内容起点」节点集合 —— 命中后执行它即止，
+    不沿线性链继续（防分支内容串线）。与旧 build_pipeline 内的 switch_leaf 等价。"""
+    leaves = set()
+    for nd in flow.get("nodes", {}).values():
+        if nd.get("type") != "switch":
+            continue
+        for c in parse_switch_cands((nd.get("props") or {}).get("candidates")):
+            if c.get("next"):
+                leaves.add(c["next"])
+    return leaves
+
+
+def _suppress_reason(flow, nid):
+    """出口被抑制的原因；None 表示出口正常（链上下一个，或本就是链尾）。
+      switch    —— 协议上枝干没有「直落」出口：每个候选各有内容起点，全部未中走
+                   miss 出口，所以链上下一个节点只能靠候选 next 连过去。
+      common    —— 生成 {next:[Common_*]}，进入公共节点后流程即终止，不返回本流程。
+      switch-content-leaf —— 分支内容叶，跑完即止。"""
+    nd = flow.get("nodes", {}).get(nid)
+    if nd is None:
+        return None
+    t = nd.get("type")
+    if nid in _switch_content_leaves(flow):
+        return "switch-content-leaf"
+    if t == "switch":
+        return "switch-no-fallthrough"
+    if t == "common":
+        return "common-terminal"
+    chain = flow.get("chain", [])
+    if nid in chain and chain.index(nid) + 1 < len(chain):
+        return None          # 有后继且不被抑制
+    return None              # 链尾：正常结束，不算被抑制
+
+
+def linear_successor(flow, nid):
+    """★ 单一真相源：该节点在生成时的链上后继节点 id；None = 出口被抑制或本就是链尾。
+    调用方：build_pipeline() 与 FlowEditor.redraw()。禁止在别处自行推导链上后继。"""
+    if _suppress_reason(flow, nid) is not None:
+        return None
+    chain = flow.get("chain", [])
+    if nid not in chain:
+        return None
+    i = chain.index(nid)
+    return chain[i + 1] if i + 1 < len(chain) else None
+
+
+def exits_of(flow, nid):
+    """规约一个节点的全部出口（含 suppress 原因），供生成器与画布共用。
+    返回 None 表示节点不存在。候选项键名与 parse_switch_cands 一致（t/timeout/next），
+    额外带 index。"""
+    nd = flow.get("nodes", {}).get(nid)
+    if nd is None:
+        return None
+    t = nd.get("type")
+    p = nd.get("props") or {}
+    ex = {"kind": t, "linear": linear_successor(flow, nid),
+          "suppress": _suppress_reason(flow, nid),
+          "hit": None, "miss": None, "candidates": []}
+    if t == "branch":
+        ex["hit"] = nd.get("hit_next") or None
+        ex["miss"] = nd.get("miss_next") or None
+    elif t == "switch":
+        ex["miss"] = p.get("miss_next") or None
+        for i, c in enumerate(parse_switch_cands(p.get("candidates"))):
+            item = dict(c)
+            item["index"] = i
+            ex["candidates"].append(item)
+    return ex
+
+
 def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
     """返回 (errors, warnings)"""
     errs, warns = [], []
@@ -436,25 +512,19 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
         parts = split_tpls(s)
         return parts if len(parts) > 1 else (parts[0] if parts else "")
 
-    def chain_next(i):
-        return [jname(chain[i + 1])] if i + 1 < len(chain) else []
+    def chain_next(nid):
+        # ★ 与画布共用 linear_successor：生成时断开的出口，画布上也画成断开
+        tgt = linear_successor(flow, nid)
+        return [jname(tgt)] if tgt else []
 
     out = {E: {"next": [jname(chain[0])] if chain else []}}
     end_needed = False
-    # 被 switch 候选引用的"内容起点"节点：命中后执行它即止，不沿线性链继续（防分支内容串线）
-    switch_leaf = {c.get("next") for nd in nodes.values()
-                   if nd.get("type") == "switch"
-                   for c in parse_switch_cands(nd.get("props", {}).get("candidates"))
-                   if c.get("next")} - {None}
-
-    def collapse_next(nxt, is_leaf):
-        return [] if is_leaf else nxt
 
     for i, nid in enumerate(chain):
         nd = nodes[nid]
         t, p = nd["type"], nd.get("props", {})
         base = jname(nid)
-        nxt = collapse_next(chain_next(i), nid in switch_leaf)
+        nxt = chain_next(nid)
 
         if t == "tpl_click":
             d = {
@@ -560,7 +630,8 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
 
         elif t == "branch":
             # 分叉容器（项目踩坑结论：on_error 只挂在容器节点上才生效）
-            hit, miss = nd.get("hit_next"), nd.get("miss_next")
+            exits = exits_of(flow, nid)
+            hit, miss = exits["hit"], exits["miss"]
             hit_ref = [jname(hit)] if hit else nxt        # 未连线 → 自动链中下一个
             miss_ref = [jname(miss)] if miss else [f"{E}_End"]
             if not miss:
@@ -610,7 +681,7 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
         elif t == "switch":
             # 枝干判定：候选从左到右级联判定，命中→走该候选内容（执行完枝干结束），
             # 未中→下一个候选；全部未中→ miss 出口（默认流程结束）
-            cands = parse_switch_cands(p.get("candidates"))
+            cands = exits_of(flow, nid)["candidates"]
             seq = f"{E}_{i + 1:02d}"
             if not cands:
                 continue
@@ -1529,22 +1600,31 @@ class FlowEditor:
             self._draw_overlays()
         else:
             self.bg_disp = None
-        # 主链箭头（按 chain 顺序纵向连接）
+        # 主链连线（按 chain 顺序纵向连接）：与 build_pipeline 共用 linear_successor。
+        # 生成时被截断的出口（枝干无直落出口 / 分支内容叶 / 收口节点）不画实线箭头，
+        # 改画红色虚线 + ⛔ 标记 —— 画布所见必须等于生成结果。
         ch = self.flow["chain"]
         for i in range(len(ch) - 1):
-            a, b = self.flow["nodes"][ch[i]], self.flow["nodes"][ch[i + 1]]
+            cur, nxt_id = ch[i], ch[i + 1]
+            a, b = self.flow["nodes"][cur], self.flow["nodes"][nxt_id]
             x1, y1 = a["x"] + CARD_W / 2, a["y"] + CARD_H
             x2, y2 = b["x"] + CARD_W / 2, b["y"]
-            mid = (y1 + y2) / 2
-            c.create_line(x1, y1, x1, mid, x2, mid, x2, y2 - 2, smooth=True,
-                          width=2, arrow=tk.LAST, fill=THEME["arrow"],
-                          arrowshape=ARROW_SHAPE, splinesteps=24)
+            if linear_successor(self.flow, cur) == nxt_id:
+                mid = (y1 + y2) / 2
+                c.create_line(x1, y1, x1, mid, x2, mid, x2, y2 - 2, smooth=True,
+                              width=2, arrow=tk.LAST, fill=THEME["arrow"],
+                              arrowshape=ARROW_SHAPE, splinesteps=24)
+            else:
+                by = a["y"] + (self._sw_h(a) if a["type"] == "switch" else CARD_H)
+                max_x = max(max_x, self._draw_cut_off(
+                    a["x"] + CARD_W / 2, by, y2, _suppress_reason(self.flow, cur)))
         # 分支/枝干出口连线
         for nid in ch:
             nd = self.flow["nodes"][nid]
+            exits = exits_of(self.flow, nid)
             if nd["type"] == "branch":
-                for port, target, color in (("hit_next", nd.get("hit_next"), THEME["ok"]),
-                                            ("miss_next", nd.get("miss_next"), THEME["err"])):
+                for port, target, color in (("hit_next", exits["hit"], THEME["ok"]),
+                                            ("miss_next", exits["miss"], THEME["err"])):
                     sx, sy = self._port_pos(nd, port)
                     if target and target in self.flow["nodes"]:
                         t = self.flow["nodes"][target]
@@ -1573,7 +1653,7 @@ class FlowEditor:
                                       font=FONT_SM, text=txt)
                     max_x = max(max_x, sx + 190)
             elif nd["type"] == "switch":
-                cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
+                cands = exits["candidates"]
                 for ci, cand in enumerate(cands):
                     tgt = cand.get("next")
                     sx, sy = self._port_pos(nd, f"cand{ci}")
@@ -1591,7 +1671,7 @@ class FlowEditor:
                         c.create_text(sx + 35, sy, anchor="w", fill=THEME["ok"],
                                       font=FONT_SM, text="→结束")
                     max_x = max(max_x, sx + 190)
-                mn = nd.get("props", {}).get("miss_next")
+                mn = exits["miss"]
                 sx, sy = self._port_pos(nd, "miss")
                 if mn and mn in self.flow["nodes"]:
                     t = self.flow["nodes"][mn]
@@ -1720,6 +1800,27 @@ class FlowEditor:
         """switch 卡片高度（标题+候选行+全部未中区）"""
         n = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
         return 64 + 22 * max(n, 1)
+
+    def _draw_cut_off(self, cx, y_from, y_to, reason):
+        """画「此处不向下继续」的显眼标记：红色虚线短桩 + 截止横杠 + ⛔ 徽标。
+        与 build_pipeline 共用 linear_successor/_suppress_reason：生成被截断的出口，
+        画布上也不得画成连上的样子。返回标记右边界（供 scrollregion 用）。"""
+        c = self.canvas
+        gap = max(14.0, y_to - y_from)
+        stub = min(14.0, gap * 0.45)
+        tip = y_from + 2 + stub
+        c.create_line(cx, y_from + 2, cx, tip, fill=THEME["err"], width=2, dash=(5, 3))
+        c.create_line(cx - 8, tip, cx + 8, tip, fill=THEME["err"], width=2)
+        txt = {"switch-no-fallthrough": "⛔ 枝干无直落出口（走 ✓ 出口）",
+               "switch-content-leaf": "⛔ 分支内容到此结束，不接下一节点",
+               "common-terminal": "⛔ 收口节点，进入后不返回本流程",
+               }.get(reason, "⛔ 此处不向下继续")
+        tw = 12 * len(txt) + 14
+        bx = cx + 16
+        _round_rect(c, bx, tip - 11, bx + tw, tip + 11, 5,
+                    fill="#2a1114", outline=THEME["err"])
+        c.create_text(bx + tw / 2, tip, fill="#ffb3b3", font=FONT_SM, text=txt)
+        return bx + tw
 
     def _draw_branch_labels(self):
         c = self.canvas
