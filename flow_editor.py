@@ -25,6 +25,7 @@ import re
 import sys
 import json
 import glob
+import time
 import bisect
 import hashlib
 import datetime
@@ -1530,6 +1531,235 @@ def write_pipeline_json(flow, frame_wh):
     return path, data
 
 
+# ================= 引擎日志解析（运行回放的唯一数据源） =================
+# 手机端 files/maa_logs/maafw.log 里带着逐节点的结构化事件，PC 侧只读解析即可实现
+# 「日志回传 → 节点高亮 → 识别框可视化」，不需要改安卓端、不需要新协议。
+# 日志是追加写、不轮转的，所以用 tail -c +<offset> 做增量读取。
+
+NODE_EVENT_RE = re.compile(r"\[msg=Node\.(?P<kind>[A-Za-z.]+)\]\s*\[details=(?P<json>\{.*\})\]\s*$")
+TASK_TIMEOUT_RE = re.compile(r"Task timeout \[pretask\.name=(?P<name>[^\]]+)\]"
+                             r" \[duration_since\(start_clock\)=(?P<elapsed>-?\d+)ms\]"
+                             r" \[pretask\.reco_timeout=(?P<timeout>-?\d+)ms\]")
+TASK_END_RE = re.compile(r"task end: \[cb_detail=(?P<json>\{.*?\})\]\s*\[ret=(?P<ret>true|false)\]")
+ENGINE_SIZE_RE = re.compile(r"\[image_target_width_=(?P<w>\d+)\] "
+                            r"\[image_target_height_=(?P<h>\d+)\]")
+TS_RE = re.compile(r"^\[(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]")
+
+
+@dataclass
+class NodeEvent:
+    """一条运行事件。box/point 都是【引擎识别帧】坐标（虚拟屏原生帧）。"""
+    ts: str = ""
+    kind: str = ""            # 例如 Recognition.Succeeded / NextList.Failed / TaskTimeout
+    name: str = ""            # pipeline 节点名
+    level: str = "info"       # info | ok | warn | err
+    box: list | None = None   # 识别命中区域 [x,y,w,h]
+    score: float | None = None
+    point: list | None = None # 动作落点 [x,y]
+    size: list | None = None  # 引擎识别帧尺寸 [w,h]（EngineFrame 事件）
+    elapsed: int | None = None
+    timeout: int | None = None
+    detail: str = ""          # 界面上一行摘要
+    raw: str = ""
+
+    def summary(self):
+        base = self.name or "-"
+        if self.kind == "EngineFrame":
+            return f"引擎识别帧 {self.size[0]}×{self.size[1]}"
+        if self.kind == "Recognition.Succeeded":
+            s = f"{self.score:.3f}" if self.score is not None else "?"
+            return f"识别命中 {base}  分数 {s}"
+        if self.kind == "Recognition.Failed":
+            s = f"{self.score:.3f}" if self.score is not None else "-"
+            return f"识别未命中 {base}  最高 {s}"
+        if self.kind in ("Action.Starting", "Action.Succeeded", "Action.Failed"):
+            tail = f" → {self.point}" if self.point else ""
+            return f"动作 {self.kind.split('.')[1]} {base}{tail}"
+        if self.kind == "NextList.Starting":
+            return f"开始尝试 {base} 的 next"
+        if self.kind == "NextList.Succeeded":
+            return f"{base} 的 next 命中"
+        if self.kind == "NextList.Failed":
+            return f"{base} 的 next 全部未命中"
+        if self.kind == "TaskTimeout":
+            return (f"超时：{base} 等待 {self.elapsed}ms"
+                    f"（该节点 timeout={self.timeout}ms）")
+        if self.kind == "TaskEnd":
+            return f"任务结束 entry={base} ret={self.detail}"
+        if self.kind == "PipelineNode.Starting":
+            return f"节点开始 {base}"
+        if self.kind == "PipelineNode.Succeeded":
+            return f"节点完成 {base}"
+        if self.kind == "PipelineNode.Failed":
+            return f"节点失败 {base}"
+        if self.kind.startswith("WaitFreezes."):
+            return f"等待画面静止 {self.kind.split('.')[1]} {base}"
+        return f"{self.kind} {base}"
+
+
+def _deep_get(obj, path):
+    cur = obj
+    for k in path:
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        elif isinstance(cur, list) and isinstance(k, int) and -len(cur) <= k < len(cur):
+            cur = cur[k]
+        else:
+            return None
+    return cur
+
+
+def parse_engine_log(text):
+    """把引擎日志文本解析成 NodeEvent 列表（纯函数，可离线测）。
+    不认识的行直接跳过，不抛异常 —— 引擎日志格式跨版本会变。"""
+    events = []
+    for line in text.splitlines():
+        if not line:
+            continue
+        ts = TS_RE.match(line)
+        ts = ts.group("ts") if ts else ""
+
+        m = NODE_EVENT_RE.search(line)
+        if m:
+            kind = m.group("kind")
+            try:
+                details = json.loads(m.group("json"))
+            except ValueError:
+                continue
+            name = str(details.get("name") or "")
+            ev = NodeEvent(ts=ts, kind=kind, name=name, raw=line)
+            reco = details.get("reco_details") or {}
+            act = details.get("action_details") or {}
+            box = reco.get("box")
+            if isinstance(box, list) and len(box) == 4:
+                ev.box = box
+            best = _deep_get(reco, ["detail", "best"])
+            if isinstance(best, dict) and isinstance(best.get("score"), (int, float)):
+                ev.score = float(best["score"])
+            if ev.score is None:
+                allr = _deep_get(reco, ["detail", "all"])
+                if isinstance(allr, list) and allr:
+                    sc = [r.get("score") for r in allr
+                          if isinstance(r, dict) and isinstance(r.get("score"), (int, float))]
+                    if sc:
+                        ev.score = float(max(sc))
+            pt = _deep_get(act, ["detail", "point"])
+            if isinstance(pt, list) and len(pt) == 2:
+                ev.point = pt
+            if kind.endswith("Succeeded"):
+                ev.level = "ok"
+            elif kind.endswith("Failed"):
+                ev.level = "err" if kind.startswith(("PipelineNode", "Action")) else "warn"
+            if kind == "Recognition.Succeeded":
+                ev.level = "ok"
+            ev.detail = ev.summary()
+            events.append(ev)
+            continue
+
+        m = TASK_TIMEOUT_RE.search(line)
+        if m:
+            ev = NodeEvent(ts=ts, kind="TaskTimeout", name=m.group("name"),
+                           elapsed=int(m.group("elapsed")), timeout=int(m.group("timeout")),
+                           level="warn", raw=line)
+            ev.detail = ev.summary()
+            events.append(ev)
+            continue
+
+        m = ENGINE_SIZE_RE.search(line)
+        if m:
+            ev = NodeEvent(ts=ts, kind="EngineFrame",
+                           size=[int(m.group("w")), int(m.group("h"))],
+                           level="info", raw=line)
+            ev.detail = ev.summary()
+            events.append(ev)
+            continue
+
+        m = TASK_END_RE.search(line)
+        if m:
+            try:
+                cb = json.loads(m.group("json"))
+            except ValueError:
+                cb = {}
+            ev = NodeEvent(ts=ts, kind="TaskEnd", name=str(cb.get("entry") or ""),
+                           level="ok" if m.group("ret") == "true" else "err", raw=line)
+            ev.detail = m.group("ret")
+            ev.detail = f"entry={ev.name} ret={m.group('ret')}"
+            events.append(ev)
+    return events
+
+
+def node_id_of_pipeline_name(flow, name):
+    """pipeline 节点名 → 画布节点 id。
+    branch 的 _Hit、switch 展开的 _Jk/_Jk_Hit 都归到所属的那个画布节点；
+    收口 VF_x_End 与流程外节点（Common_*）返回 None。"""
+    if not name:
+        return None
+    m = _name_to_node(flow)
+    if name in m:
+        return m[name]
+    if name.endswith("_Hit") and name[:-4] in m:
+        return m[name[:-4]]
+    mm = re.match(r"^(.*)_J\d+(_Hit)?$", name)
+    if mm:
+        cand = f"{mm.group(1)}_J1"
+        if cand in m:
+            return m[cand]
+    return None
+
+
+class EngineLogReader:
+    """增量读手机上的引擎日志。只读，不写手机任何文件。"""
+    REMOTE = "files/maa_logs/maafw.log"
+
+    def __init__(self, adb_call=None):
+        self._adb_call = adb_call or adb
+
+    def mark(self):
+        """记录当前日志字节数，作为增量起点"""
+        r = self._adb_call("shell",
+                           f"run-as {PKG} sh -c 'wc -c < {self.REMOTE}'", timeout=30)
+        out = adb_text(r)
+        try:
+            return int(out.split()[0])
+        except (IndexError, ValueError):
+            return 0
+
+    def read_since(self, offset):
+        """只取新增部分：tail -c +<offset+1>（设备上 tail 支持该用法，已实测）"""
+        r = self._adb_call("shell",
+                           f"run-as {PKG} sh -c 'tail -c +{offset + 1} {self.REMOTE}'",
+                           timeout=60)
+        return adb_text(r) + "\n"
+
+    def read_all(self):
+        r = self._adb_call("exec-out", "run-as", PKG, "cat", self.REMOTE, timeout=120)
+        data = r.stdout or b""
+        return data.decode("utf-8", "replace")
+
+    def read_tail(self, max_bytes=2_000_000):
+        """只取日志末尾若干字节。历史日志有十几 MB，离线回放全量解析既慢又没必要。"""
+        r = self._adb_call("shell",
+                           f"run-as {PKG} sh -c 'tail -c -{max_bytes} {self.REMOTE}'",
+                           timeout=90)
+        return adb_text(r) + "\n"
+
+
+def remote_pipeline_hash(name, adb_call=None):
+    """取手机上的 vf_<name>.json，去掉 $meta 后重算指纹。
+    与本地 $meta.pipelineHash 比对即可回答「手机上跑的是不是本地这一版」。"""
+    adb_call = adb_call or adb
+    remote = f"files/taskpacks/whmx/pipeline/vf_{safe_name(name)}.json"
+    r = adb_call("exec-out", "run-as", PKG, "cat", remote, timeout=60)
+    raw = (r.stdout or b"").decode("utf-8", "replace")
+    if not raw.strip():
+        return None, "读不到手机上的 " + remote
+    try:
+        data = jsonc_loads(raw)
+    except ValueError as ex:
+        return None, f"手机上的 {remote} 解析失败: {ex}"
+    return pipeline_fingerprint(data), None
+
+
 # ================= ADB =================
 
 def adb(*args, timeout=90):
@@ -1812,6 +2042,13 @@ class FlowEditor:
         self._nid = 0
         self._syncing = False
         self._issues_by_node = {}  # node_id -> [Issue]，供画布/属性面板标注问题节点
+        # 运行回放（P1-8）状态：事件流 + 当前高亮节点/识别框/动作落点
+        self._replay = {"events": [], "offset": 0, "running": False}
+        self._replay_hl = None
+        self._replay_box = None
+        self._replay_point = None
+        self._engine_frame = None   # 引擎识别帧尺寸（从日志的 EngineFrame 事件得知）
+        self.replay_win = None
 
         self._build_toolbar()
         self._build_statusbar()
@@ -1964,6 +2201,7 @@ class FlowEditor:
         ttk.Label(left, text="  背景帧 · 对照坐标", style="Title.TLabel").pack(
             anchor="w", padx=8, pady=(0, 4))
         self._flat_btn(left, "⟳  抓帧 (F5)", self.on_capture).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(left, "🩺  运行回放…", self.on_replay_open).pack(fill="x", padx=8, pady=1)
         self._flat_btn(left, "✛  框选模板…", self.on_pick_template).pack(fill="x", padx=8, pady=1)
         self._flat_btn(left, "📂  打开帧图…", self.on_open_frame).pack(fill="x", padx=8, pady=1)
         ttk.Checkbutton(left, text="显示背景帧", variable=self.show_bg,
@@ -2462,6 +2700,8 @@ class FlowEditor:
         # 叠加层（ROI / 点击点 / 滑动线）放在最后画：它是「拿帧对照参数」的依据，
         # 被节点卡片盖住就失去意义了
         self._draw_overlays()
+        # 回放高亮与识别框（有回放事件时才有东西画）
+        self._draw_replay_overlay()
         if ch:
             first = self.flow["nodes"][ch[0]]
             entry_txt = f"▶ 入口 VF_{self.flow['name']}"
@@ -3371,6 +3611,344 @@ class FlowEditor:
         self.status(f"已取坐标 ({x},{y})")
         self.build_prop_panel()
         self.redraw()
+
+    # ---------- 运行回放（P1-8） ----------
+    # 数据来源全部是手机上已经存在的引擎日志（只读），不改安卓端、不加新协议。
+    # 触发运行用 am start --es entry：App 每次 runTask 都会重新加载任务包，
+    # 所以新增/更新的 pipeline 会被带上，不需要 force-stop（也就不会清掉虚拟屏）。
+
+    def on_replay_open(self):
+        if getattr(self, "replay_win", None) and self.replay_win.winfo_exists():
+            self.replay_win.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self.replay_win = win
+        win.title("运行回放 · 节点高亮 / 识别框")
+        win.configure(bg=THEME["panel"])
+        win.geometry("720x520+%d+%d" % (self.root.winfo_rootx() + 120,
+                                        self.root.winfo_rooty() + 160))
+        win.transient(self.root)
+
+        top = ttk.Frame(win)
+        top.pack(fill="x", padx=10, pady=(10, 4))
+        self.replay_entry_var = tk.StringVar(value=entry_name(self.flow))
+        ttk.Label(top, text="入口", style="Dim.TLabel").pack(side="left")
+        ttk.Entry(top, textvariable=self.replay_entry_var, width=26,
+                  font=FONT_SM).pack(side="left", padx=6)
+        self._flat_btn(top, "▶ 运行并回放", self.replay_start, bg="#2c6e48",
+                       fg="#eafff2", hover="#3a8a5c", font=FONT_B).pack(side="left", padx=4)
+        self._flat_btn(top, "⟳ 只读日志（不运行）", self.replay_readonly,
+                       font=FONT_SM).pack(side="left", padx=4)
+        self._flat_btn(top, "⌫ 清空", self.replay_clear, font=FONT_SM).pack(side="left", padx=4)
+
+        self.replay_status = tk.StringVar(value="未开始")
+        ttk.Label(win, textvariable=self.replay_status, style="Dim.TLabel",
+                  wraplength=690, justify="left").pack(anchor="w", padx=12)
+
+        cols = ("ts", "node", "kind", "detail")
+        self.replay_tree = ttk.Treeview(win, columns=cols, show="headings", height=18)
+        for c, w, t in (("ts", 96, "时间"), ("node", 190, "节点"),
+                        ("kind", 130, "事件"), ("detail", 260, "摘要")):
+            self.replay_tree.heading(c, text=t)
+            self.replay_tree.column(c, width=w, anchor="w")
+        self.replay_tree.tag_configure("ok", foreground="#8fe0a8")
+        self.replay_tree.tag_configure("warn", foreground=THEME["warn"])
+        self.replay_tree.tag_configure("err", foreground="#ff9a9a")
+        vsb = ttk.Scrollbar(win, orient="vertical", command=self.replay_tree.yview)
+        self.replay_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y", pady=(0, 10))
+        self.replay_tree.pack(fill="both", expand=True, padx=(10, 0), pady=(6, 0))
+        self.replay_tree.bind("<<TreeviewSelect>>", self.replay_select)
+
+        self.replay_hint = ttk.Label(
+            win, style="Dim.TLabel", justify="left", wraplength=690,
+            text="点时间轴任一行 → 画布聚焦该节点，并把当次的识别框/动作落点画到帧上。"
+                 "识别框坐标与背景帧同一坐标系，可直接与 ROI 对照。")
+        self.replay_hint.pack(anchor="w", padx=12, pady=(4, 10))
+        win.protocol("WM_DELETE_WINDOW", self.replay_close)
+
+    def replay_clear(self):
+        self._replay = {"events": [], "offset": 0, "running": False}
+        self._replay_hl = None
+        self._replay_box = None
+        self._replay_point = None
+        if getattr(self, "replay_tree", None) and self.replay_tree.winfo_exists():
+            for iid in self.replay_tree.get_children():
+                self.replay_tree.delete(iid)
+        self._replay_mark = None
+        self.redraw()
+
+    def replay_readonly(self):
+        """只读现有日志做离线回放（不动手机、不运行任务）—— 调试解析器最方便"""
+        self.replay_clear()
+        self.replay_worker(run=False)
+
+    def replay_start(self):
+        self.replay_clear()
+        # Tk 变量只能在主线程读，先取出来再交给工作线程
+        self.replay_worker(run=True, entry=self.replay_entry_var.get().strip())
+
+    def replay_worker(self, run, entry=""):
+        q = queue.Queue()
+        self._replay_q = q
+        threading.Thread(target=self._replay_worker, args=(run, entry, q),
+                         daemon=True).start()
+        self.root.after(80, lambda: self._replay_poll(q))
+
+    def _replay_worker(self, run, entry, q):
+        reader = EngineLogReader()
+        MAX_OFFLINE = 800          # 离线回放最多展示多少条（历史日志有几万条事件）
+        try:
+            if not project_paths.PACK_OK:
+                q.put(("status", "找不到任务包，无法回放", ""))
+                q.put(("done", None, ""))
+                return
+            if run:
+                if not entry:
+                    q.put(("status", "入口名为空", ""))
+                    q.put(("done", None, ""))
+                    return
+                # 版本核对：手机上跑的是不是本地这一版
+                want = pipeline_fingerprint(build_pipeline(self.flow, self.frame_wh))
+                q.put(("status", "核对手机上该流程的版本…", ""))
+                got, err = remote_pipeline_hash(self.flow["name"])
+                if err:
+                    q.put(("note", f"⚠ 版本核对失败：{err}", "warn"))
+                elif got != want:
+                    q.put(("note", "⚠ 手机上的 pipeline 与本地当前版本不一致 —— "
+                                   "这次回放跑的是手机上那一份。要先同步请点工具栏"
+                                   "「⇲ 同步到手机」再回放。", "warn"))
+                else:
+                    q.put(("note", "✓ 手机上的 pipeline 与本地当前版本一致", "ok"))
+                q.put(("status", "记录日志起点…", ""))
+                offset = reader.mark()
+                q.put(("status", f"触发入口 {entry}（不 force-stop，虚拟屏不受影响）…", ""))
+                self._adb_run("shell", "am", "start", "-n", f"{PKG}/.MainActivity")
+                time.sleep(1.2)
+                self._adb_run("shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+                              "--activity-single-top", "--es", "entry", entry)
+                q.put(("offset", offset, ""))
+            else:
+                q.put(("status", "只读回放：读取手机日志并按当前流程筛选…", ""))
+                events = parse_engine_log(reader.read_all())
+                picked = [e for e in events
+                          if node_id_of_pipeline_name(self.flow, e.name)]
+                if picked:
+                    picked = picked[-MAX_OFFLINE:]
+                    q.put(("note", f"已从 {len(events)} 条历史事件里筛出本流程的 "
+                                   f"{len(picked)} 条（只读回放，未运行任务）", "ok"))
+                else:
+                    picked = events[-MAX_OFFLINE:]
+                    q.put(("note", f"历史日志里没有本流程（{self.flow['name']}）的事件，"
+                                   f"已载入最后 {len(picked)} 条作参考", "warn"))
+                q.put(("events", picked, ""))
+                q.put(("status", f"只读回放：载入 {len(picked)} 条事件", ""))
+                q.put(("done", None, ""))
+                return
+
+            deadline = time.time() + 300
+            while time.time() < deadline:
+                text = reader.read_since(offset)
+                if text.strip():
+                    offset += len(text.encode("utf-8", "replace"))
+                    events = parse_engine_log(text)
+                    q.put(("offset", offset, ""))
+                    if events:
+                        q.put(("events", events, ""))
+                    if any(e.kind == "TaskEnd" for e in events):
+                        q.put(("status", "任务已结束", ""))
+                        break
+                time.sleep(1.5)
+            else:
+                q.put(("status", "回放窗口已到 300 秒上限，停止监听", ""))
+        except Exception as ex:                                  # noqa: BLE001
+            q.put(("note", f"✗ 回放失败：{ex}", "err"))
+        finally:
+            q.put(("done", None, ""))
+
+    def _adb_run(self, *args):
+        return subprocess.run([ADB, "-s", DEVICE, *args], capture_output=True, timeout=90)
+
+    def _replay_poll(self, q):
+        if not (getattr(self, "replay_win", None) and self.replay_win.winfo_exists()):
+            return
+        got_events = False
+        try:
+            while True:
+                kind, a, b = q.get_nowait()
+                if kind == "status":
+                    self.replay_status.set(a)
+                elif kind == "note":
+                    self.log((("⚠ " if b == "warn" else "") + a), b or "ok")
+                    self.replay_status.set(a)
+                elif kind == "offset":
+                    self._replay["offset"] = a
+                elif kind == "events":
+                    if a:
+                        self._replay["events"].extend(a)
+                        for e in a:
+                            if e.kind == "EngineFrame" and e.size:
+                                self._engine_frame = tuple(e.size)
+                        self._replay_add_rows(a)
+                        self._replay_update_frame_note()
+                        got_events = True
+                elif kind == "done":
+                    if got_events:
+                        self._replay_show_last()
+                    return
+        except queue.Empty:
+            pass
+        if got_events:
+            self._replay_show_last()
+        self.root.after(150, lambda: self._replay_poll(q))
+
+    def _replay_update_frame_note(self):
+        """把「引擎识别帧 vs 背景帧」的一致性显示在面板上。
+        虚拟屏分辨率/方向变了的时候，模板与固定坐标全部会失准，这里一眼可见。"""
+        if not (getattr(self, "replay_win", None) and self.replay_win.winfo_exists()):
+            return
+        eng = getattr(self, "_engine_frame", None)
+        W, H = self.frame_wh
+        if not eng:
+            return
+        if eng[0] == W and eng[1] == H:
+            self.replay_hint.config(
+                text=f"引擎识别帧 {eng[0]}×{eng[1]} 与背景帧 {W}×{H} 一致 → "
+                     f"识别框/落点可直接叠加对照。点时间轴任一行可聚焦节点。")
+        else:
+            self.replay_hint.config(
+                text=f"⚠ 引擎识别帧 {eng[0]}×{eng[1]} 与背景帧 {W}×{H} 不一致："
+                     f"说明虚拟屏分辨率或方向变了，此时模板与固定坐标都会失准；"
+                     f"为避免画出错误位置的框，本面板不叠加识别框。"
+                     f"请重抓帧（F5）确认画面，并检查虚拟屏是否横屏 1280x720。")
+
+    def _replay_add_rows(self, events):
+        tr = self.replay_tree
+        base = len(self._replay["events"]) - len(events)
+        for i, e in enumerate(events):
+            try:
+                tr.insert("", "end", iid=str(base + i),
+                          values=(e.ts[-12:], e.name or "-", e.kind, e.detail),
+                          tags=(e.level,))
+            except tk.TclError:
+                pass
+        kids = tr.get_children()
+        if kids:
+            tr.see(kids[-1])
+
+    def _replay_show_last(self):
+        """自动跟随：停到最后一个「能映射到画布节点」的事件上。
+        末尾常见 TaskEnd / 入口节点这类映射不到的事件，若直接取最后一条会丢掉高亮。"""
+        evs = self._replay["events"]
+        for e in reversed(evs):
+            if node_id_of_pipeline_name(self.flow, e.name):
+                self.replay_select(None, event=e)
+                return
+        if evs:
+            self.replay_select(None, event=evs[-1])
+
+    def replay_select(self, _e, event=None):
+        """点时间轴某行（或传入事件）→ 画布聚焦 + 帧上画识别框/落点"""
+        if event is None:
+            sel = self.replay_tree.selection()
+            if not sel:
+                return
+            try:
+                event = self._replay["events"][int(sel[0])]
+            except (ValueError, IndexError):
+                return
+        nid = node_id_of_pipeline_name(self.flow, event.name)
+        self._replay_hl = nid
+        self._replay_box = event.box
+        self._replay_point = event.point
+        if nid:
+            self.sel = nid
+            self.build_prop_panel()
+            self._focus_node(nid)
+        self.status(event.detail)
+        self.redraw()
+
+    def _focus_node(self, nid):
+        """把画布滚到该节点（纵向居中，横向尽量露出）"""
+        nd = self.flow["nodes"].get(nid)
+        if not nd:
+            return
+        sr = self.canvas.cget("scrollregion").split()
+        if len(sr) != 4:
+            return
+        x0, y0, x1, y1 = (float(v) for v in sr)
+        cw = max(1, self.canvas.winfo_width())
+        chh = max(1, self.canvas.winfo_height())
+        if y1 > y0:
+            self.canvas.yview_moveto(max(0.0, (nd["y"] - chh / 3) / (y1 - y0)))
+        if x1 > x0:
+            self.canvas.xview_moveto(max(0.0, (nd["x"] - cw / 3) / (x1 - x0)))
+
+    def replay_close(self):
+        win = getattr(self, "replay_win", None)
+        self.replay_win = None
+        if win:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+        self._replay_hl = None
+        self._replay_box = None
+        self._replay_point = None
+        self.redraw()
+
+    def _draw_replay_overlay(self):
+        """把当前回放事件的识别框/落点画到帧上，并给命中的节点加高亮圈。
+        ★ 坐标系守卫：只有当【引擎识别帧】与【当前背景帧】尺寸一致时才叠加 ——
+        尺寸不一致说明虚拟屏分辨率/方向变了（例如竖屏 720x1608 vs 横屏 1280x720），
+        这时按帧坐标画的框会落在错误位置，宁可不画并明确提示。"""
+        nid = getattr(self, "_replay_hl", None)
+        box = getattr(self, "_replay_box", None)
+        point = getattr(self, "_replay_point", None)
+        if not nid and not box and not point:
+            return
+        c = self.canvas
+        nd = self.flow["nodes"].get(nid) if nid else None
+        if nd is not None:
+            h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
+            _round_rect(c, nd["x"] - 5, nd["y"] - 5, nd["x"] + CARD_W + 5,
+                        nd["y"] + h + 5, 14, outline="#41d1a0", width=2, fill="")
+            c.create_text(nd["x"] + CARD_W + 10, nd["y"] - 5, anchor="nw",
+                          fill="#41d1a0", font=FONT_SM, text="◀ 回放")
+        if not self.bg_disp:
+            return
+        ox, oy, dw, dh = self.bg_disp
+        W, H = self.frame_wh
+        eng = getattr(self, "_engine_frame", None)
+        mismatch = None
+        if eng and (eng[0] != W or eng[1] != H):
+            mismatch = (eng, (W, H))
+        if box and (box[0] + box[2] > W or box[1] + box[3] > H):
+            mismatch = mismatch or ((box[2], box[3]), (W, H))
+        px = lambda x: ox + x * dw / W
+        py = lambda y: oy + y * dh / H
+        if mismatch:
+            (ew, eh), (bw, bh) = mismatch
+            txt = (f"⚠ 引擎识别帧 {ew}×{eh} ≠ 当前背景帧 {bw}×{bh}，"
+                   f"识别框/落点无法定位，未叠加（请重抓帧确认虚拟屏分辨率）")
+            tw = min(dw - 20, 13 * len(txt) + 20)
+            _round_rect(c, ox + 6, oy + 6, ox + 6 + tw, oy + 34, 6,
+                        fill="#2a1114", outline=THEME["err"])
+            c.create_text(ox + 16, oy + 20, anchor="w", fill="#ffb3b3",
+                          font=FONT_SM, text=txt)
+            return
+        if box:
+            x, y, w, hh = box
+            c.create_rectangle(px(x), py(y), px(x + w), py(y + hh),
+                               outline="#41d1a0", width=2)
+            c.create_text(px(x), py(y) - 8, anchor="sw", fill="#41d1a0",
+                          font=FONT_SM, text="识别框")
+        if point:
+            x, y = point
+            c.create_oval(px(x) - 8, py(y) - 8, px(x) + 8, py(y) + 8,
+                          outline="#41d1a0", width=2)
+            c.create_line(px(x) - 14, py(y), px(x) + 14, py(y), fill="#41d1a0")
+            c.create_line(px(x), py(y) - 14, px(x), py(y) + 14, fill="#41d1a0")
 
     # ---------- 校验/生成/同步 ----------
 
