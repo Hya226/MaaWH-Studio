@@ -3385,20 +3385,33 @@ class FlowEditor:
                 c.create_text(x + CARD_W - 12, cy, anchor="e", font=self.f_sm,
                               fill=THEME["text_dim"], text=f"{cnd['timeout']}ms",
                               tags=tags)
+            # 下沿的球：候选（绿，带序号）/ 全部未中（红）/ 新增分支（＋）
+            # —— 拖球到目标节点即可连出该分支；＋ 球拖出去会新建一个候选
+            for ci in range(len(cands)):
                 hx, hy = self._port_pos(nd, f"cand{ci}")
-                c.create_oval(hx - 9, hy - 9, hx + 9, hy + 9,
+                c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
                               fill="#1c2b1f", outline="")
-                c.create_oval(hx - 5, hy - 5, hx + 5, hy + 5, fill=THEME["ok"],
+                c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=THEME["ok"],
                               outline="#ffffff", width=1,
                               tags=("port", f"port:{nid}:cand{ci}"))
-            # 全部未中出口
+                c.create_text(hx, hy - 15, font=self.f_sm, fill=THEME["ok"],
+                              text=str(ci + 1), tags=tags)
             mx, my = self._port_pos(nd, "miss")
-            c.create_text(x + 16, my, anchor="w", font=self.f_sm,
-                          fill=THEME["err"], text="全部未中 ⤷", tags=tags)
-            c.create_oval(mx - 9, my - 9, mx + 9, my + 9, fill="#2e1c1e", outline="")
-            c.create_oval(mx - 5, my - 5, mx + 5, my + 5, fill=THEME["err"],
+            c.create_oval(mx - 10, my - 10, mx + 10, my + 10, fill="#2e1c1e", outline="")
+            c.create_oval(mx - 6, my - 6, mx + 6, my + 6, fill=THEME["err"],
                           outline="#ffffff", width=1,
                           tags=("port", f"port:{nid}:miss"))
+            c.create_text(mx, my - 15, font=self.f_sm, fill=THEME["err"],
+                          text="✗", tags=tags)
+            # 「＋」球：拖到任意节点 → 新建一个候选并直接连过去（连完会再冒一个）
+            nx, ny = self._port_pos(nd, "new")
+            c.create_oval(nx - 10, ny - 10, nx + 10, ny + 10,
+                          fill="#20242f", outline="")
+            c.create_oval(nx - 6, ny - 6, nx + 6, ny + 6, fill="#8fa0c8",
+                          outline="#ffffff", width=1,
+                          tags=("port", f"port:{nid}:new"))
+            c.create_text(nx, ny - 15, font=self.f_sm, fill="#b9c6e8",
+                          text="＋", tags=tags)
         else:
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
                           font=self.f_sm, text=spec["summary"](nd["props"])[:12], tags=tags)
@@ -3446,19 +3459,24 @@ class FlowEditor:
         if nd["type"] == "loop":
             return nd["x"] + CARD_W, nd["y"] + CARD_H * 0.5
         if nd["type"] == "switch":
+            # 枝干的球排在下沿：候选球（绿，带序号）+ 全部未中球（红）+ 新增球（＋）
             cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
-            n = max(len(cands), 1)
+            n = len(cands)
+            step = min(32.0, (CARD_W - 44) / max(1, n + 2))
+            by = nd["y"] + self._sw_h(nd)
             if port == "miss":
-                return nd["x"] + CARD_W, nd["y"] + 40 + 22 * n + 6
+                return nd["x"] + 22 + step * n, by
+            if port == "new":
+                return nd["x"] + 22 + step * (n + 1), by
             i = int(port[4:])   # "cand0" → 0
-            return nd["x"] + CARD_W, nd["y"] + 40 + 22 * i + 12
+            return nd["x"] + 22 + step * i, by
         y = nd["y"] + (CARD_H * 0.32 if port == "hit_next" else CARD_H * 0.68)
         return nd["x"] + CARD_W, y
 
     def _sw_h(self, nd):
-        """switch 卡片高度（标题+候选行+全部未中区）"""
+        """switch 卡片高度（标题 + 候选行 + 底部的球那一行）"""
         n = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
-        return 64 + 22 * max(n, 1)
+        return 64 + 22 * max(n, 1) + 22
 
     def _draw_cut_off(self, cx, y_from, y_to, reason):
         """画「此处不向下继续」的显眼标记：红色虚线短桩 + 截止横杠 + ⛔ 徽标。
@@ -3536,17 +3554,10 @@ class FlowEditor:
                               font=self.f_sm, text="✗未中")
             elif nd["type"] == "switch":
                 cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
-                for ci, cnd in enumerate(cands):
-                    px, py = self._port_pos(nd, f"cand{ci}")
-                    _round_rect(c, px - 12, py - 11, px + 38, py + 11, 5,
-                                fill="#14161d", outline=THEME["card_line"])
-                    c.create_text(px - 2, py, anchor="e", fill=THEME["ok"],
-                                  font=self.f_sm, text=f"✓{ci + 1}")
-                mx, my = self._port_pos(nd, "miss")
-                _round_rect(c, mx - 12, my - 11, mx + 44, my + 11, 5,
-                            fill="#14161d", outline=THEME["card_line"])
-                c.create_text(mx - 2, my, anchor="e", fill=THEME["err"],
-                              font=self.f_sm, text="✗全未中")
+                # 球上的序号/✗/＋ 已在 _draw_node 里画好，这里只标一次「出口」说明
+                nx, ny = self._port_pos(nd, "new")
+                c.create_text(nx, ny + 14, anchor="n", fill="#b9c6e8",
+                              font=self.f_sm, text="拖我加分支")
 
     def _draw_overlays(self):
         """背景帧上叠加显示选中节点的 ROI / 点击点 / 滑动线"""
@@ -3928,8 +3939,19 @@ class FlowEditor:
             return
         if self.wire:
             hit = self._hit_test(self.wire["mx"], self.wire["my"])
-            src = self.flow["nodes"][self.wire["from"]]
+            src_id = self.wire["from"]
+            src = self.flow["nodes"][src_id]
             port = self.wire["port"]
+            if port == "new" and src.get("type") == "switch":
+                # 「＋」球：拖到目标节点 → 新建一个候选并直接连过去（一步到位）
+                self.wire = None
+                if hit and hit[0] == "node" and hit[1] != src_id:
+                    self.redraw()
+                    self._new_candidate_dialog(src_id, hit[1])
+                else:
+                    self.redraw()
+                    self.status("把卡片下沿的「＋」球拖到目标节点，即可新建一条分支")
+                return
             if hit and hit[0] == "node" and hit[1] != self.wire["from"]:
                 self._snapshot()
                 self._set_wire(src, port, hit[1])
@@ -4196,30 +4218,83 @@ class FlowEditor:
 
         row = ttk.Frame(wrap)
         row.pack(fill="x", padx=(8, 0), pady=(6, 0))
-        e_t = ttk.Entry(row, font=FONT_SM, width=17)
+        # 识别目标二选一：模板（下拉 + 弹窗选择）/ OCR 文字（手输）
+        # —— 对应协议里的 '模板名.png' 与 'OCR:文字' 两种写法，不用用户自己拼前缀
+        mode = tk.StringVar(value="tpl")
+        mrow = ttk.Frame(wrap)
+        mrow.pack(fill="x", padx=(8, 0), pady=(4, 0))
+        ttk.Radiobutton(mrow, text="模板", value="tpl", variable=mode,
+                        command=lambda: _mode_changed()).pack(side="left")
+        ttk.Radiobutton(mrow, text="OCR 文字", value="ocr", variable=mode,
+                        command=lambda: _mode_changed()).pack(side="left", padx=(8, 0))
+        e_t = ttk.Combobox(row, font=FONT_SM, width=20, values=self.templates)
         e_t.pack(side="left")
+
+        def _pick_tpl(_e=None):
+            items = _tpl_candidates(self.templates, e_t.get())
+            if not items:
+                self.log("任务包 whmx/image 里没有模板图（先用框选工具做一张）", "warn")
+                return
+            self._show_tpl_pop(e_t, items, lambda picked: (e_t.set(picked),
+                                                           _preview()))
+        self._flat_btn(row, "▾ 选", _pick_tpl, padx=6, font=FONT_SM).pack(
+            side="left", padx=3)
         e_d = ttk.Entry(row, width=6, font=FONT_SM)
         e_d.insert(0, "3000")
         e_d.pack(side="left", padx=4)
         e_m = tk.BooleanVar(value=False)
         ttk.Checkbutton(wrap, text="命中后回并主线（不勾=内容跑完即结束）",
                         variable=e_m).pack(anchor="w", padx=(8, 0), pady=(2, 0))
+        prev = ttk.Label(wrap, background=THEME["card"])
+        prev.pack(anchor="w", padx=(8, 0), pady=(2, 0))
+
+        def _preview():
+            """把选中的模板缩略图显示出来，避免选错（框选出来的原尺寸图很小）"""
+            name = e_t.get().strip()
+            if mode.get() != "tpl" or not name:
+                prev.config(image="", text="")
+                return
+            got = self._get_tpl_photo(name)
+            if got:
+                _, photo, _, _ = got
+                prev.config(image=photo, text="")
+                prev.image = photo
+            else:
+                prev.config(image="", text="模板不存在")
+
+        def _mode_changed():
+            if mode.get() == "ocr":
+                e_t.config(values=())
+                prev.config(image="", text="")
+            else:
+                self.templates = list_templates()
+                e_t.config(values=self.templates)
+                _preview()
 
         def _fill_sel(_e=None):
             sel = lb.curselection()
             if not sel:
                 return
             c = _cands()[sel[0]]
-            e_t.delete(0, "end")
-            e_t.insert(0, c.get("t", ""))
+            t = str(c.get("t", ""))
+            if t.lower().startswith("ocr:"):
+                mode.set("ocr")
+                e_t.config(values=())
+                e_t.set(t[4:].strip())
+            else:
+                mode.set("tpl")
+                e_t.config(values=self.templates)
+                e_t.set(t)
             e_d.delete(0, "end")
             e_d.insert(0, str(c.get("timeout", 3000)))
             e_m.set(bool(c.get("mergeBack")))
+            _preview()
 
         def _read_form():
-            t = e_t.get().strip()
-            if not t:
+            raw = str(e_t.get()).strip()
+            if not raw:
                 return None
+            t = ("OCR:" + raw) if mode.get() == "ocr" else raw
             try:
                 timeout = max(500, int(e_d.get() or 3000))
             except ValueError:
@@ -4232,13 +4307,15 @@ class FlowEditor:
         def on_add():
             item = _read_form()
             if item is None:
+                self.log("请先选模板（或切到 OCR 文字并填文字）", "warn")
                 return
             self._snapshot("cand")
             _cands().append(item)
-            e_t.delete(0, "end")
+            e_t.set("")
             e_d.delete(0, "end")
             e_d.insert(0, "3000")
             e_m.set(False)
+            _preview()
             refresh()
 
         def on_update():
@@ -4247,6 +4324,7 @@ class FlowEditor:
                 return
             item = _read_form()
             if item is None:
+                self.log("请先选模板（或切到 OCR 文字并填文字）", "warn")
                 return
             old = _cands()[sel[0]]
             self._snapshot("cand")
@@ -4266,6 +4344,12 @@ class FlowEditor:
 
         lb.bind("<<ListboxSelect>>", _fill_sel)
         lb.bind("<Double-Button-1>", _fill_sel)
+        # 模板字段：点一下或输入就弹候选列表；选中后显示缩略图
+        e_t.bind("<Button-1>", lambda e: (_pick_tpl(), "break")[1] if mode.get() == "tpl" else None)
+        e_t.bind("<KeyRelease>", lambda e: _pick_tpl() if (
+            mode.get() == "tpl" and e.keysym not in
+            ("Down", "Up", "Left", "Right", "Tab", "Return", "Escape")) else None)
+        e_t.bind("<<ComboboxSelected>>", lambda e: _preview())
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", padx=(8, 0), pady=(4, 0))
         for text, cmd in (("+ 添加", on_add), ("更新", on_update), ("删除", on_del)):
@@ -4342,6 +4426,102 @@ class FlowEditor:
         i = ch.index(target) + 1 if target in ch else "?"
         return f"#{i} {self.flow['nodes'][target].get('title', target)}"
 
+    def _new_candidate_dialog(self, sw_nid, target_nid):
+        """拖「＋」球到目标节点后弹出的小表单：选模板或填 OCR 文字 → 新建候选并连过去。
+        这样「拉球建分支」一步到位，不用先回面板手打模板名。"""
+        if not (self.sel == sw_nid):
+            self.sel = sw_nid
+            self.build_prop_panel()
+        win = tk.Toplevel(self.root)
+        win.title("新建分支")
+        win.configure(bg=THEME["panel"])
+        win.transient(self.root)
+        win.attributes("-topmost", True)
+        win.geometry("+%d+%d" % (self.root.winfo_rootx() + 360,
+                                 self.root.winfo_rooty() + 200))
+        tgt = self.flow["nodes"][target_nid]
+        try:
+            tgt_label = f"#{self.flow['chain'].index(target_nid) + 1} "                         f"{tgt.get('title', '?')}"
+        except ValueError:
+            tgt_label = str(tgt.get("title", target_nid))
+        ttk.Label(win, text=f"新分支 → {tgt_label}",
+                  style="Title.TLabel").pack(anchor="w", padx=12, pady=(10, 2))
+        ttk.Label(win, text="这个分支要识别什么？命中后走上面那个节点。",
+                  style="Dim.TLabel").pack(anchor="w", padx=12, pady=(0, 4))
+        mode = tk.StringVar(value="tpl")
+        mrow = ttk.Frame(win)
+        mrow.pack(anchor="w", padx=12)
+        ttk.Radiobutton(mrow, text="模板", value="tpl", variable=mode).pack(side="left")
+        ttk.Radiobutton(mrow, text="OCR 文字", value="ocr",
+                        variable=mode).pack(side="left", padx=(8, 0))
+        row = ttk.Frame(win)
+        row.pack(fill="x", padx=12, pady=6)
+        self.templates = list_templates()
+        cmb = ttk.Combobox(row, font=FONT_SM, width=24, values=self.templates)
+        cmb.pack(side="left")
+        prev = ttk.Label(win, background=THEME["card"])
+        prev.pack(anchor="w", padx=12)
+
+        def _prev():
+            if mode.get() != "tpl" or not cmb.get().strip():
+                prev.config(image="", text="")
+                return
+            got = self._get_tpl_photo(cmb.get().strip())
+            if got:
+                _, photo, _, _ = got
+                prev.config(image=photo, text="")
+                prev.image = photo
+            else:
+                prev.config(image="", text="模板不存在")
+
+        def _pick():
+            items = _tpl_candidates(self.templates, cmb.get())
+            if items:
+                self._show_tpl_pop(cmb, items, lambda p: (cmb.set(p), _prev()))
+
+        def _mode_changed():
+            cmb.config(values=() if mode.get() == "ocr" else self.templates)
+            _prev()
+        for r in mrow.winfo_children():
+            r.config(command=_mode_changed)
+        self._flat_btn(row, "▾ 选", _pick, padx=6, font=FONT_SM).pack(side="left", padx=3)
+        ttk.Label(row, text="判定ms", style="Dim.TLabel").pack(side="left", padx=(8, 0))
+        e_ms = ttk.Entry(row, width=7, font=FONT_SM)
+        e_ms.insert(0, "3000")
+        e_ms.pack(side="left", padx=3)
+        cmb.bind("<KeyRelease>", lambda e: _pick() if (
+            mode.get() == "tpl" and e.keysym not in
+            ("Down", "Up", "Left", "Right", "Tab", "Return", "Escape")) else None)
+        cmb.bind("<<ComboboxSelected>>", lambda e: _prev())
+        btns = ttk.Frame(win)
+        btns.pack(fill="x", padx=12, pady=(4, 12))
+
+        def _ok(_e=None):
+            raw = cmb.get().strip()
+            if not raw:
+                self.log("请先选模板或填 OCR 文字", "warn")
+                return
+            t = ("OCR:" + raw) if mode.get() == "ocr" else raw
+            try:
+                ms = max(500, int(e_ms.get() or 3000))
+            except ValueError:
+                ms = 3000
+            self._snapshot("cand")
+            cands = self.flow["nodes"][sw_nid]["props"].setdefault("candidates", [])
+            cands.append({"t": t, "timeout": ms, "next": target_nid})
+            self.build_prop_panel()
+            self.redraw()
+            self.log(f"✓ 已新建分支 {len(cands)}：{t} → {tgt_label}"
+                     f"（可继续拖下沿的「＋」球加下一个）", "ok")
+            win.destroy()
+
+        self._flat_btn(btns, "✓ 创建分支", _ok, bg="#2c6e48", fg="#eafff2",
+                       hover="#3a8a5c", font=FONT_B).pack(side="left")
+        self._flat_btn(btns, "取消", win.destroy).pack(side="left", padx=6)
+        win.bind("<Return>", _ok)
+        win.bind("<Escape>", lambda e: win.destroy())
+        cmb.focus_set()
+
     def _sync_branch_ui(self):
         nid = self.sel
         def _disable_combos():
@@ -4381,8 +4561,9 @@ class FlowEditor:
                                 self._branch_target_label(nid, mn, False))
             n_cand = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
             self.branch_hint.config(
-                text=f"候选 {n_cand} 个：从左到右依次判定，命中即走各自内容(拖卡片右侧✓圆点连到内容起点)；"
-                     f"全部未中走下方「✗全未中」→ 在右下拉改接。")
+                text=f"候选 {n_cand} 个，按从左到右依次判定。卡片下沿有球："
+                     f"绿球(带序号)=各候选分支，红球=全部未中，蓝「＋」球=拖到目标节点"
+                     f"即新建一条分支（会再冒一个新球，可以连着拉）。")
             return
         if nd["type"] != "branch":
             _disable_combos()
