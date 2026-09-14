@@ -163,6 +163,11 @@ NODE_HINTS = {
               "全部未中走「✗全未中」出口。",
     "common": "公共节点是「收口」：进入后本流程即终止，不会返回。放在链中间会让"
               "其后的节点执行不到。",
+    "subflow": "把另一个流程的节点整段【内联】进来：生成时它的节点会带上 "
+               "VF_<本流程>_<本节点key>_ 前缀，跑完接回本流程的下一个节点。"
+               "子流程结尾若是公共收口节点则不会返回；不能引用自己或成环。",
+    "loop": "循环体 = 链上从本节点之后一直到「循环体末尾」那一段；生成时"
+            "【复制 times 份】逐个首尾相接，不依赖引擎特性（可选 1~50 次）。",
 }
 
 
@@ -341,6 +346,14 @@ NODE_TYPES = {
         ],
         "defaults": {"times": 3},
     },
+    "subflow": {
+        "label": "子流程(内联)", "icon": "⧉", "color": "#6b7fae", "light": "#b6c4ea",
+        "summary": lambda p: str(p.get("flow", "?"))[:10],
+        "fields": [
+            ("flow", "引用的流程(内联进来)", "flowref"),
+        ],
+        "defaults": {"flow": ""},
+    },
     "common": {
         "label": "公共节点(收口)", "icon": "⌂", "color": "#4e8f8f", "light": "#9cdcdc",
         "summary": lambda p: p.get("node", "?"),
@@ -372,7 +385,7 @@ NODE_TYPES = {
 }
 
 TYPE_ORDER = ["ocr_click", "tpl_click", "tap", "swipe", "wait_tpl", "branch",
-              "switch", "loop", "common", "startapp"]
+              "switch", "loop", "subflow", "common", "startapp"]
 
 # 所有节点类型共用的可选字段（属性面板在类型专属字段之后追加渲染）。
 # notes 只是编辑器便签，不进生成物；enabled/max_hit 见 _put_common_fields。
@@ -446,6 +459,9 @@ FIELD_TIPS = {
     "only_rec": "仅识别不检测（需精确设置 ROI），可提高速度。",
     "template": "模板图（多个用逗号分隔，任一命中即算命中），取自 whmx/image。",
     "node": "公共节点层（whmx/pipeline/common.json）里的收口节点。",
+    "flow": "被引用的子流程：生成时把它的节点【整段内联】进来，节点名带 "
+            "VF_<本流程>_<本节点key>_ 前缀，跑完接回本流程的下一个节点。"
+            "子流程结尾若是公共收口节点，则跑完不会返回。",
 }
 
 
@@ -679,11 +695,11 @@ def issues_lines(issues):
             [i.message for i in issues if i.level == "warn"])
 
 
-def _expected_node_names(flow):
+def _expected_node_names(flow, _depth=0):
     """本流程将生成的【全部】pipeline 节点名（模型级预测）。
     用于 I1（同流程内名字必须互不相同）与 I6（不得与任务包内既有节点撞名）。
-    循环体节点会被展开 times 份，所以同一画布节点会对应多个生成名（带 _L<k> 后缀）。
-    返回 [(名字, 归属说明)]。"""
+    循环体节点会被展开 times 份（带 _L<k> 后缀）；子流程会把被引用流程的节点
+    整段内联进来（带 VF_<父>_<key>_ 前缀）。返回 [(名字, 归属说明)]。"""
     E = entry_name(flow)
     names = [(E, "流程入口")]
     nodes = flow.get("nodes", {})
@@ -698,6 +714,18 @@ def _expected_node_names(flow):
             continue                      # 未识别的类型不产出节点
         label = f"#{i + 1}「{nd.get('title', '?')}」"
         base = f"{E}_{node_key(flow, nid)}"
+        if t == "subflow" and _depth < 3:
+            names.append((base, label))       # 子流程节点自身的入口标记节点
+            child, err = subflow_child(flow, nid)
+            if child is not None and not err:
+                c2 = dict(child)
+                c2["name"] = _subflow_child_name(flow, nid)
+                c_entry = entry_name(c2)
+                for nm, lab in _expected_node_names(c2, _depth + 1):
+                    if nm == c_entry:
+                        continue          # 子流程的入口伪节点不产出
+                    names.append((nm, f"{label}→{lab}"))
+            continue
         lp = in_loop.get(nid)
         suffixes = ([f"_L{k + 1}" for k in range(lp["times"])] if lp else [""])
         if t == "switch":
@@ -854,6 +882,72 @@ def _check_loops(flow, issues):
                 f"{no}循环体里有公共收口节点，第一次循环就会终止流程", nid))
 
 
+def _check_subflows(flow, issues, _depth=0):
+    """子流程校验：引用存在、不自引用、不成环、环深有界、子流程自身不能是坏的。
+    递归校验子流程只做 3 层（再深就只查引用存在），避免成环时无限递归。"""
+    chain = flow.get("chain", [])
+    nodes = flow.get("nodes", {})
+    me = safe_name(flow.get("name") or "")
+    for i, nid in enumerate(chain):
+        nd = nodes.get(nid) or {}
+        if nd.get("type") != "subflow":
+            continue
+        no = f"#{i + 1}「{nd.get('title', '?')}」"
+        ref = str((nd.get("props") or {}).get("flow") or "").strip()
+        if not ref:
+            issues.append(Issue("error", "SUBFLOW_REF", f"{no}未选择子流程", nid))
+            continue
+        if safe_name(ref) == me:
+            issues.append(Issue("error", "SUBFLOW_CYCLE", f"{no}子流程不能引用自己", nid))
+            continue
+        child, err = subflow_child(flow, nid)
+        if child is None:
+            issues.append(Issue("error", "SUBFLOW_REF", f"{no}{err}", nid))
+            continue
+        # 顺引用链走一圈：检测成环与过深
+        cur, cur_nid, seen, depth, cyc = flow, nid, {me}, 0, None
+        while True:
+            c2, e2 = subflow_child(cur, cur_nid)
+            if c2 is None:
+                break
+            key = safe_name(c2.get("name") or "")
+            if key in seen:
+                cyc = key
+                break
+            seen.add(key)
+            depth += 1
+            nxt_ids = [k for k, d in (c2.get("nodes") or {}).items()
+                       if (d or {}).get("type") == "subflow"]
+            if not nxt_ids or depth > 6:
+                if depth > 6:
+                    issues.append(Issue("error", "SUBFLOW_DEEP",
+                                        f"{no}子流程嵌套过深（超过 6 层）", nid))
+                break
+            cur, cur_nid = c2, nxt_ids[0]
+        if cyc:
+            issues.append(Issue("error", "SUBFLOW_CYCLE",
+                                f"{no}子流程引用成环（{cyc}）", nid))
+            continue
+        cch = child.get("chain") or []
+        if not cch:
+            issues.append(Issue("error", "SUBFLOW_REF",
+                                f"{no}子流程「{ref}」里没有节点", nid))
+            continue
+        if (child["nodes"].get(cch[-1]) or {}).get("type") == "common":
+            issues.append(Issue(
+                "warn", "SUBFLOW_COMMON",
+                f"{no}子流程「{ref}」的结尾是公共收口节点，跑完不会返回本流程", nid))
+        if _depth < 3:
+            cerr = [x for x in collect_issues(child, check_namespace=False,
+                                              _depth=_depth + 1)
+                    if x.level == "error"]
+            if cerr:
+                issues.append(Issue(
+                    "error", "SUBFLOW_BAD_CHILD",
+                    f"{no}子流程「{ref}」自身校验不通过（{len(cerr)} 个错误）："
+                    f"{cerr[0].message[:60]}", nid))
+
+
 def _check_disabled(flow, issues):
     """被禁用（enabled:false）的节点汇总提示：引擎会把它们从 next 里跳过，
     即这些节点【不会被执行】。常用于临时排查，所以只提示不报错。"""
@@ -870,7 +964,8 @@ def _check_disabled(flow, issues):
             f"有 {len(off)} 个节点被禁用，生成物里会被引擎跳过（不会执行）：{shown}"))
 
 
-def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True):
+def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True,
+                   _depth=0):
     """模型级校验（不需要生成结果）。返回 list[Issue]，按检出顺序。"""
     issues = []
     if not flow.get("name"):
@@ -991,6 +1086,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
     _check_timeout_declared(flow, issues)
     _check_disabled(flow, issues)
     _check_loops(flow, issues)
+    _check_subflows(flow, issues, _depth)
     if check_namespace:
         for msg in audit_namespace(flow, root):
             issues.append(Issue("error", "NS_CLASH", msg))
@@ -1390,7 +1486,82 @@ def _emit_switch(flow, out, nid, name, p):
         out[cur_hit] = hd
 
 
-def _emit_one(flow, out, nid, name, nxt):
+def _emit_subflow(flow, out, nid, name, p, stack):
+    """子流程：编译期把被引用流程的节点集【整段内联】进来。
+    做法是给子流程一个「假流程名」<父流程名>_<节点key>，然后递归生成，
+    于是子流程的节点名自动带上 VF_<父>_<key>_ 前缀，不会与父流程的节点撞名。
+    子流程节点自身只是个入口标记；子流程的「结束」（链尾与收口 End）
+    会被接回父流程的链上后继，等于「调用完继续往下走」。"""
+    child, err = subflow_child(flow, nid)
+    fake = _subflow_child_name(flow, nid)
+    if child is None or err or fake in stack or len(stack) > 8:
+        out[name] = {"action": "DoNothing"}     # 校验阶段已报错，这里只保证不崩
+        return False
+    child = dict(child)
+    child["name"] = fake
+    sub = _build_nodes(child, stack + (fake,))
+    sub_entry = entry_name(child)
+    ch = child.get("chain") or []
+    first = jname(child, ch[0]) if ch else None
+    # 合并子流程生成的节点（丢掉它的入口伪节点）
+    for k, v in sub.items():
+        if k == sub_entry:
+            continue
+        out[k] = v
+    after = chain_next_names(flow, nid)          # 子流程节点的链上后继
+    # 子流程的收口 End 改接父流程后继（而不是真的结束整个任务）
+    end_name = f"{sub_entry}_End"
+    if end_name in out and after:
+        out[end_name] = {"action": "DoNothing", "next": list(after)}
+    # 子流程链尾：原本 next 为空 → 接父流程后继
+    if ch:
+        tail = ch[-1]
+        tail_name = jname(child, tail)
+        d = out.get(tail_name)
+        tail_type = (child["nodes"].get(tail) or {}).get("type")
+        if isinstance(d, dict) and not d.get("next") and tail_type != "common" and after:
+            d["next"] = list(after)
+    out[name] = {"action": "DoNothing", "next": [first]} if first else {"action": "DoNothing"}
+    return False
+
+
+def _subflow_child_name(flow, nid):
+    """子流程内联时使用的假流程名（决定子流程节点的命名前缀）"""
+    return f"{flow.get('name') or 'flow'}_{node_key(flow, nid)}"
+
+
+def subflow_child(flow, nid):
+    """读取子流程节点引用的流程定义。返回 (child_flow, error)"""
+    p = (flow.get("nodes", {}).get(nid) or {}).get("props") or {}
+    ref = str(p.get("flow") or "").strip()
+    if not ref:
+        return None, "未选择子流程"
+    path = os.path.join(FLOWS_DIR, safe_name(ref) + ".flow.json")
+    if not os.path.isfile(path):
+        return None, f"找不到子流程文件 flows/{safe_name(ref)}.flow.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            child = normalize_flow(json.load(f))
+    except Exception as ex:                                  # noqa: BLE001
+        return None, f"子流程读不出来：{ex}"
+    return child, None
+
+
+def flow_name_list(exclude=None):
+    """本目录所有流程名（供子流程下拉），可排除一个（自己）"""
+    names = []
+    for path in sorted(glob.glob(os.path.join(FLOWS_DIR, "*.flow.json"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                nm = str(json.load(f).get("name") or "").strip()
+        except Exception:                                    # noqa: BLE001
+            continue
+        if nm and nm != exclude:
+            names.append(nm)
+    return names
+
+
+def _emit_one(flow, out, nid, name, nxt, stack=()):
     """按节点类型发射一个生成节点。name 由调用方给出 —— 循环展开时同一画布节点
     会带着 _L<k> 实例后缀被发射多次。返回是否需要生成收口节点。"""
     nd = flow["nodes"][nid]
@@ -1415,6 +1586,8 @@ def _emit_one(flow, out, nid, name, nxt):
         _emit_switch(flow, out, nid, name, p)
     elif t == "loop":
         _emit_loop(flow, out, nid, name)
+    elif t == "subflow":
+        return _emit_subflow(flow, out, nid, name, p, stack)
     return False
 
 
@@ -1428,7 +1601,7 @@ def _emit_loop(flow, out, nid, name):
     out[name] = d
 
 
-def _expand_loop(flow, out, lp):
+def _expand_loop(flow, out, lp, stack=()):
     """把循环体复制 times 份：每份的节点名带 _L<k> 后缀，逐份首尾相接，
     最后一份的尾部接回链上后继（= 循环体末尾节点的链上后继）。
     返回是否需要生成收口节点。"""
@@ -1446,7 +1619,7 @@ def _expand_loop(flow, out, lp):
                 nxt = [f"{jname(flow, body[0])}_L{k + 1}"]
             else:
                 nxt = chain_next_names(flow, body[-1])    # 循环结束后回到链上后继
-            end_needed |= _emit_one(flow, out, nid, name, nxt)
+            end_needed |= _emit_one(flow, out, nid, name, nxt, stack)
             _put_common_fields(out.get(name),
                                flow["nodes"][nid].get("props") or {})
     return end_needed
@@ -1466,6 +1639,11 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
     errs, _ = validate_flow(flow, frame_wh)
     if errs:
         raise FlowValidationError(errs)
+    return _inject_meta(_build_nodes(flow), flow, frame_wh)
+
+
+def _build_nodes(flow, stack=()):
+    """生成节点图（不含 $meta、不校验）。子流程内联时会带着假流程名递归进入。"""
     chain = flow["chain"]
     nodes = flow["nodes"]
     E = entry_name(flow)
@@ -1482,18 +1660,18 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
         if nid in body_nodes:
             continue
 
-        end_needed |= _emit_one(flow, out, nid, base, nxt)
+        end_needed |= _emit_one(flow, out, nid, base, nxt, stack)
 
         # 通用可选字段（enabled / max_hit）加在被前驱 next 引用的那一层上
         _put_common_fields(out.get(base), p)
 
     # 循环：编译期把循环体复制 times 份（不依赖引擎的循环特性）
     for lp in loop_instances(flow):
-        end_needed |= _expand_loop(flow, out, lp)
+        end_needed |= _expand_loop(flow, out, lp, stack)
 
     if end_needed or any(nodes[n].get("type") == "switch" for n in chain):
         out[f"{E}_End"] = {"action": "DoNothing", "next": []}
-    return _inject_meta(out, flow, frame_wh)
+    return out
 
 
 class FlowValidationError(Exception):
@@ -1704,6 +1882,19 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
                 if not is_cascade:
                     actual["miss"] = {tgt_of(n) for n in oe}
                 j += 1
+        elif t == "subflow":
+            # 子流程节点唯一出口 = 进入被内联进来的那个流程的首节点；
+            # 那个首节点不属于本流程的画布节点，故按 ext 记录（名字可核）
+            child, err = subflow_child(flow, nid)
+            first = None
+            if child is not None and not err:
+                c2 = dict(child)
+                c2["name"] = _subflow_child_name(flow, nid)
+                cch = c2.get("chain") or []
+                if cch:
+                    first = jname(c2, cch[0])
+            expect["next"] = {("ext", first)} if first else set()
+            actual["next"] = gen_targets(names, "next")
         elif t == "common":
             p = nd.get("props") or {}
             expect["next"] = {("ext", str(p.get("node")))}
@@ -3180,6 +3371,12 @@ class FlowEditor:
             info = (f"循环体 {len(body)} 个节点" if body else "循环体未设置")
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
                           font=FONT_SM, text=info, tags=tags)
+        if nd["type"] == "subflow":
+            child, err = subflow_child(self.flow, nid)
+            info = (f"内联 {len(child.get('chain') or [])} 个节点"
+                    if child is not None else "子流程未设置")
+            c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
+                          font=FONT_SM, text=info, tags=tags)
 
     def _port_pos(self, nd, port):
         if nd["type"] == "loop":
@@ -3806,6 +4003,11 @@ class FlowEditor:
             return ttk.Combobox(self.props_inner, textvariable=var,
                                 values=tuple(extra or ()), width=16,
                                 state="readonly", font=FONT_SM)
+        if kind == "flowref":
+            return ttk.Combobox(
+                self.props_inner, textvariable=var,
+                values=flow_name_list(exclude=(self.flow or {}).get("name")),
+                width=16, state="readonly", font=FONT_SM)
         if kind in ("pick", "pick2"):
             fr = ttk.Frame(self.props_inner)
             ttk.Entry(fr, textvariable=var, width=8, font=FONT_SM).pack(side="left", ipady=2)
@@ -3955,7 +4157,7 @@ class FlowEditor:
                     nd["props"][key] = float(v)
                 else:
                     nd["props"].pop(key, None)
-            elif kind == "choice":
+            elif kind in ("choice", "flowref"):
                 v = str(var.get()).strip()
                 if v:
                     nd["props"][key] = v
