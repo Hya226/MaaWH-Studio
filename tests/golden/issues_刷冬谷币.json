@@ -3,5 +3,7 @@
   "errors": [],
   "file": "刷冬谷币.flow.json",
   "name": "刷冬谷币",
-  "warnings": []
+  "warnings": [
+    "1 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#1「刷谷段1」"
+  ]
 }

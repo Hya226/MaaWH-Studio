@@ -162,8 +162,12 @@ NODE_TYPES = {
         "label": "OCR识别点击", "icon": "🔍", "color": "#3a6ea5", "light": "#8fc1f0",
         "summary": lambda p: str(p.get("text", "?")).replace("，", ","),
         "fields": [
-            ("text", "识别文本(多个用,分隔)", "str"),
+            ("text", "识别文本(多个用,分隔;支持正则)", "str"),
             ("roi", "ROI x,y,w,h (空=全屏)", "roi"),
+            ("threshold", "置信度(空=引擎默认0.3)", "float_opt"),
+            ("order_by", "结果排序(空=默认)", "choice",
+             ("Horizontal", "Vertical", "Area", "Length", "Random", "Expected")),
+            ("index", "命中第几个(-N~N-1,空=0)", "int_opt"),
             ("timeout", "等待超时ms", "int"),
             ("rate_limit", "识别间隔ms", "int"),
             ("pre_delay", "点击前延时ms", "int"),
@@ -293,13 +297,20 @@ def _num(v, default=-1):
         return default
 
 
+def _field_spec(f):
+    """字段声明 → (props键, 标签, 控件类型, 附加参数)。
+    三元组是历史写法；第四元可选（例如 choice 的候选列表），故这里统一解包。"""
+    return f[0], f[1], f[2], (f[3] if len(f) > 3 else None)
+
+
 def normalize_flow(flow):
     """把旧版本流程文件里存成字符串的数值字段转回 int"""
     for nd in flow.get("nodes", {}).values():
         spec = NODE_TYPES.get(nd.get("type"))
         if not spec:
             continue
-        for key, _label, kind in spec["fields"]:
+        for f in spec["fields"]:
+            key, _label, kind, _extra = _field_spec(f)
             if kind in ("int", "int_opt", "pick", "pick2") and key in nd.get("props", {}):
                 try:
                     nd["props"][key] = int(float(nd["props"][key]))
@@ -702,6 +713,48 @@ def _put_timeout(d, p):
     d["timeout"] = -1 if iv < 0 else max(1, iv)
 
 
+def _put_opt_int(d, p, key, lo=None, hi=None):
+    """可选整数字段：留空不写入（旧流程没有该键 → 生成结果不变）"""
+    v = p.get(key)
+    if v is None or v == "":
+        return
+    try:
+        iv = int(float(v))
+    except (TypeError, ValueError):
+        return
+    if lo is not None:
+        iv = max(lo, iv)
+    if hi is not None:
+        iv = min(hi, iv)
+    d[key] = iv
+
+
+def _put_opt_float(d, p, key, lo=None, hi=None):
+    """可选浮点字段：留空不写入"""
+    v = p.get(key)
+    if v is None or v == "":
+        return
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return
+    if lo is not None:
+        fv = max(lo, fv)
+    if hi is not None:
+        fv = min(hi, fv)
+    d[key] = fv
+
+
+def _ocr_expected(p):
+    """OCR 期望文本。props 键沿用历史名 text（旧流程文件因此无需迁移），
+    读取时也兼容 expected；输出统一用协议规范字段 expected —— MaaFramework 里
+    text 是「已废弃字段，兼容一下」，正式名是 expected（且支持正则）。"""
+    raw = p.get("text")
+    if raw is None or not str(raw).strip():
+        raw = p.get("expected", "")
+    return [s.strip() for s in str(raw).replace("，", ",").split(",") if s.strip()]
+
+
 # ---------- 各节点类型的产出体 ----------
 # 一个节点 = 识别块 + 动作块 + 流程/时序块 + 出口块。每种节点只产出一个 pipeline
 # 节点（switch 展开为多个），这里按类型分开，新增字段时改对应一个函数即可。
@@ -737,16 +790,20 @@ def _emit_tpl_click(out, name, p, nxt):
 
 
 def _emit_ocr_click(out, name, p, nxt):
-    texts = [s.strip() for s in str(p.get("text", "")).replace("，", ",").split(",") if s.strip()]
+    texts = _ocr_expected(p)
     if not texts:
         raise FlowValidationError([f"OCR节点未填写识别文本: {name}"])
     d = {
         "recognition": "OCR",
-        "text": texts,
+        "expected": texts,
         "action": "Click",
         "timeout": int(p["timeout"]),
         "post_delay": int(p["post_delay"]),
     }
+    _put_opt_float(d, p, "threshold", 0.0, 1.0)
+    if str(p.get("order_by") or "").strip():
+        d["order_by"] = str(p["order_by"]).strip()
+    _put_opt_int(d, p, "index")
     roi = parse_roi(p.get("roi", ""))
     if roi:
         d["roi"] = roi
@@ -889,7 +946,7 @@ def _emit_switch(flow, out, nid, i, p):
         go = [jname(flow, c["next"])] if c.get("next") else [f"{E}_End"]
         if spec[0] == "OCR":
             hd = {"recognition": "OCR",
-                  "text": [spec[1]], "action": "DoNothing", "next": go}
+                  "expected": [spec[1]], "action": "DoNothing", "next": go}
         else:
             hd = {"recognition": "TemplateMatch", "template": spec[1],
                   "action": "DoNothing", "next": go}
@@ -2669,24 +2726,25 @@ class FlowEditor:
         tk.Label(head, text=f"{spec['icon']} #{idx} {spec['label']}",
                  bg=spec["color"], fg="white", font=FONT_B, padx=8, pady=2).pack(side="left")
         row = 1
-        for key, label, kind in spec["fields"]:
+        for f in spec["fields"]:
+            key, label, kind, extra = _field_spec(f)
             if kind == "switch_list":
                 # 候选编辑器较宽：标签放到上方，编辑器占整行
                 ttk.Label(self.props_inner, text=label, style="Dim.TLabel").grid(
                     row=row, column=0, columnspan=2, sticky="w", pady=2)
                 row += 1
                 var = self._make_var(nd["props"], key, kind)
-                self._make_widget(var, kind, key).grid(row=row, column=0,
-                                                       columnspan=2, sticky="we",
-                                                       pady=2)
+                self._make_widget(var, kind, key, extra).grid(row=row, column=0,
+                                                             columnspan=2, sticky="we",
+                                                             pady=2)
                 self.prop_widgets[key] = var
                 row += 1
                 continue
             ttk.Label(self.props_inner, text=label, style="Dim.TLabel").grid(
                 row=row, column=0, sticky="w", pady=2)
             var = self._make_var(nd["props"], key, kind)
-            self._make_widget(var, kind, key).grid(row=row, column=1, sticky="we",
-                                                   padx=(8, 0), pady=2)
+            self._make_widget(var, kind, key, extra).grid(row=row, column=1, sticky="we",
+                                                         padx=(8, 0), pady=2)
             self.prop_widgets[key] = var
             row += 1
         self.props_inner.columnconfigure(1, weight=1)
@@ -2704,7 +2762,7 @@ class FlowEditor:
         self._var_traces.append((var, tid))
         return var
 
-    def _make_widget(self, var, kind, key):
+    def _make_widget(self, var, kind, key, extra=None):
         if kind == "switch_list":
             return self._make_switch_list(var)
         if kind in ("tpl", "tpl_multi"):
@@ -2769,6 +2827,13 @@ class FlowEditor:
         if kind == "int_opt":
             return ttk.Entry(self.props_inner, textvariable=var, width=10,
                              font=FONT_SM)
+        if kind == "float_opt":
+            return ttk.Entry(self.props_inner, textvariable=var, width=10,
+                             font=FONT_SM)
+        if kind == "choice":
+            return ttk.Combobox(self.props_inner, textvariable=var,
+                                values=tuple(extra or ()), width=16,
+                                state="readonly", font=FONT_SM)
         if kind in ("pick", "pick2"):
             fr = ttk.Frame(self.props_inner)
             ttk.Entry(fr, textvariable=var, width=8, font=FONT_SM).pack(side="left", ipady=2)
@@ -2885,6 +2950,18 @@ class FlowEditor:
                 v = str(var.get()).strip()
                 if v:
                     nd["props"][key] = int(float(v))
+                else:
+                    nd["props"].pop(key, None)
+            elif kind == "float_opt":
+                v = str(var.get()).strip()
+                if v:
+                    nd["props"][key] = float(v)
+                else:
+                    nd["props"].pop(key, None)
+            elif kind == "choice":
+                v = str(var.get()).strip()
+                if v:
+                    nd["props"][key] = v
                 else:
                     nd["props"].pop(key, None)
             elif kind == "switch_list":

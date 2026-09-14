@@ -3,5 +3,7 @@
   "errors": [],
   "file": "征集.flow.json",
   "name": "征集",
-  "warnings": []
+  "warnings": [
+    "1 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#5「Common_点中间回主页」"
+  ]
 }

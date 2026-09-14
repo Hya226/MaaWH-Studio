@@ -6,11 +6,11 @@
   },
   "VF_测试流程_01": {
     "action": "Click",
-    "post_delay": 600,
-    "recognition": "OCR",
-    "text": [
+    "expected": [
       "博物研学"
     ],
+    "post_delay": 600,
+    "recognition": "OCR",
     "timeout": 8000
   }
 }

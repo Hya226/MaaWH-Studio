@@ -3,5 +3,7 @@
   "errors": [],
   "file": "外勤.flow.json",
   "name": "外勤",
-  "warnings": []
+  "warnings": [
+    "2 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#9「外_点565」、#14「Common_回主页」"
+  ]
 }
