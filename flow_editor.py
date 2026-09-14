@@ -3031,16 +3031,41 @@ class FlowEditor:
         self.redraw()
         self._scroll_to(y)
         if anchor:
-            why = _suppress_reason(self.flow, anchor)
-            if why:
-                msg = {"switch-no-fallthrough": "枝干没有直落出口，得把它某个候选/未中端口拖过来",
-                       "common-terminal": "公共收口节点进入后不返回本流程",
-                       "switch-content-leaf": "它是分支内容叶，跑完即止"}.get(why, "它的出口被截断")
-                self.log(f"⚠ 新节点已插在「{self.flow['nodes'][anchor].get('title', anchor)}」"
-                         f"之后，但{msg} —— 画布上那里显示 ⛔，需要你手动连线", "warn")
+            nd_a = self.flow["nodes"][anchor]
+            t_a = nd_a["type"]
+            title_a = nd_a.get("title", anchor)
+            linked = None
+            # ★ 关键：像分支/枝干/循环这类节点，出口不是"链上下一个"而是靠端口/候选控制的。
+            #   只把它插到链上，生成结果里可能根本没有从 A 到 B 的边（甚至 B 不可达）。
+            #   所以这里顺手把 A【空着的出口】真的接到新节点上 —— 这才是"强制被 A 连接"。
+            if t_a == "branch" and not nd_a.get("hit_next"):
+                # ✓命中未连线时，默认行为本来就是"走链上下一个"，显式连上完全等价、且看得见
+                nd_a["hit_next"] = nid
+                linked = "✓命中出口"
+            elif t_a == "switch":
+                # 枝干没有直落出口：追加一个候选指向新节点（等价于把「＋」球拖到它上面），
+                # 识别目标留待你在候选列表里选模板/填 OCR
+                cands = nd_a.setdefault("props", {}).setdefault("candidates", [])
+                cands.append({"t": PENDING_TPL, "timeout": 3000, "next": nid})
+                linked = f"第 {len(cands)} 个候选(待选识别目标)"
+            elif t_a == "loop" and not (nd_a.get("props") or {}).get("body_end"):
+                nd_a.setdefault("props", {})["body_end"] = nid
+                linked = "循环体末尾"
+            if linked:
+                self.log(f"✓ 新节点已接到「{title_a}」的{linked}上", "ok")
             else:
-                self.log(f"已把新节点挂在「{self.flow['nodes'][anchor].get('title', anchor)}」"
-                         f"的出口下")
+                why = None
+                if t_a == "common":
+                    why = "公共收口节点进入后不返回本流程"
+                elif _suppress_reason(self.flow, anchor) == "switch-content-leaf":
+                    why = "它是某条枝干的分支内容叶，跑完即止"
+                elif t_a == "branch" and nd_a.get("hit_next")                         and nd_a.get("hit_next") != nid                         and nd_a.get("miss_next") != nid:
+                    why = "它的 ✓/✗ 出口都已经接到别的节点了"
+                if why:
+                    self.log(f"⚠ 新节点插在「{title_a}」之后，但{why} —— 画布上需要手动连线",
+                             "warn")
+                else:
+                    self.log(f"已把新节点接在「{title_a}」的链上出口下")
         return nid
 
     def delete_selected(self):
