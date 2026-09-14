@@ -289,6 +289,14 @@ NODE_TYPES = {
 TYPE_ORDER = ["ocr_click", "tpl_click", "tap", "swipe", "wait_tpl", "branch",
               "switch", "common", "startapp"]
 
+# 所有节点类型共用的可选字段（属性面板在类型专属字段之后追加渲染）。
+# notes 只是编辑器便签，不进生成物；enabled/max_hit 见 _put_common_fields。
+COMMON_NODE_FIELDS = [
+    ("enabled", "启用(取消勾选=跳过本节点)", "bool_opt"),
+    ("max_hit", "最多命中次数(空=无限)", "int_opt"),
+    ("notes", "备注(仅编辑器可见)", "str_opt"),
+]
+
 
 def _num(v, default=-1):
     try:
@@ -507,7 +515,8 @@ _INHERIT_TIMEOUT_KINDS = ("tap", "swipe", "startapp", "common")
 
 
 def _check_timeout_declared(flow, issues):
-    """I4：未声明 timeout 的节点汇总提示（一条，不刷屏）"""
+    """I4：未声明 timeout 的节点汇总提示（一条，不刷屏）。
+    已禁用的节点会被引擎跳过，不计入。"""
     lack = []
     nodes = flow.get("nodes", {})
     for i, nid in enumerate(flow.get("chain", [])):
@@ -515,6 +524,8 @@ def _check_timeout_declared(flow, issues):
         if nd.get("type") not in _INHERIT_TIMEOUT_KINDS:
             continue
         p = nd.get("props") or {}
+        if p.get("enabled") is False:
+            continue
         if p.get("timeout") in (None, ""):
             lack.append(f"#{i + 1}「{nd.get('title', '?')}」")
     if lack:
@@ -523,6 +534,22 @@ def _check_timeout_declared(flow, issues):
             "warn", "TIMEOUT_INHERIT",
             f"{len(lack)} 个节点未设置 timeout，将继承全局 90000ms"
             f"（点完之后等下一个节点出现，最长空转 90 秒）：{shown}"))
+
+
+def _check_disabled(flow, issues):
+    """被禁用（enabled:false）的节点汇总提示：引擎会把它们从 next 里跳过，
+    即这些节点【不会被执行】。常用于临时排查，所以只提示不报错。"""
+    off = []
+    nodes = flow.get("nodes", {})
+    for i, nid in enumerate(flow.get("chain", [])):
+        nd = nodes.get(nid) or {}
+        if (nd.get("props") or {}).get("enabled") is False:
+            off.append(f"#{i + 1}「{nd.get('title', '?')}」")
+    if off:
+        shown = "、".join(off[:6]) + (" 等" if len(off) > 6 else "")
+        issues.append(Issue(
+            "warn", "NODE_DISABLED",
+            f"有 {len(off)} 个节点被禁用，生成物里会被引擎跳过（不会执行）：{shown}"))
 
 
 def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True):
@@ -644,6 +671,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                     f"放在链中间会导致其后的节点执行不到", nid))
     _check_naming(flow, issues)
     _check_timeout_declared(flow, issues)
+    _check_disabled(flow, issues)
     if check_namespace:
         for msg in audit_namespace(flow, root):
             issues.append(Issue("error", "NS_CLASH", msg))
@@ -711,6 +739,20 @@ def _put_timeout(d, p):
     except (TypeError, ValueError):
         return
     d["timeout"] = -1 if iv < 0 else max(1, iv)
+
+
+def _put_common_fields(d, p):
+    """所有节点类型通用的可选流程字段。
+    - enabled: 引擎默认 true，所以只有显式关闭时才写 false（旧流程生成结果不变）
+    - max_hit: 留空不写（引擎默认无限次）
+    - notes  : 只是编辑器便签，【不写入生成物】
+    约定：加在「被前驱 next 引用的那一层」上（branch=容器、switch=首个判定 J1），
+    因为引擎跳过/限次都是对 next 列表里的候选生效的。"""
+    if d is None:
+        return
+    if p.get("enabled") is False or str(p.get("enabled")).strip().lower() == "false":
+        d["enabled"] = False
+    _put_opt_int(d, p, "max_hit", 1)
 
 
 def _put_opt_int(d, p, key, lo=None, hi=None):
@@ -889,8 +931,8 @@ def _emit_branch(flow, out, nid, name, p, nxt):
     if str(p.get("ocr_text", "")).strip():
         hd = {
             "recognition": "OCR",
-            "text": [s.strip() for s in
-                     str(p["ocr_text"]).replace("，", ",").split(",") if s.strip()],
+            "expected": [s.strip() for s in
+                         str(p["ocr_text"]).replace("，", ",").split(",") if s.strip()],
             "action": "DoNothing",
         }
     else:
@@ -1003,6 +1045,9 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
 
         elif t == "switch":
             _emit_switch(flow, out, nid, i, p)
+
+        # 通用可选字段（enabled / max_hit）加在被前驱 next 引用的那一层上
+        _put_common_fields(out.get(base), p)
 
     if end_needed or any(nodes[n].get("type") == "switch" for n in chain):
         out[f"{E}_End"] = {"action": "DoNothing", "next": []}
@@ -2264,21 +2309,26 @@ class FlowEditor:
         x1, y1 = x + CARD_W, y + h
         selected = (nid == self.sel)
         err_now = any(i.level == "error" for i in self._issues_by_node.get(nid, ()))
+        disabled = (nd.get("props") or {}).get("enabled") is False
         tags = ("node", f"node:{nid}")
         # 阴影
         _round_rect(c, x + 3, y + 5, x1 + 3, y1 + 5, 12,
                     fill=THEME["shadow"], outline="")
-        # 主体（选中=黄框；有 error 级校验问题=红框，让问题节点一眼可见）
-        _round_rect(c, x, y, x1, y1, 12, fill=THEME["card"],
+        # 主体（选中=黄框；有 error 级校验问题=红框；被禁用=压暗，让问题节点一眼可见）
+        _round_rect(c, x, y, x1, y1, 12,
+                    fill=THEME["panel"] if disabled else THEME["card"],
                     outline=THEME["sel"] if selected
                     else (THEME["err"] if err_now else THEME["card_line"]),
                     width=2 if (selected or err_now) else 1, tags=tags)
         # 左侧类型色条
         _round_rect(c, x + 3, y + 5, x + 9, y1 - 5, 3,
-                    fill=spec["color"], outline="", tags=tags)
+                    fill=THEME["card_line"] if disabled else spec["color"],
+                    outline="", tags=tags)
         idx = self.flow["chain"].index(nid) + 1
-        c.create_text(x + 20, y + 7, anchor="nw", fill="white", font=FONT_B,
-                      text=f"{idx}. {nd.get('title', spec['label'])}",
+        c.create_text(x + 20, y + 7, anchor="nw",
+                      fill=THEME["text_dim"] if disabled else "white", font=FONT_B,
+                      text=f"{idx}. {nd.get('title', spec['label'])}"
+                           + ("（已禁用）" if disabled else ""),
                       tags=tags)
         if nd["type"] == "switch":
             # 候选行 + 出口 port
@@ -2726,7 +2776,7 @@ class FlowEditor:
         tk.Label(head, text=f"{spec['icon']} #{idx} {spec['label']}",
                  bg=spec["color"], fg="white", font=FONT_B, padx=8, pady=2).pack(side="left")
         row = 1
-        for f in spec["fields"]:
+        for f in list(spec["fields"]) + list(COMMON_NODE_FIELDS):
             key, label, kind, extra = _field_spec(f)
             if kind == "switch_list":
                 # 候选编辑器较宽：标签放到上方，编辑器占整行
@@ -2754,6 +2804,9 @@ class FlowEditor:
         v = props.get(key)
         if kind == "bool":
             var = tk.BooleanVar(value=bool(v))
+        elif kind == "bool_opt":
+            # 引擎默认 enabled=true，故未设置时勾选框应为「已勾选」
+            var = tk.BooleanVar(value=True if v is None else bool(v))
         elif kind == "switch_list":
             var = tk.StringVar(value=str(len(v)) if isinstance(v, list) else "0")
         else:
@@ -2819,6 +2872,8 @@ class FlowEditor:
                                 values=COMMON_NODES, width=22, state="readonly",
                                 font=FONT_SM)
         if kind == "bool":
+            return ttk.Checkbutton(self.props_inner, variable=var, text="")
+        if kind == "bool_opt":
             return ttk.Checkbutton(self.props_inner, variable=var, text="")
         if kind == "float":
             return ttk.Spinbox(self.props_inner, textvariable=var,
@@ -2959,6 +3014,18 @@ class FlowEditor:
                 else:
                     nd["props"].pop(key, None)
             elif kind == "choice":
+                v = str(var.get()).strip()
+                if v:
+                    nd["props"][key] = v
+                else:
+                    nd["props"].pop(key, None)
+            elif kind == "bool_opt":
+                # 勾选 = 引擎默认值 → 不写字段；取消勾选才写 false
+                if bool(var.get()):
+                    nd["props"].pop(key, None)
+                else:
+                    nd["props"][key] = False
+            elif kind == "str_opt":
                 v = str(var.get()).strip()
                 if v:
                     nd["props"][key] = v
