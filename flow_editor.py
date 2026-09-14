@@ -168,6 +168,8 @@ NODE_TYPES = {
             ("order_by", "结果排序(空=默认)", "choice",
              ("Horizontal", "Vertical", "Area", "Length", "Random", "Expected")),
             ("index", "命中第几个(-N~N-1,空=0)", "int_opt"),
+            ("replace", "易错字替换(错=对,错2=对2)", "str_opt"),
+            ("only_rec", "仅识别不检测(需精确ROI)", "bool"),
             ("timeout", "等待超时ms", "int"),
             ("rate_limit", "识别间隔ms", "int"),
             ("pre_delay", "点击前延时ms", "int"),
@@ -183,7 +185,9 @@ NODE_TYPES = {
             ("template", "模板图(逗号分隔多候选)", "tpl_multi"),
             ("threshold", "阈值(0.6~0.95)", "float"),
             ("roi", "ROI x,y,w,h (空=全屏)", "roi"),
-            ("order_by", "精确单目标(Score)", "bool"),
+            ("order_by", "结果排序(空=最左;精确点单个选Score)", "choice",
+             ("Horizontal", "Vertical", "Score", "Random")),
+            ("index", "命中第几个(-N~N-1,空=0)", "int_opt"),
             ("timeout", "等待超时ms", "int"),
             ("rate_limit", "识别间隔ms(移动目标建议200)", "int"),
             ("pre_delay", "点击前延时ms", "int"),
@@ -223,11 +227,14 @@ NODE_TYPES = {
             ("duration", "时长ms(推荐900)", "int"),
             ("repeat", "滑动次数", "int"),
             ("repeat_delay", "滑动间隔ms", "int"),
+            ("pre_wait_freezes", "滑动前等画面静止ms(0=关)", "int"),
+            ("post_wait_freezes", "滑动后等画面静止ms(0=关)", "int"),
             ("post_delay", "滑动后延时ms", "int"),
             ("timeout", "等待超时ms(空=继承90000)", "int_opt"),
         ],
         "defaults": {"x1": 1000, "y1": 600, "x2": 280, "y2": 600,
                      "duration": 900, "repeat": 1, "repeat_delay": 350,
+                     "pre_wait_freezes": 0, "post_wait_freezes": 0,
                      "post_delay": 600},
     },
     "wait_tpl": {
@@ -324,6 +331,14 @@ def normalize_flow(flow):
                     nd["props"][key] = int(float(nd["props"][key]))
                 except (TypeError, ValueError):
                     pass
+        # order_by 由布尔开关升级为枚举（P1-4）：旧文件的 True 等价于 Score
+        # （旧实现就是写 "Score"），False 则视为未设置，保证生成结果不变。
+        props = nd.get("props") or {}
+        if isinstance(props.get("order_by"), bool):
+            if props["order_by"]:
+                props["order_by"] = "Score"
+            else:
+                props.pop("order_by", None)
     return flow
 
 
@@ -787,6 +802,25 @@ def _put_opt_float(d, p, key, lo=None, hi=None):
     d[key] = fv
 
 
+def _ocr_replace(p):
+    """OCR 易错字替换：props 里填 '错=对,错2=对2'（也接受 -> 与 →），
+    生成协议的 replace: [["错","对"], ...]。留空则不写字段。"""
+    raw = str(p.get("replace") or "").strip()
+    if not raw:
+        return None
+    pairs = []
+    for item in raw.replace("，", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        for sep in ("=", "->", "→"):
+            if sep in item:
+                a, b = item.split(sep, 1)
+                pairs.append([a.strip(), b.strip()])
+                break
+    return pairs or None
+
+
 def _ocr_expected(p):
     """OCR 期望文本。props 键沿用历史名 text（旧流程文件因此无需迁移），
     读取时也兼容 expected；输出统一用协议规范字段 expected —— MaaFramework 里
@@ -814,8 +848,12 @@ def _emit_tpl_click(out, name, p, nxt):
     roi = parse_roi(p.get("roi", ""))
     if roi:
         d["roi"] = roi
-    if p.get("order_by"):
-        d["order_by"] = "Score"
+    ob = p.get("order_by")
+    if ob is True:
+        d["order_by"] = "Score"          # 历史布尔写法：True 等价于 Score（旧实现如此）
+    elif ob is not None and ob is not False and str(ob).strip():
+        d["order_by"] = str(ob).strip()
+    _put_opt_int(d, p, "index")
     if int(p.get("rate_limit", 0) or 0) > 0:
         d["rate_limit"] = int(p["rate_limit"])
     if int(p.get("pre_delay", 0)):
@@ -855,6 +893,11 @@ def _emit_ocr_click(out, name, p, nxt):
         d["pre_delay"] = int(p["pre_delay"])
     if nxt:
         d["next"] = nxt
+    if p.get("only_rec") is True:
+        d["only_rec"] = True
+    pairs = _ocr_replace(p)
+    if pairs:
+        d["replace"] = pairs
     out[name] = d
 
 
@@ -886,6 +929,10 @@ def _emit_swipe(out, name, p, nxt):
         "duration": int(p["duration"]),
         "post_delay": int(p["post_delay"]),
     }
+    if int(p.get("pre_wait_freezes", 0) or 0) > 0:
+        d["pre_wait_freezes"] = int(p["pre_wait_freezes"])
+    if int(p.get("post_wait_freezes", 0) or 0) > 0:
+        d["post_wait_freezes"] = int(p["post_wait_freezes"])
     _put_timeout(d, p)
     rep = int(p.get("repeat", 1) or 1)
     if rep > 1:
