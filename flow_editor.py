@@ -2770,7 +2770,40 @@ class FlowEditor:
         ttk.Label(right, text="  节点属性", style="Title.TLabel").pack(
             anchor="w", padx=8, pady=(10, 2))
 
-        # 属性区可滚动：枝干判定等节点字段较多，超出窗口高度时滚轮下翻
+        # 操作按钮与分支出口固定在顶部、不随字段滚动：
+        # 字段多的节点（OCR 现在有 14 个字段 + 分组标题）会把滚动区撑得很长，
+        # 以前按钮排在字段下面，结果被顶出可视区 —— 删除按钮就"消失"了。
+        prow = ttk.Frame(right)
+        prow.pack(side="top", fill="x", padx=10, pady=(2, 4))
+        self._flat_btn(prow, "↑ 上移", lambda: self.move_node(-1), padx=8).pack(side="left", padx=2)
+        self._flat_btn(prow, "↓ 下移", lambda: self.move_node(1), padx=8).pack(side="left", padx=2)
+        self._flat_btn(prow, "⇥ 挪到侧列", lambda: self.align_node(), padx=8,
+                       font=FONT_SM).pack(side="left", padx=2)
+        self._flat_btn(prow, "✖ 删除", self.delete_selected, padx=8,
+                       bg="#5a2733", fg="#ffc9d2", hover="#74323f",
+                       font=FONT_SM).pack(side="left", padx=(12, 0))
+
+        ttk.Separator(right).pack(side="top", fill="x", pady=2, padx=8)
+        ttk.Label(right, text="  分支出口（画布拖端口或下拉改接）",
+                  style="Title.TLabel").pack(side="top", anchor="w", padx=8)
+        brow = ttk.Frame(right)
+        brow.pack(side="top", fill="x", padx=12, pady=4)
+        ttk.Label(brow, text="✓", foreground=THEME["ok"],
+                  background=THEME["panel"]).pack(side="left")
+        self.hit_combo = ttk.Combobox(brow, width=19, state="disabled", font=FONT_SM)
+        self.hit_combo.pack(side="left", padx=(2, 8))
+        self.hit_combo.bind("<<ComboboxSelected>>", lambda e: self.on_branch_combo("hit_next"))
+        ttk.Label(brow, text="✗", foreground=THEME["err"],
+                  background=THEME["panel"]).pack(side="left")
+        self.miss_combo = ttk.Combobox(brow, width=19, state="disabled", font=FONT_SM)
+        self.miss_combo.pack(side="left", padx=2)
+        self.miss_combo.bind("<<ComboboxSelected>>", lambda e: self.on_branch_combo("miss_next"))
+        self.branch_hint = ttk.Label(right, text="", style="Dim.TLabel",
+                                     justify="left", wraplength=320)
+        self.branch_hint.pack(side="top", anchor="w", padx=12, pady=(2, 0))
+        ttk.Separator(right).pack(side="top", fill="x", pady=4, padx=8)
+
+        # 属性区可滚动：字段多时滚轮下翻；上面的按钮与出口始终可见
         wrap = ttk.Frame(right)
         wrap.pack(side="top", fill="both", expand=True)
         canvas = tk.Canvas(wrap, bg=THEME["panel"], highlightthickness=0)
@@ -2800,41 +2833,13 @@ class FlowEditor:
         wrap.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _wheel))
         wrap.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
-        # 字段区单独成容器：打开流程时只重建这里，不销毁下方的固定控件
+        # 字段区单独成容器：打开流程时只重建这里
         self.props_inner = ttk.Frame(inner)
         self.props_inner.pack(fill="x", padx=12)
-        prow = ttk.Frame(inner)
-        prow.pack(fill="x", padx=10, pady=6)
-        self._flat_btn(prow, "↑ 上移", lambda: self.move_node(-1), padx=8).pack(side="left", padx=2)
-        self._flat_btn(prow, "↓ 下移", lambda: self.move_node(1), padx=8).pack(side="left", padx=2)
-        self._flat_btn(prow, "⇥ 挪到侧列", lambda: self.align_node(), padx=8,
-                       font=FONT_SM).pack(side="left", padx=2)
-        self._flat_btn(prow, "✖ 删除", self.delete_selected, padx=8,
-                       bg="#5a2733", fg="#ffc9d2", hover="#74323f",
-                       font=FONT_SM).pack(side="left", padx=(12, 0))
-
-        ttk.Separator(inner).pack(fill="x", pady=6, padx=8)
-        ttk.Label(inner, text="  分支出口（画布拖端口或下拉改接）",
-                  style="Title.TLabel").pack(anchor="w", padx=8)
-        brow = ttk.Frame(inner)
-        brow.pack(fill="x", padx=12, pady=4)
-        ttk.Label(brow, text="✓", foreground=THEME["ok"],
-                  background=THEME["panel"]).pack(side="left")
-        self.hit_combo = ttk.Combobox(brow, width=19, state="disabled", font=FONT_SM)
-        self.hit_combo.pack(side="left", padx=(2, 8))
-        self.hit_combo.bind("<<ComboboxSelected>>", lambda e: self.on_branch_combo("hit_next"))
-        ttk.Label(brow, text="✗", foreground=THEME["err"],
-                  background=THEME["panel"]).pack(side="left")
-        self.miss_combo = ttk.Combobox(brow, width=19, state="disabled", font=FONT_SM)
-        self.miss_combo.pack(side="left", padx=2)
-        self.miss_combo.bind("<<ComboboxSelected>>", lambda e: self.on_branch_combo("miss_next"))
-        self.branch_hint = ttk.Label(inner, text="", style="Dim.TLabel",
-                                     justify="left", wraplength=300)
-        self.branch_hint.pack(anchor="w", padx=12, pady=(2, 0))
 
         # 底部日志（固定，不随属性区滚动）
-        ttk.Separator(right).pack(fill="x", pady=8, padx=8)
-        ttk.Label(right, text="  日志", style="Title.TLabel").pack(anchor="w", padx=8)
+        ttk.Separator(right).pack(side="bottom", fill="x", pady=8, padx=8)
+        ttk.Label(right, text="  日志", style="Title.TLabel").pack(side="bottom", anchor="w", padx=8)
         logf = tk.Frame(right, bg=THEME["card_line"])
         logf.pack(fill="both", expand=True, padx=10, pady=(4, 10))
         self.log_text = tk.Text(logf, height=12, bg="#12141c", fg="#c6cede",
