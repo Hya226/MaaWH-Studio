@@ -203,6 +203,7 @@ NODE_TYPES = {
             ("repeat", "重复点击次数", "int"),
             ("repeat_delay", "重复间隔ms", "int"),
             ("post_wait_freezes", "点击后等画面静止ms(0=关)", "int"),
+            ("timeout", "等待超时ms(空=继承90000)", "int_opt"),
         ],
         "defaults": {"x": 640, "y": 360, "pre_delay": 0, "post_delay": 500,
                      "post_wait_freezes": 0, "repeat": 1, "repeat_delay": 350},
@@ -219,6 +220,7 @@ NODE_TYPES = {
             ("repeat", "滑动次数", "int"),
             ("repeat_delay", "滑动间隔ms", "int"),
             ("post_delay", "滑动后延时ms", "int"),
+            ("timeout", "等待超时ms(空=继承90000)", "int_opt"),
         ],
         "defaults": {"x1": 1000, "y1": 600, "x2": 280, "y2": 600,
                      "duration": 900, "repeat": 1, "repeat_delay": 350,
@@ -253,7 +255,8 @@ NODE_TYPES = {
     "common": {
         "label": "公共节点(收口)", "icon": "⌂", "color": "#4e8f8f", "light": "#9cdcdc",
         "summary": lambda p: p.get("node", "?"),
-        "fields": [("node", "公共节点", "common")],
+        "fields": [("node", "公共节点", "common"),
+                   ("timeout", "等待超时ms(空=继承90000)", "int_opt")],
         "defaults": {"node": "Common_回主页"},
     },
     "startapp": {
@@ -262,6 +265,7 @@ NODE_TYPES = {
         "fields": [
             ("package", "包名", "str"),
             ("post_delay", "启动后延时ms", "int"),
+            ("timeout", "等待超时ms(空=继承90000)", "int_opt"),
         ],
         "defaults": {"package": GAME_PKG, "post_delay": 1000},
     },
@@ -296,7 +300,7 @@ def normalize_flow(flow):
         if not spec:
             continue
         for key, _label, kind in spec["fields"]:
-            if kind in ("int", "pick", "pick2") and key in nd.get("props", {}):
+            if kind in ("int", "int_opt", "pick", "pick2") and key in nd.get("props", {}):
                 try:
                     nd["props"][key] = int(float(nd["props"][key]))
                 except (TypeError, ValueError):
@@ -683,6 +687,21 @@ def chain_next_names(flow, nid):
     return [jname(flow, tgt)] if tgt else []
 
 
+def _put_timeout(d, p):
+    """timeout 是可选字段：留空则不写入，让引擎继承 default_pipeline.json 的值
+    （本任务包为 90000ms）。旧流程没有这个字段，所以默认路径的生成结果不变。
+    语义提醒：timeout 管的是【本节点 next 列表的扫描超时】，不是本节点的识别等待。
+    协议 v5.5 起 -1 表示无限等待；0 会让首轮未命中立即超时，故下限取 1。"""
+    v = p.get("timeout")
+    if v is None or v == "":
+        return
+    try:
+        iv = int(float(v))
+    except (TypeError, ValueError):
+        return
+    d["timeout"] = -1 if iv < 0 else max(1, iv)
+
+
 # ---------- 各节点类型的产出体 ----------
 # 一个节点 = 识别块 + 动作块 + 流程/时序块 + 出口块。每种节点只产出一个 pipeline
 # 节点（switch 展开为多个），这里按类型分开，新增字段时改对应一个函数即可。
@@ -750,6 +769,7 @@ def _emit_tap(out, name, p, nxt):
         d["pre_delay"] = int(p["pre_delay"])
     if int(p.get("post_wait_freezes", 0) or 0) > 0:
         d["post_wait_freezes"] = int(p["post_wait_freezes"])
+    _put_timeout(d, p)
     rep = int(p.get("repeat", 1) or 1)
     if rep > 1:
         d["repeat"] = rep
@@ -767,6 +787,7 @@ def _emit_swipe(out, name, p, nxt):
         "duration": int(p["duration"]),
         "post_delay": int(p["post_delay"]),
     }
+    _put_timeout(d, p)
     rep = int(p.get("repeat", 1) or 1)
     if rep > 1:
         d["repeat"] = rep
@@ -834,7 +855,9 @@ def _emit_branch(flow, out, nid, name, p, nxt):
 
 
 def _emit_common(out, name, p):
-    out[name] = {"next": [p["node"]]}
+    d = {"next": [p["node"]]}
+    _put_timeout(d, p)
+    out[name] = d
 
 
 def _emit_startapp(out, name, p, nxt):
@@ -843,6 +866,7 @@ def _emit_startapp(out, name, p, nxt):
         "package": p["package"],
         "post_delay": int(p["post_delay"]),
     }
+    _put_timeout(d, p)
     if nxt:
         d["next"] = nxt
     out[name] = d
@@ -2742,6 +2766,9 @@ class FlowEditor:
             return ttk.Spinbox(self.props_inner, textvariable=var,
                                from_=0.3, to=0.99, increment=0.05, width=10,
                                font=FONT_SM)
+        if kind == "int_opt":
+            return ttk.Entry(self.props_inner, textvariable=var, width=10,
+                             font=FONT_SM)
         if kind in ("pick", "pick2"):
             fr = ttk.Frame(self.props_inner)
             ttk.Entry(fr, textvariable=var, width=8, font=FONT_SM).pack(side="left", ipady=2)
@@ -2853,6 +2880,13 @@ class FlowEditor:
                     nd["props"][key] = var.get()
             elif kind in ("int", "pick", "pick2"):
                 nd["props"][key] = int(float(var.get() or 0))
+            elif kind == "int_opt":
+                # 可选整数：留空 = 从 props 里移除该键 = 生成物不写该字段（继承全局默认）
+                v = str(var.get()).strip()
+                if v:
+                    nd["props"][key] = int(float(v))
+                else:
+                    nd["props"].pop(key, None)
             elif kind == "switch_list":
                 pass    # 列表型 props 由候选编辑控件直接维护，StringVar 仅用于触发重绘
             else:
