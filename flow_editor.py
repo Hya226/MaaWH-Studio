@@ -304,6 +304,79 @@ COMMON_NODE_FIELDS = [
     ("notes", "备注(仅编辑器可见)", "str_opt"),
 ]
 
+# 属性面板分组（按用途归类，避免识别/动作/时序字段混在一张平表里）
+FIELD_GROUPS = [
+    ("recog", "识别", {"template", "text", "ocr_text", "threshold", "roi",
+                       "order_by", "index", "replace", "only_rec", "rate_limit"}),
+    ("act", "动作", {"x", "y", "x1", "y1", "x2", "y2", "duration",
+                     "repeat", "repeat_delay", "package"}),
+    ("flow", "流程", {"node", "candidates", "timeout", "enabled", "max_hit", "notes"}),
+    ("delay", "时序", {"pre_delay", "post_delay", "pre_wait_freezes",
+                       "post_wait_freezes"}),
+]
+_GROUP_OF_KEY = {k: g for g, _label, keys in FIELD_GROUPS for k in keys}
+_GROUP_LABEL = {g: label for g, label, _keys in FIELD_GROUPS}
+_GROUP_ORDER = [g for g, _label, _keys in FIELD_GROUPS]
+
+
+def _group_fields(fields):
+    """把字段声明按分组归类，返回 [(组键, 组名, [字段声明, ...]), ...]。
+    未登记的键归入「其它」；组内保持原有声明顺序，空组不返回。"""
+    buckets = {}
+    for f in fields:
+        g = _GROUP_OF_KEY.get(f[0], "other")
+        buckets.setdefault(g, []).append(f)
+    out = []
+    for g in _GROUP_ORDER + ["other"]:
+        if buckets.get(g):
+            out.append((g, _GROUP_LABEL.get(g, "其它"), buckets[g]))
+    return out
+
+
+# 互斥字段：满足条件时隐藏。否则「填了 A 就忽略 B」只能靠用户自己理解。
+# 注意只隐藏被忽略的那一侧，触发互斥的字段本身始终可见（否则没法改回来）。
+FIELD_HIDDEN_IF = {
+    "branch": lambda p: ({"template", "threshold"}
+                         if str(p.get("ocr_text", "")).strip() else set()),
+}
+
+
+def _hide_hint(ntype, p):
+    """互斥生效时给出说明，避免字段突然消失让人困惑"""
+    if ntype == "branch" and str(p.get("ocr_text", "")).strip():
+        return "已填 OCR 文本 → 本节点改用 OCR 判定，模板图与阈值不生效"
+    return None
+
+
+# 字段提示（鼠标悬停在字段名上显示）。协议里最容易误解的几条必须写清楚。
+FIELD_TIPS = {
+    "timeout": "本节点 next 列表的识别超时 —— 不是本节点的识别等待。\n"
+               "想缩短「本节点被识别到」的等待，请改【上一个节点】的 timeout。\n"
+               "留空 = 继承 default_pipeline.json（本任务包 90000ms）。-1 = 无限等待。",
+    "rate_limit": "每轮识别的最低耗时（毫秒），不足则等待。移动目标建议 200。",
+    "threshold": "模板识别阈值：负样本最高分 <0.7 时 0.8 较安全。\n"
+                 "OCR 时是模型置信度，引擎默认 0.3。",
+    "post_wait_freezes": "动作后等画面静止（毫秒）。画面一直在变会等死，\n"
+                         "点击动画中的按钮请不要用。",
+    "pre_wait_freezes": "动作前等画面静止（毫秒）。",
+    "post_delay": "动作后到识别 next 之间的固定延时（毫秒）。",
+    "pre_delay": "识别到命中到执行动作之间的固定延时（毫秒）。",
+    "order_by": "多个候选都命中时取哪一个：Horizontal=最左（引擎默认，\n"
+                "注意不是最高分）、Score=分数最高、Vertical、Random。\n"
+                "精确点单个目标建议选 Score 并把阈值抬到高于弱匹配。",
+    "index": "命中第几个结果（0 起，可负数）。越界视为未识别。",
+    "max_hit": "本节点最多被识别命中多少次，超出后会从 next 列表被跳过。\n"
+               "用于给重试循环加界，防止永久空转。",
+    "enabled": "取消勾选 = 生成物写 enabled:false，引擎会跳过本节点（不识别、不执行）。",
+    "notes": "只存在流程定义里，不会写进生成物。",
+    "repeat": "动作重复执行次数；重复过程中单次失败不中止，以最后一次为准。",
+    "roi": "识别范围 x,y,w,h（帧坐标，基准 1280x720）。留空 = 全屏。",
+    "replace": "OCR 易错字替换，填 '错=对,错2=对2'。",
+    "only_rec": "仅识别不检测（需精确设置 ROI），可提高速度。",
+    "template": "模板图（多个用逗号分隔，任一命中即算命中），取自 whmx/image。",
+    "node": "公共节点层（whmx/pipeline/common.json）里的收口节点。",
+}
+
 
 def _num(v, default=-1):
     try:
@@ -1737,6 +1810,8 @@ class FlowEditor:
         s.configure("Bar.TFrame", background=T["bg"])
         s.configure("TLabel", background=T["panel"], foreground=T["text"])
         s.configure("Title.TLabel", font=FONT_TITLE, foreground=T["text"])
+        s.configure("Group.TLabel", background=T["panel"], foreground=T["accent"],
+                    font=FONT_B)
         s.configure("Dim.TLabel", foreground=T["text_dim"], font=FONT_SM)
         s.configure("TEntry", fieldbackground=T["field"], foreground=T["text"],
                     insertcolor=T["text"], bordercolor=T["card_line"],
@@ -2823,29 +2898,79 @@ class FlowEditor:
         tk.Label(head, text=f"{spec['icon']} #{idx} {spec['label']}",
                  bg=spec["color"], fg="white", font=FONT_B, padx=8, pady=2).pack(side="left")
         row = 1
-        for f in list(spec["fields"]) + list(COMMON_NODE_FIELDS):
-            key, label, kind, extra = _field_spec(f)
-            if kind == "switch_list":
-                # 候选编辑器较宽：标签放到上方，编辑器占整行
-                ttk.Label(self.props_inner, text=label, style="Dim.TLabel").grid(
-                    row=row, column=0, columnspan=2, sticky="w", pady=2)
-                row += 1
+        all_fields = list(spec["fields"]) + list(COMMON_NODE_FIELDS)
+        hidden = FIELD_HIDDEN_IF.get(nd["type"], lambda _p: set())(nd.get("props") or {})
+        for _gkey, glabel, gfields in _group_fields(all_fields):
+            visible = [f for f in gfields if f[0] not in hidden]
+            if not visible:
+                continue
+            ttk.Label(self.props_inner, text=glabel, style="Group.TLabel").grid(
+                row=row, column=0, columnspan=2, sticky="we", pady=(9, 2))
+            row += 1
+            for f in visible:
+                key, label, kind, extra = _field_spec(f)
+                if kind == "switch_list":
+                    # 候选编辑器较宽：标签放到上方，编辑器占整行
+                    lab = ttk.Label(self.props_inner, text=label, style="Dim.TLabel")
+                    lab.grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
+                    self._bind_tip(lab, FIELD_TIPS.get(key))
+                    row += 1
+                    var = self._make_var(nd["props"], key, kind)
+                    self._make_widget(var, kind, key, extra).grid(
+                        row=row, column=0, columnspan=2, sticky="we", pady=2)
+                    self.prop_widgets[key] = var
+                    row += 1
+                    continue
+                lab = ttk.Label(self.props_inner, text=label, style="Dim.TLabel")
+                lab.grid(row=row, column=0, sticky="w", pady=2)
+                self._bind_tip(lab, FIELD_TIPS.get(key))
                 var = self._make_var(nd["props"], key, kind)
-                self._make_widget(var, kind, key, extra).grid(row=row, column=0,
-                                                             columnspan=2, sticky="we",
-                                                             pady=2)
+                self._make_widget(var, kind, key, extra).grid(
+                    row=row, column=1, sticky="we", padx=(8, 0), pady=2)
                 self.prop_widgets[key] = var
                 row += 1
-                continue
-            ttk.Label(self.props_inner, text=label, style="Dim.TLabel").grid(
-                row=row, column=0, sticky="w", pady=2)
-            var = self._make_var(nd["props"], key, kind)
-            self._make_widget(var, kind, key, extra).grid(row=row, column=1, sticky="we",
-                                                         padx=(8, 0), pady=2)
-            self.prop_widgets[key] = var
-            row += 1
+        hint = _hide_hint(nd["type"], nd.get("props") or {})
+        if hint:
+            ttk.Label(self.props_inner, text="⚠ " + hint, style="Dim.TLabel",
+                      wraplength=300, justify="left").grid(
+                row=row, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.props_inner.columnconfigure(1, weight=1)
         self._sync_branch_ui()
+
+    def _bind_tip(self, widget, text):
+        """轻量 tooltip（tkinter 无原生支持）：悬停显示，离开或控件销毁即关闭"""
+        if not text:
+            return
+        state = {"win": None}
+
+        def hide(_e=None):
+            if state["win"] is not None:
+                try:
+                    state["win"].destroy()
+                except tk.TclError:
+                    pass
+                state["win"] = None
+
+        def show(_e=None):
+            if state["win"] is not None:
+                return
+            try:
+                w = tk.Toplevel(self.root)
+            except tk.TclError:
+                return
+            w.wm_overrideredirect(True)
+            w.attributes("-topmost", True)
+            tk.Label(w, text=text, justify="left", bg="#2b3245", fg=THEME["text"],
+                     font=FONT_SM, padx=8, pady=5, relief="solid", bd=1,
+                     wraplength=340).pack()
+            w.wm_geometry("+%d+%d" % (widget.winfo_rootx() + 14,
+                                      widget.winfo_rooty()
+                                      + widget.winfo_height() + 4))
+            state["win"] = w
+
+        widget.bind("<Enter>", show, add="+")
+        widget.bind("<Leave>", hide, add="+")
+        widget.bind("<Destroy>", hide, add="+")
 
     def _make_var(self, props, key, kind):
         v = props.get(key)
