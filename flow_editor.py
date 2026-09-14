@@ -73,6 +73,13 @@ LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 J
 ZOOM_MIN, ZOOM_MAX = 0.25, 2.5   # 画布缩放范围（下限小一点便于总览 40 节点的长流程）
 TIDY_X = 24                 # 「整理布局」时主链的 x（贴左边，保证点完就能看见）
 PENDING_TPL = "?"           # 拖「＋」球新建的候选占位识别目标：待用户选模板/填OCR
+# 枝干各候选分支的配色：球与它的连线同色，一眼能看出"哪个球连到哪"。
+# 球上的数字只表示【判定顺序】（从左到右依次判定），与画布上下位置无关。
+BRANCH_COLORS = ["#58c470", "#5b8cff", "#e8a33d", "#c884e8", "#3fc9c9", "#e0d24d"]
+
+
+def branch_color(i):
+    return BRANCH_COLORS[i % len(BRANCH_COLORS)]
 
 # ---------------- 主题 ----------------
 
@@ -3243,8 +3250,9 @@ class FlowEditor:
                               width=2, arrow=tk.LAST, fill=THEME["arrow"],
                               arrowshape=ARROW_SHAPE, splinesteps=24)
             else:
+                cut_y = a_bottom + (30 if a["type"] == "switch" else 0)
                 max_x = max(max_x, self._draw_cut_off(
-                    a["x"] + CARD_W / 2, a_bottom, y2, _suppress_reason(self.flow, cur)))
+                    a["x"] + CARD_W / 2, cut_y, y2, _suppress_reason(self.flow, cur)))
         # 分支/枝干出口连线
         for nid in ch:
             nd = self.flow["nodes"][nid]
@@ -3284,18 +3292,24 @@ class FlowEditor:
                 for ci, cand in enumerate(cands):
                     tgt = cand.get("next")
                     sx, sy = self._port_pos(nd, f"cand{ci}")
+                    col = branch_color(ci)
                     if tgt and tgt in self.flow["nodes"]:
                         t = self.flow["nodes"][tgt]
                         ex, ey = t["x"] + CARD_W / 2, t["y"]
-                        mx = max(sx, ex) + 52
-                        c.create_line(sx, sy, mx, sy, mx, ey, ex, ey - 2, smooth=True,
-                                      width=2, fill=THEME["ok"], arrow=tk.LAST,
+                        # 从球先向下、再横向、最后扎进目标卡片顶部。
+                        # 以前是「先向右绕 52px 再拐下来」，几条线会互相交叉成麻花，
+                        # 分不清哪个球连的是哪个节点。
+                        mid = sy + max(20.0, (ey - sy) * 0.45)
+                        c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2,
+                                      smooth=True, width=2, fill=col, arrow=tk.LAST,
                                       arrowshape=ARROW_SHAPE, splinesteps=24)
+                        c.create_text(sx + 7, mid - 9, anchor="w", fill=col,
+                                      font=self.f_sm, text=str(ci + 1))
                     else:
-                        c.create_line(sx, sy, sx + 26, sy, fill=THEME["ok"], width=2)
-                        _round_rect(c, sx + 28, sy - 11, sx + 60, sy + 11, 5,
+                        c.create_line(sx, sy, sx, sy + 22, fill=col, width=2)
+                        _round_rect(c, sx - 26, sy + 24, sx + 34, sy + 46, 5,
                                     fill="#14161d", outline=THEME["card_line"])
-                        c.create_text(sx + 35, sy, anchor="w", fill=THEME["ok"],
+                        c.create_text(sx + 4, sy + 35, anchor="center", fill=col,
                                       font=self.f_sm, text="→结束")
                     max_x = max(max_x, sx + 190)
                 mn = exits["miss"]
@@ -3303,8 +3317,8 @@ class FlowEditor:
                 if mn and mn in self.flow["nodes"]:
                     t = self.flow["nodes"][mn]
                     ex, ey = t["x"] + CARD_W / 2, t["y"]
-                    px2 = max(sx, ex) + 52
-                    c.create_line(sx, sy, px2, sy, px2, ey, ex, ey - 2, smooth=True,
+                    mid = sy + max(20.0, (ey - sy) * 0.45)
+                    c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2, smooth=True,
                                   width=2, fill=THEME["err"], arrow=tk.LAST,
                                   arrowshape=ARROW_SHAPE, splinesteps=24)
                 else:
@@ -3403,10 +3417,11 @@ class FlowEditor:
                 hx, hy = self._port_pos(nd, f"cand{ci}")
                 c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
                               fill="#1c2b1f", outline="")
-                c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=THEME["ok"],
+                col = branch_color(ci)
+                c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=col,
                               outline="#ffffff", width=1,
                               tags=("port", f"port:{nid}:cand{ci}"))
-                c.create_text(hx, hy - 15, font=self.f_sm, fill=THEME["ok"],
+                c.create_text(hx, hy - 15, font=self.f_sm, fill=col,
                               text=str(ci + 1), tags=tags)
             mx, my = self._port_pos(nd, "miss")
             c.create_oval(mx - 10, my - 10, mx + 10, my + 10, fill="#2e1c1e", outline="")
@@ -4526,9 +4541,10 @@ class FlowEditor:
                                 self._branch_target_label(nid, mn, False))
             n_cand = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
             self.branch_hint.config(
-                text=f"候选 {n_cand} 个，按从左到右依次判定。卡片下沿有球："
-                     f"绿球(带序号)=各候选分支，红球=全部未中，蓝「＋」球=拖到目标节点"
-                     f"即新建一条分支（会再冒一个新球，可以连着拉）。")
+                text=f"候选 {n_cand} 个。★ 球上的数字 = 判定顺序：先试 1，命中就走 1 "
+                     f"那条线连到的节点；不中再试 2；全不中走红球(✗)。"
+                     f"下沿的球：彩色带序号=各候选分支（线与球同色），"
+                     f"蓝「＋」球=拖到目标节点即新建一条分支（会再冒一个新球）。")
             return
         if nd["type"] != "branch":
             _disable_combos()
