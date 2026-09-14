@@ -1,0 +1,22 @@
+{
+  "name": "测试流程",
+  "chain": [
+    "n0028386"
+  ],
+  "nodes": {
+    "n0028386": {
+      "type": "ocr_click",
+      "x": 332.0,
+      "y": 86.0,
+      "title": "OCR识别点击",
+      "props": {
+        "text": "博物研学",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      }
+    }
+  }
+}
