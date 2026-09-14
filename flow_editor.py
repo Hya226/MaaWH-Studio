@@ -70,6 +70,7 @@ FRAME_DISP_H_LS = 540       # 横屏帧的画布显示高度（按宽度适配�
 CARD_W, CARD_H = 240, 60    # 节点卡片尺寸
 UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文本）
 LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 JSON 撑到手机端加载不动）
+ZOOM_MIN, ZOOM_MAX = 0.25, 2.5   # 画布缩放范围（下限小一点便于总览 40 节点的长流程）
 
 # ---------------- 主题 ----------------
 
@@ -2568,6 +2569,11 @@ class FlowEditor:
         self._clipboard = None      # 复制的节点（P2-5）
         self.roi_pick = None        # ROI 拖框状态（P2-6）
         self.tpl_win = None         # 模板管理窗口
+        # 画布视图：模型坐标（world）不变，绘制时统一乘 zoom，交互时统一除 zoom。
+        # 这样节点永远存在同一处，缩放/平移只是「看的方式」。
+        self.zoom = 1.0
+        self._pan = None            # 中键拖动平移状态
+        self._bg_cache = None       # 背景帧 PhotoImage 缓存（按 zoom 失效）
 
         self._build_toolbar()
         self._build_statusbar()
@@ -2715,6 +2721,16 @@ class FlowEditor:
             b.bind("<Leave>", lambda e, bb=b: bb.config(bg=THEME["panel"]))
         self._flat_btn(left, "✥  整理布局", self.tidy_layout,
                        font=FONT_SM).pack(fill="x", padx=8, pady=(12, 0))
+        zrow = ttk.Frame(left)
+        zrow.pack(fill="x", padx=8, pady=(4, 0))
+        self._flat_btn(zrow, "－", lambda: self.zoom_out(), padx=7,
+                       font=FONT_SM).pack(side="left")
+        self._flat_btn(zrow, "100%", lambda: self.zoom_reset(), padx=7,
+                       font=FONT_SM).pack(side="left", padx=3)
+        self._flat_btn(zrow, "＋", lambda: self.zoom_in(), padx=7,
+                       font=FONT_SM).pack(side="left")
+        self._flat_btn(left, "⤢  适配窗口", lambda: self.zoom_fit(),
+                       font=FONT_SM).pack(fill="x", padx=8, pady=1)
 
         ttk.Separator(left).pack(fill="x", pady=12, padx=8)
         ttk.Label(left, text="  背景帧 · 对照坐标", style="Title.TLabel").pack(
@@ -2747,6 +2763,10 @@ class FlowEditor:
         self.canvas.bind("<ButtonRelease-1>", self.on_up)
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind("<Delete>", self.on_delete_key)
+        # 中键拖动平移 / Ctrl+滚轮缩放（见 _on_mousewheel）
+        self.canvas.bind("<Button-2>", self.on_pan_start)
+        self.canvas.bind("<B2-Motion>", self.on_pan_move)
+        self.canvas.bind("<ButtonRelease-2>", self.on_pan_end)
         for key, dx, dy in (("<Left>", -4, 0), ("<Right>", 4, 0),
                             ("<Up>", 0, -4), ("<Down>", 0, 4),
                             ("<Shift-Left>", -20, 0), ("<Shift-Right>", 20, 0),
@@ -2762,6 +2782,10 @@ class FlowEditor:
         self.root.bind("<Control-v>", lambda e: (self.on_paste(), "break")[1])
         self.root.bind("<Control-d>", lambda e: (self.on_duplicate(), "break")[1])
         self.root.bind("<Escape>", self.on_escape)
+        self.root.bind("<Control-plus>", lambda e: (self.zoom_in(), "break")[1])
+        self.root.bind("<Control-equal>", lambda e: (self.zoom_in(), "break")[1])
+        self.root.bind("<Control-minus>", lambda e: (self.zoom_out(), "break")[1])
+        self.root.bind("<Control-Key-0>", lambda e: (self.zoom_reset(), "break")[1])
 
     def _build_props(self):
         right = ttk.Frame(self.root, width=360)
@@ -2853,7 +2877,7 @@ class FlowEditor:
 
     def _build_statusbar(self):
         self.status_var = tk.StringVar(value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ "
-                                             "滚轮纵向/Shift+滚轮横向 ｜ Delete 删除选中节点")
+                                             "Ctrl+滚轮缩放 ｜ 中键拖动平移 ｜ Delete 删除")
         tk.Label(self.root, textvariable=self.status_var, bg=THEME["bg"],
                  fg=THEME["text_dim"], anchor="w", padx=10, pady=3,
                  font=FONT_SM).pack(fill="x", side="bottom")
@@ -3033,6 +3057,8 @@ class FlowEditor:
         self._snapshot(f"align:{nid}")
         self.flow["nodes"][nid]["x"] = self._side_col_x()
         self.redraw()
+        self._focus_node(nid)      # 挪到侧列后自动滚过去，别让节点"消失"在视野外
+        self.log("已挪到侧列（画布已自动滚到该节点；Ctrl+滚轮缩放 / 中键拖动平移）")
 
     def tidy_layout(self):
         self._snapshot()
@@ -3044,25 +3070,53 @@ class FlowEditor:
             nd["y"] = y
             y += CARD_H + 30
         self.redraw()
+        self.canvas.xview_moveto(0)
+        self.canvas.yview_moveto(0)
 
     def _chain_col_x(self):
         fw = self.bg_disp[2] if self.bg_disp else 750
         return fw + 130
 
     def _side_col_x(self):
+        """侧列 x。缩放到最小也放不下时，侧列其实「在右边」——所以 align 之后
+        必须自动滚过去（见 align_node），不能让人以为节点没了。"""
         return self._chain_col_x() + CARD_W + 100
 
     def _scroll_to(self, y):
         sr = self.canvas.cget("scrollregion").split()
         h = float(sr[3]) if len(sr) == 4 else 2000
-        self.canvas.yview_moveto(max(0.0, (y - 120) / max(1.0, h)))
+        self.canvas.yview_moveto(max(0.0, (y * (self.zoom or 1.0) - 120) / max(1.0, h)))
 
     def _on_mousewheel(self, e):
-        """滚轮纵向滚动；按住 Shift 横向滚动（配合下沿横向滚动条）"""
-        if e.state & 0x0001:
+        """滚轮纵向；Shift+滚轮 横向；Ctrl+滚轮 缩放（以鼠标位置为锚点）"""
+        if e.state & 0x0004:
+            self.set_zoom(self.zoom * (1.12 if e.delta > 0 else 1 / 1.12),
+                          (self.canvas.canvasx(e.x), self.canvas.canvasy(e.y)))
+        elif e.state & 0x0001:
             self.canvas.xview_scroll(int(-e.delta / 120), "units")
         else:
             self.canvas.yview_scroll(int(-e.delta / 120), "units")
+
+    # ---------- 平移：中键拖动（scan_mark/scan_dragto，鼠标按住哪就跟着走） ----------
+
+    def on_pan_start(self, e):
+        try:
+            self.canvas.scan_mark(e.x, e.y)
+            self.canvas.config(cursor="fleur")
+        except tk.TclError:
+            pass
+
+    def on_pan_move(self, e):
+        try:
+            self.canvas.scan_dragto(e.x, e.y, gain=1)
+        except tk.TclError:
+            pass
+
+    def on_pan_end(self, _e):
+        try:
+            self.canvas.config(cursor="")
+        except tk.TclError:
+            pass
 
     # ---------- 背景帧 ----------
 
@@ -3123,6 +3177,7 @@ class FlowEditor:
             return
         c = self.canvas
         c.delete("all")
+        self._apply_zoom_fonts()
         ox, oy = 44, 44
         # 网格
         max_x, max_y = 1400, 1600
@@ -3140,20 +3195,21 @@ class FlowEditor:
         while gy < max_y:
             c.create_line(0, gy, max_x, gy, fill=THEME["grid"])
             gy += step
-        # 背景帧
+        # 背景帧（bg_disp 存模型坐标；图片按 zoom 重新生成 —— Tk 的 canvas.scale
+        # 只缩放坐标、不会缩放图片，所以图片得自己按缩放后尺寸重建）
+        z = self.zoom or 1.0
         if self.bg_pil is not None and self.show_bg.get():
             disp_h = (FRAME_DISP_H if self.bg_pil.height >= self.bg_pil.width
                       else FRAME_DISP_H_LS)
             scale = disp_h / self.bg_pil.height
             dw = int(self.bg_pil.width * scale)
             self.bg_disp = (ox, oy, dw, disp_h)
-            self.bg_photo = ImageTk.PhotoImage(
-                self.bg_pil.resize((dw, disp_h), Image.LANCZOS))
+            self.bg_photo = self._bg_photo_for(dw * z, disp_h * z)
             _round_rect(c, ox - 2, oy - 2, ox + dw + 2, oy + disp_h + 2, 8,
                         fill=THEME["card_line"], outline="")
             c.create_image(ox, oy, anchor="nw", image=self.bg_photo)
             c.create_text(ox + 10, oy + 10, anchor="nw", fill="#cfd6e6",
-                          font=FONT_SM,
+                          font=self.f_sm,
                           text=f" 参考帧 {self.frame_wh[0]}×{self.frame_wh[1]} ")
             max_x = max(max_x, ox + dw + 40)     # 帧也能横向滚到（以前只算了纵向）
             max_y = max(max_y, oy + disp_h + 40)
@@ -3209,7 +3265,7 @@ class FlowEditor:
                         _round_rect(c, sx + 28, sy - 11, sx + 28 + tw, sy + 11, 5,
                                     fill="#14161d", outline=THEME["card_line"])
                         c.create_text(sx + 35, sy, anchor="w", fill=color,
-                                      font=FONT_SM, text=txt)
+                                      font=self.f_sm, text=txt)
                     max_x = max(max_x, sx + 190)
             elif nd["type"] == "switch":
                 cands = exits["candidates"]
@@ -3228,7 +3284,7 @@ class FlowEditor:
                         _round_rect(c, sx + 28, sy - 11, sx + 60, sy + 11, 5,
                                     fill="#14161d", outline=THEME["card_line"])
                         c.create_text(sx + 35, sy, anchor="w", fill=THEME["ok"],
-                                      font=FONT_SM, text="→结束")
+                                      font=self.f_sm, text="→结束")
                     max_x = max(max_x, sx + 190)
                 mn = exits["miss"]
                 sx, sy = self._port_pos(nd, "miss")
@@ -3244,7 +3300,7 @@ class FlowEditor:
                     _round_rect(c, sx + 28, sy - 11, sx + 60, sy + 11, 5,
                                 fill="#14161d", outline=THEME["card_line"])
                     c.create_text(sx + 35, sy, anchor="w", fill=THEME["err"],
-                                  font=FONT_SM, text="→结束")
+                                  font=self.f_sm, text="→结束")
                 max_x = max(max_x, sx + 190)
             elif nd["type"] == "loop":
                 # 循环体括线 + 回边：循环体末尾 → 循环节点（虚线），
@@ -3264,7 +3320,7 @@ class FlowEditor:
             c.create_rectangle(rp["x0"], rp["y0"], rp["x1"], rp["y1"],
                                outline=THEME["warn"], width=2, dash=(6, 4))
             c.create_text(rp["x0"], rp["y0"] - 8, anchor="sw", fill=THEME["warn"],
-                          font=FONT_SM, text="新 ROI")
+                          font=self.f_sm, text="新 ROI")
         if ch:
             first = self.flow["nodes"][ch[0]]
             entry_txt = f"▶ 入口 VF_{self.flow['name']}"
@@ -3272,14 +3328,17 @@ class FlowEditor:
             _round_rect(c, first["x"] + 4, first["y"] - 30, first["x"] + bw,
                         first["y"] - 8, 9, fill="#3a3418", outline="#d8c86a")
             c.create_text(first["x"] + 4 + bw / 2, first["y"] - 19, fill="#ffe9a0",
-                          font=FONT_SM, text=entry_txt)
+                          font=self.f_sm, text=entry_txt)
         # 连线拖动临时线
         if self.wire:
             sx, sy = self._port_pos(self.flow["nodes"][self.wire["from"]], self.wire["port"])
             c.create_line(sx, sy, self.wire["mx"], self.wire["my"],
                           fill="#e8d44d", width=2, arrow=tk.LAST,
                           arrowshape=ARROW_SHAPE)
-        c.config(scrollregion=(0, 0, max_x, max_y))
+        # 视图变换：整体按 zoom 缩放（模型坐标不变），再按缩放后的范围设滚动区
+        if abs(z - 1.0) > 1e-6:
+            c.scale("all", 0, 0, z, z)
+        c.config(scrollregion=(0, 0, max_x * z, max_y * z))
 
     def _draw_node(self, nid):
         c = self.canvas
@@ -3307,7 +3366,7 @@ class FlowEditor:
                     outline="", tags=tags)
         idx = self.flow["chain"].index(nid) + 1
         c.create_text(x + 20, y + 7, anchor="nw",
-                      fill=THEME["text_dim"] if disabled else "white", font=FONT_B,
+                      fill=THEME["text_dim"] if disabled else "white", font=self.f_title,
                       text=f"{idx}. {nd.get('title', spec['label'])}"
                            + ("（已禁用）" if disabled else ""),
                       tags=tags)
@@ -3321,9 +3380,9 @@ class FlowEditor:
                 line = f"{ci + 1}. {disp}"
                 if len(line) > 18:          # 卡片内按宽度截断，超时移到最右
                     line = line[:17] + "…"
-                c.create_text(x + 16, cy, anchor="w", font=FONT_SM,
+                c.create_text(x + 16, cy, anchor="w", font=self.f_sm,
                               fill=THEME["text"], text=line, tags=tags)
-                c.create_text(x + CARD_W - 12, cy, anchor="e", font=FONT_SM,
+                c.create_text(x + CARD_W - 12, cy, anchor="e", font=self.f_sm,
                               fill=THEME["text_dim"], text=f"{cnd['timeout']}ms",
                               tags=tags)
                 hx, hy = self._port_pos(nd, f"cand{ci}")
@@ -3334,7 +3393,7 @@ class FlowEditor:
                               tags=("port", f"port:{nid}:cand{ci}"))
             # 全部未中出口
             mx, my = self._port_pos(nd, "miss")
-            c.create_text(x + 16, my, anchor="w", font=FONT_SM,
+            c.create_text(x + 16, my, anchor="w", font=self.f_sm,
                           fill=THEME["err"], text="全部未中 ⤷", tags=tags)
             c.create_oval(mx - 9, my - 9, mx + 9, my + 9, fill="#2e1c1e", outline="")
             c.create_oval(mx - 5, my - 5, mx + 5, my + 5, fill=THEME["err"],
@@ -3342,7 +3401,7 @@ class FlowEditor:
                           tags=("port", f"port:{nid}:miss"))
         else:
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
-                          font=FONT_SM, text=spec["summary"](nd["props"])[:12], tags=tags)
+                          font=self.f_sm, text=spec["summary"](nd["props"])[:12], tags=tags)
             if nd["props"].get("template"):
                 got = self._get_tpl_photo(nd["props"]["template"])
                 if got:
@@ -3375,13 +3434,13 @@ class FlowEditor:
             body = loop_body_of(self.flow, nid)
             info = (f"循环体 {len(body)} 个节点" if body else "循环体未设置")
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
-                          font=FONT_SM, text=info, tags=tags)
+                          font=self.f_sm, text=info, tags=tags)
         if nd["type"] == "subflow":
             child, err = subflow_child(self.flow, nid)
             info = (f"内联 {len(child.get('chain') or [])} 个节点"
                     if child is not None else "子流程未设置")
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
-                          font=FONT_SM, text=info, tags=tags)
+                          font=self.f_sm, text=info, tags=tags)
 
     def _port_pos(self, nd, port):
         if nd["type"] == "loop":
@@ -3419,7 +3478,7 @@ class FlowEditor:
         bx = cx + 16
         _round_rect(c, bx, tip - 11, bx + tw, tip + 11, 5,
                     fill="#2a1114", outline=THEME["err"])
-        c.create_text(bx + tw / 2, tip, fill="#ffb3b3", font=FONT_SM, text=txt)
+        c.create_text(bx + tw / 2, tip, fill="#ffb3b3", font=self.f_sm, text=txt)
         return bx + tw
 
     def _draw_loop_marks(self, nid):
@@ -3437,7 +3496,7 @@ class FlowEditor:
             c.create_line(sx, sy, sx + 26, sy, fill=THEME["warn"], width=2, dash=(5, 3))
             _round_rect(c, sx + 28, sy - 11, sx + 28 + 12 * len("未设置循环体") + 14,
                         sy + 11, 5, fill="#14161d", outline=THEME["card_line"])
-            c.create_text(sx + 35, sy, anchor="w", fill=THEME["warn"], font=FONT_SM,
+            c.create_text(sx + 35, sy, anchor="w", fill=THEME["warn"], font=self.f_sm,
                           text="设置循环体末尾")
             return
         first = self.flow["nodes"][body[0]]
@@ -3450,7 +3509,7 @@ class FlowEditor:
         c.create_line(bx, top, bx + 9, top, fill=THEME["warn"], width=2)
         c.create_line(bx, bot, bx + 9, bot, fill=THEME["warn"], width=2)
         c.create_text(bx - 4, (top + bot) / 2, anchor="e", fill=THEME["warn"],
-                      font=FONT_SM, text=f"循环体 ×{times}")
+                      font=self.f_sm, text=f"循环体 ×{times}")
         # 回边：循环体末尾右下 → 绕到循环节点右侧端口（虚线）
         sx, sy = self._port_pos(nd, "body_end")
         ex = last["x"] + CARD_W
@@ -3461,7 +3520,7 @@ class FlowEditor:
                       arrowshape=ARROW_SHAPE, splinesteps=24)
         _round_rect(c, mx - 34, (sy + ey) / 2 - 11, mx + 40, (sy + ey) / 2 + 11, 5,
                     fill="#14161d", outline=THEME["card_line"])
-        c.create_text(mx + 3, (sy + ey) / 2, fill=THEME["warn"], font=FONT_SM,
+        c.create_text(mx + 3, (sy + ey) / 2, fill=THEME["warn"], font=self.f_sm,
                       text=f"×{times} 次")
 
     def _draw_branch_labels(self):
@@ -3472,9 +3531,9 @@ class FlowEditor:
                 hx, hy = self._port_pos(nd, "hit_next")
                 mx, my = self._port_pos(nd, "miss_next")
                 c.create_text(hx - 11, hy, anchor="e", fill=THEME["ok"],
-                              font=FONT_SM, text="✓命中")
+                              font=self.f_sm, text="✓命中")
                 c.create_text(mx - 11, my, anchor="e", fill=THEME["err"],
-                              font=FONT_SM, text="✗未中")
+                              font=self.f_sm, text="✗未中")
             elif nd["type"] == "switch":
                 cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
                 for ci, cnd in enumerate(cands):
@@ -3482,12 +3541,12 @@ class FlowEditor:
                     _round_rect(c, px - 12, py - 11, px + 38, py + 11, 5,
                                 fill="#14161d", outline=THEME["card_line"])
                     c.create_text(px - 2, py, anchor="e", fill=THEME["ok"],
-                                  font=FONT_SM, text=f"✓{ci + 1}")
+                                  font=self.f_sm, text=f"✓{ci + 1}")
                 mx, my = self._port_pos(nd, "miss")
                 _round_rect(c, mx - 12, my - 11, mx + 44, my + 11, 5,
                             fill="#14161d", outline=THEME["card_line"])
                 c.create_text(mx - 2, my, anchor="e", fill=THEME["err"],
-                              font=FONT_SM, text="✗全未中")
+                              font=self.f_sm, text="✗全未中")
 
     def _draw_overlays(self):
         """背景帧上叠加显示选中节点的 ROI / 点击点 / 滑动线"""
@@ -3515,7 +3574,7 @@ class FlowEditor:
                                    px(roi[0] + roi[2]), py(roi[1] + roi[3]),
                                    outline=THEME["warn"], width=2, dash=(5, 3))
                 c.create_text(px(roi[0]), py(roi[1]) - 8, anchor="sw",
-                              fill=THEME["warn"], font=FONT_SM, text="ROI")
+                              fill=THEME["warn"], font=self.f_sm, text="ROI")
         if nd["type"] == "tap":
             c.create_line(px(p["x"]) - 12, py(p["y"]), px(p["x"]) + 12, py(p["y"]),
                           fill="#ff6a6a")
@@ -3661,10 +3720,98 @@ class FlowEditor:
         self._tpl_img_cache[name] = (mtime, photo, dw, dh)
         return self._tpl_img_cache[name]
 
+    # ---------- 画布视图：坐标变换 / 缩放 / 平移 ----------
+
+    def _c2w(self, cx, cy):
+        """画布坐标 → 模型坐标"""
+        z = self.zoom or 1.0
+        return cx / z, cy / z
+
+    def _w2c(self, wx, wy):
+        """模型坐标 → 画布坐标"""
+        z = self.zoom or 1.0
+        return wx * z, wy * z
+
+    def _apply_zoom_fonts(self):
+        """字号跟着缩放走：不缩字号的话，缩小后卡片变小而字不变，会糊成一团。"""
+        def scaled(base):
+            try:
+                size = int(round(base[1] * self.zoom))
+            except (IndexError, TypeError):
+                return base
+            return (base[0], max(6, size)) + tuple(base[2:])
+        self.f_sm = scaled(FONT_SM)
+        self.f_title = scaled(FONT_B)
+        self.f_ui = scaled(FONT)
+
+    def set_zoom(self, z, anchor=None):
+        """设置缩放（下限 0.25 便于总览长流程，上限 2.5）。anchor 是画布坐标，
+        缩放后尽量让该点停在原处。"""
+        z = max(ZOOM_MIN, min(ZOOM_MAX, float(z)))
+        if abs(z - self.zoom) < 1e-6:
+            return
+        old = self.zoom
+        if anchor:
+            wx, wy = self._c2w(*anchor)
+        self.zoom = z
+        self._bg_cache = None
+        self.redraw()
+        sr = [float(v) for v in (self.canvas.cget("scrollregion").split() or [0, 0, 1, 1])]
+        if anchor and len(sr) == 4 and sr[2] > 0 and sr[3] > 0:
+            # 让 anchor 处的模型点缩放后仍落在同一个屏幕位置
+            cx, cy = self._w2c(wx, wy)
+            self.canvas.xview_moveto(max(0.0, (cx - anchor[0]) / sr[2]))
+            self.canvas.yview_moveto(max(0.0, (cy - anchor[1]) / sr[3]))
+        self.status(f"缩放 {int(self.zoom * 100)}%")
+
+    def zoom_in(self, anchor=None):
+        self.set_zoom(self.zoom * 1.2, anchor)
+
+    def zoom_out(self, anchor=None):
+        self.set_zoom(self.zoom / 1.2, anchor)
+
+    def zoom_reset(self):
+        self.set_zoom(1.0)
+
+    def zoom_fit(self):
+        """缩到内容能一屏装下（受 ZOOM_MIN 限制）；装不下就如实说明，不假装适配了"""
+        pts = [(nd["x"], nd["y"]) for nd in self.flow["nodes"].values()]
+        if not pts:
+            self.set_zoom(1.0)
+            return
+        w = max(p[0] for p in pts) + CARD_W + 80
+        h = max(p[1] for p in pts) + CARD_H + 80
+        cw = max(200, self.canvas.winfo_width() - 20)
+        chh = max(200, self.canvas.winfo_height() - 20)
+        want = min(cw / w, chh / h)
+        self.set_zoom(want)
+        self.canvas.xview_moveto(0)
+        self.canvas.yview_moveto(0)
+        if want < ZOOM_MIN:
+            self.log(f"⚠ 内容高 {int(h)}px，缩到下限 {int(ZOOM_MIN * 100)}% 仍超出窗口"
+                     f"（可中键拖动平移，或用「✥ 整理布局」把节点排紧）", "warn")
+        else:
+            self.status(f"已适配窗口（{int(self.zoom * 100)}%）")
+
+    def _bg_photo_for(self, dw, dh):
+        """背景帧的 PhotoImage：尺寸随 zoom 变，所以要按 (帧, 显示高度, zoom) 缓存。
+        以前每次 redraw 都重做 LANCZOS 缩放 + 构造 PhotoImage，是重绘耗时的大头。"""
+        key = (self._frame_file, getattr(self, "_frame_mtime", None),
+               int(dw), int(dh))
+        if self._bg_cache and self._bg_cache[0] == key:
+            return self._bg_cache[1]
+        photo = ImageTk.PhotoImage(self.bg_pil.resize((max(1, int(dw)),
+                                                       max(1, int(dh))),
+                                                      Image.LANCZOS))
+        self._bg_cache = (key, photo)
+        return photo
+
     # ---------- 画布交互 ----------
 
-    def _hit_test(self, cx, cy):
-        """返回 ("port", nid, port) / ("node", nid) / None"""
+    def _hit_test(self, wx, wy):
+        """返回 ("port", nid, port) / ("node", nid) / None。
+        传入模型坐标（画布坐标已除过 zoom），命中测试再换算回画布坐标。"""
+        cx, cy = self._w2c(wx, wy)
         for it in reversed(self.canvas.find_overlapping(cx - 2, cy - 2, cx + 2, cy + 2)):
             for tag in self.canvas.gettags(it):
                 if tag.startswith("port:"):
@@ -3674,19 +3821,18 @@ class FlowEditor:
                     return ("node", tag.split(":")[1])
         return None
 
-    def _canvas_to_frame(self, cx, cy):
-        """画布坐标 → 帧原图坐标；不在帧内返回 None"""
+    def _canvas_to_frame(self, wx, wy):
+        """模型坐标 → 帧原图坐标；不在帧内返回 None"""
         if not self.bg_disp:
             return None
         ox, oy, dw, dh = self.bg_disp
-        if not (ox <= cx <= ox + dw and oy <= cy <= oy + dh):
+        if not (ox <= wx <= ox + dw and oy <= wy <= oy + dh):
             return None
         W, H = self.frame_wh
-        return (int((cx - ox) * W / dw), int((cy - oy) * H / dh))
+        return (int((wx - ox) * W / dw), int((wy - oy) * H / dh))
 
     def on_down(self, e):
-        cx = self.canvas.canvasx(e.x)
-        cy = self.canvas.canvasy(e.y)
+        cx, cy = self._c2w(self.canvas.canvasx(e.x), self.canvas.canvasy(e.y))
         try:
             self.canvas.focus_set()          # 让方向键微调落到画布而不是别处
         except tk.TclError:
@@ -3729,8 +3875,7 @@ class FlowEditor:
         self.redraw()
 
     def on_motion(self, e):
-        cx = self.canvas.canvasx(e.x)
-        cy = self.canvas.canvasy(e.y)
+        cx, cy = self._c2w(self.canvas.canvasx(e.x), self.canvas.canvasy(e.y))
         if self.roi_pick is not None and self.roi_pick.get("x0") is not None:
             self.roi_pick["x1"], self.roi_pick["y1"] = cx, cy
             self.redraw()
@@ -4581,10 +4726,11 @@ class FlowEditor:
         x0, y0, x1, y1 = (float(v) for v in sr)
         cw = max(1, self.canvas.winfo_width())
         chh = max(1, self.canvas.winfo_height())
+        z = self.zoom or 1.0
         if y1 > y0:
-            self.canvas.yview_moveto(max(0.0, (nd["y"] - chh / 3) / (y1 - y0)))
+            self.canvas.yview_moveto(max(0.0, (nd["y"] * z - chh / 3) / (y1 - y0)))
         if x1 > x0:
-            self.canvas.xview_moveto(max(0.0, (nd["x"] - cw / 3) / (x1 - x0)))
+            self.canvas.xview_moveto(max(0.0, (nd["x"] * z - cw / 3) / (x1 - x0)))
 
     def replay_close(self):
         win = getattr(self, "replay_win", None)
@@ -4616,7 +4762,7 @@ class FlowEditor:
             _round_rect(c, nd["x"] - 5, nd["y"] - 5, nd["x"] + CARD_W + 5,
                         nd["y"] + h + 5, 14, outline="#41d1a0", width=2, fill="")
             c.create_text(nd["x"] + CARD_W + 10, nd["y"] - 5, anchor="nw",
-                          fill="#41d1a0", font=FONT_SM, text="◀ 回放")
+                          fill="#41d1a0", font=self.f_sm, text="◀ 回放")
         if not self.bg_disp:
             return
         ox, oy, dw, dh = self.bg_disp
@@ -4637,14 +4783,14 @@ class FlowEditor:
             _round_rect(c, ox + 6, oy + 6, ox + 6 + tw, oy + 34, 6,
                         fill="#2a1114", outline=THEME["err"])
             c.create_text(ox + 16, oy + 20, anchor="w", fill="#ffb3b3",
-                          font=FONT_SM, text=txt)
+                          font=self.f_sm, text=txt)
             return
         if box:
             x, y, w, hh = box
             c.create_rectangle(px(x), py(y), px(x + w), py(y + hh),
                                outline="#41d1a0", width=2)
             c.create_text(px(x), py(y) - 8, anchor="sw", fill="#41d1a0",
-                          font=FONT_SM, text="识别框")
+                          font=self.f_sm, text="识别框")
         if point:
             x, y = point
             c.create_oval(px(x) - 8, py(y) - 8, px(x) + 8, py(y) + 8,
