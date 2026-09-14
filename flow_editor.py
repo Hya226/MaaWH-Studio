@@ -68,6 +68,7 @@ FRAME_W, FRAME_H = 1280, 720
 FRAME_DISP_H = 880          # 竖屏帧的画布显示高度；横屏帧自动改用 FRAME_DISP_H_LS
 FRAME_DISP_H_LS = 540       # 横屏帧的画布显示高度（按宽度适配，约 960 宽）
 CARD_W, CARD_H = 240, 60    # 节点卡片尺寸
+UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文本）
 
 # ---------------- 主题 ----------------
 
@@ -2109,6 +2110,9 @@ class FlowEditor:
         self._replay_point = None
         self._engine_frame = None   # 引擎识别帧尺寸（从日志的 EngineFrame 事件得知）
         self.replay_win = None
+        self._undo = []             # 撤销栈：[(flow 文本, 合并标签, 时间)]（P2-4）
+        self._redo = []
+        self._clipboard = None      # 复制的节点（P2-5）
 
         self._build_toolbar()
         self._build_statusbar()
@@ -2280,13 +2284,27 @@ class FlowEditor:
         self.canvas.configure(xscrollcommand=self.xsb.set)
         self.xsb.pack(side="bottom", fill="x")
         self.canvas.pack(side="top", fill="both", expand=True)
+        self.canvas.configure(takefocus=1)      # 让方向键微调能落到画布上
         self.canvas.bind("<ButtonPress-1>", self.on_down)
         self.canvas.bind("<B1-Motion>", self.on_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_up)
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind("<Delete>", self.on_delete_key)
+        for key, dx, dy in (("<Left>", -4, 0), ("<Right>", 4, 0),
+                            ("<Up>", 0, -4), ("<Down>", 0, 4),
+                            ("<Shift-Left>", -20, 0), ("<Shift-Right>", 20, 0),
+                            ("<Shift-Up>", 0, -20), ("<Shift-Down>", 0, 20)):
+            self.canvas.bind(key, lambda e, dx=dx, dy=dy: (self.nudge_node(dx, dy),
+                                                           "break")[1])
         self.root.bind("<F5>", lambda e: self.on_capture())
         self.root.bind("<Control-s>", lambda e: (self.on_save(), "break")[1])
+        self.root.bind("<Control-z>", lambda e: (self.undo(), "break")[1])
+        self.root.bind("<Control-Z>", lambda e: (self.redo(), "break")[1])
+        self.root.bind("<Control-y>", lambda e: (self.redo(), "break")[1])
+        self.root.bind("<Control-c>", lambda e: (self.on_copy(), "break")[1])
+        self.root.bind("<Control-v>", lambda e: (self.on_paste(), "break")[1])
+        self.root.bind("<Control-d>", lambda e: (self.on_duplicate(), "break")[1])
+        self.root.bind("<Escape>", self.on_escape)
 
     def _build_props(self):
         right = ttk.Frame(self.root, width=360)
@@ -2396,6 +2414,8 @@ class FlowEditor:
         self.flow["name"] = self.name_var.get().strip() or "未命名"
 
     def on_new(self):
+        self._undo.clear()
+        self._redo.clear()
         self.flow = new_flow("测试流程")
         self.name_var.set(self.flow["name"])
         self.sel = None
@@ -2415,6 +2435,8 @@ class FlowEditor:
                 data = json.load(f)
             if "chain" not in data or "nodes" not in data:
                 raise ValueError("不是流程定义文件")
+            self._undo.clear()
+            self._redo.clear()
             self.flow = normalize_flow(data)
             self.flow.setdefault("chain", [])
             self.flow.setdefault("nodes", {})
@@ -2467,6 +2489,7 @@ class FlowEditor:
     # ---------- 节点增删改 ----------
 
     def add_node(self, ntype, props=None, hit_next=None, miss_next=None, pos=None):
+        self._snapshot()
         self._nid += 1
         nid = f"n{self._nid:03d}{os.urandom(2).hex()}"
         spec = NODE_TYPES[ntype]
@@ -2500,6 +2523,7 @@ class FlowEditor:
             return
         if not messagebox.askyesno("删除节点", "确定删除该节点？"):
             return
+        self._snapshot()
         self.flow["nodes"].pop(nid, None)
         if nid in self.flow["chain"]:
             self.flow["chain"].remove(nid)
@@ -2531,6 +2555,7 @@ class FlowEditor:
         i = ch.index(nid)
         j = i + d
         if 0 <= j < len(ch):
+            self._snapshot()
             ch[i], ch[j] = ch[j], ch[i]
             self.build_prop_panel()
             self.redraw()
@@ -2539,10 +2564,12 @@ class FlowEditor:
         nid = self.sel
         if not nid:
             return
+        self._snapshot(f"align:{nid}")
         self.flow["nodes"][nid]["x"] = self._side_col_x()
         self.redraw()
 
     def tidy_layout(self):
+        self._snapshot()
         x = self._chain_col_x()
         y = 50
         for nid in self.flow["chain"]:
@@ -3123,6 +3150,10 @@ class FlowEditor:
     def on_down(self, e):
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
+        try:
+            self.canvas.focus_set()          # 让方向键微调落到画布而不是别处
+        except tk.TclError:
+            pass
         if self.pick_target:
             pt = self._canvas_to_frame(cx, cy)
             self.pick_target = None          # 本次点击后一律退出取点模式
@@ -3147,6 +3178,8 @@ class FlowEditor:
             self.sel = nid
             self.build_prop_panel()
         nd = self.flow["nodes"][nid]
+        # 拖动前存档；若只是点选没真的移动，内容不变，_snapshot 会自动跳过
+        self._snapshot(f"drag:{nid}")
         self.drag = {"id": nid, "dx": cx - nd["x"], "dy": cy - nd["y"]}
         self.redraw()
 
@@ -3197,6 +3230,7 @@ class FlowEditor:
             src = self.flow["nodes"][self.wire["from"]]
             port = self.wire["port"]
             if hit and hit[0] == "node" and hit[1] != self.wire["from"]:
+                self._snapshot()
                 self._set_wire(src, port, hit[1])
                 self.log(f"已连接 {port} → {self.flow['nodes'][hit[1]].get('title', hit[1])}")
             else:
@@ -3208,6 +3242,7 @@ class FlowEditor:
                 else:
                     was = src.get(port)
                 if was:
+                    self._snapshot()
                     self.log(f"已断开 {port}")
                 self._set_wire(src, port, None)
             self.wire = None
@@ -3486,6 +3521,7 @@ class FlowEditor:
             item = _read_form()
             if item is None:
                 return
+            self._snapshot("cand")
             _cands().append(item)
             e_t.delete(0, "end")
             e_d.delete(0, "end")
@@ -3501,6 +3537,7 @@ class FlowEditor:
             if item is None:
                 return
             old = _cands()[sel[0]]
+            self._snapshot("cand")
             # 保留画布上拖出来的命中出口（next），否则「更新」会把连线清掉
             if old.get("next"):
                 item["next"] = old["next"]
@@ -3511,6 +3548,7 @@ class FlowEditor:
             sel = lb.curselection()
             if not sel:
                 return
+            self._snapshot("cand")
             del _cands()[sel[0]]
             refresh()
 
@@ -3533,6 +3571,7 @@ class FlowEditor:
         if not nid or nid not in self.flow["nodes"]:
             return
         nd = self.flow["nodes"][nid]
+        self._snapshot(f"prop:{nid}:{key}")   # 同一处连续敲键会合并成一条
         try:
             if kind == "bool":
                 nd["props"][key] = bool(var.get())
@@ -3645,6 +3684,7 @@ class FlowEditor:
                 self.log("分支出口不能指向自己", "warn")
                 self._sync_branch_ui()
                 return
+            self._snapshot(f"branch:{nid}:{port}")
             if nd["type"] == "switch" and port == "miss_next":
                 nd.setdefault("props", {})["miss_next"] = target
             else:
@@ -3669,7 +3709,7 @@ class FlowEditor:
         self.pick_target = key
         mode = {"x": "点击取点击坐标", "x1": "点击取滑动起点", "x2": "点击取滑动终点"}[key]
         self.status(f"取点模式：{mode}（在左侧帧画面上点击，Esc 取消）")
-        self.root.bind("<Escape>", self._cancel_pick)
+        self.root.bind("<Escape>", self.on_escape)
 
     def _cancel_pick(self, _e):
         self.pick_target = None
@@ -3680,6 +3720,7 @@ class FlowEditor:
         x, y = pt
         props = self.flow["nodes"][self.sel]["props"]
         pairs = {"x": ("x", "y"), "x1": ("x1", "y1"), "x2": ("x2", "y2")}
+        self._snapshot(f"pick:{self.sel}")
         ka, kb = pairs[key]
         props[ka], props[kb] = x, y
         self.pick_target = None
@@ -4024,6 +4065,128 @@ class FlowEditor:
                           outline="#41d1a0", width=2)
             c.create_line(px(x) - 14, py(y), px(x) + 14, py(y), fill="#41d1a0")
             c.create_line(px(x), py(y) - 14, px(x), py(y) + 14, fill="#41d1a0")
+
+    # ---------- 撤销/重做（P2-4）与复制粘贴（P2-5） ----------
+
+    def _flow_text(self):
+        return json.dumps(self.flow, ensure_ascii=False, sort_keys=True)
+
+    def _snapshot(self, tag=""):
+        """改动前存档。
+        内容没变就不入栈（选择节点之类的空操作不会污染撤销栈）；
+        同一处连续编辑（tag 相同且在 3 秒内）合并成一条，避免每敲一个键都存一次。"""
+        cur = self._flow_text()
+        now = time.time()
+        if self._undo and self._undo[-1][0] == cur:
+            return
+        if (tag and self._undo and self._undo[-1][1] == tag
+                and now - self._undo[-1][2] < 3.0):
+            self._undo[-1] = (self._undo[-1][0], tag, now)
+            self._redo.clear()
+            return
+        self._undo.append((cur, tag, now))
+        if len(self._undo) > UNDO_LIMIT:
+            self._undo.pop(0)
+        self._redo.clear()
+
+    def _restore_flow_text(self, text):
+        self.flow = json.loads(text)
+        self.flow.setdefault("chain", [])
+        self.flow.setdefault("nodes", {})
+        self.sel = None
+        self.name_var.set(self.flow.get("name", "未命名"))
+        self.build_prop_panel()
+        self.redraw()
+
+    def undo(self):
+        if not self._undo:
+            self.log("没有可撤销的操作", "warn")
+            return
+        self._redo.append((self._flow_text(), self._undo[-1][1], time.time()))
+        text = self._undo.pop()[0]
+        self._restore_flow_text(text)
+        self.log(f"↶ 已撤销（还可撤销 {len(self._undo)} 步）")
+
+    def redo(self):
+        if not self._redo:
+            self.log("没有可重做的操作", "warn")
+            return
+        self._undo.append((self._flow_text(), self._redo[-1][1], time.time()))
+        text = self._redo.pop()[0]
+        self._restore_flow_text(text)
+        self.log(f"↷ 已重做（还可重做 {len(self._redo)} 步）")
+
+    def on_copy(self, _e=None):
+        nid = self.sel
+        if not nid or nid not in self.flow["nodes"]:
+            return
+        self._clipboard = json.loads(json.dumps(self.flow["nodes"][nid]))
+        self.log(f"已复制节点「{self._clipboard.get('title', nid)}」"
+                 f"（{self._clipboard.get('type')}）")
+
+    def on_paste(self, _e=None):
+        if not self._clipboard:
+            self.log("剪贴板为空：先选中节点按 Ctrl+C", "warn")
+            return
+        src = self._clipboard
+        self._snapshot()
+        self._nid += 1
+        nid = f"n{self._nid:03d}{os.urandom(2).hex()}"
+        nd = json.loads(json.dumps(src))
+        # 出口一律清空：出口指向的是具体节点，复制品沿用会指向原来的节点
+        nd["hit_next"] = None
+        nd["miss_next"] = None
+        if isinstance(nd.get("props", {}).get("candidates"), list):
+            for c in nd["props"]["candidates"]:
+                if isinstance(c, dict):
+                    c.pop("next", None)
+        anchor = self.sel if self.sel in self.flow["chain"] else None
+        if anchor:
+            base = self.flow["nodes"][anchor]
+            nd["x"] = base["x"] + 40
+            nd["y"] = base["y"] + (self._sw_h(base) if base["type"] == "switch"
+                                   else CARD_H) + 30
+            self.flow["chain"].insert(self.flow["chain"].index(anchor) + 1, nid)
+        else:
+            ch = self.flow["chain"]
+            if ch:
+                last = self.flow["nodes"][ch[-1]]
+                nd["x"], nd["y"] = last["x"], last["y"] + CARD_H + 30
+            else:
+                nd["x"], nd["y"] = self._chain_col_x(), 60
+            self.flow["chain"].append(nid)
+        self.flow["nodes"][nid] = nd
+        self.sel = nid
+        self.build_prop_panel()
+        self.redraw()
+        self._scroll_to(nd["y"])
+        self.log(f"已粘贴节点「{nd.get('title', nid)}」（出口未连线，请重新连）")
+
+    def on_duplicate(self, _e=None):
+        self.on_copy()
+        self.on_paste()
+
+    def nudge_node(self, dx, dy):
+        """方向键微调选中节点的画布坐标"""
+        nid = self.sel
+        if not nid or nid not in self.flow["nodes"]:
+            return
+        self._snapshot(f"nudge:{nid}")
+        nd = self.flow["nodes"][nid]
+        nd["x"] = max(0, nd["x"] + dx)
+        nd["y"] = max(0, nd["y"] + dy)
+        self.redraw()
+        self.status(f"节点坐标 → ({int(nd['x'])}, {int(nd['y'])})")
+
+    def on_escape(self, _e=None):
+        """Esc：取消取点 / 取消正在拖的连线"""
+        if self.pick_target:
+            self.pick_target = None
+            self.status("已取消取点")
+        elif self.wire:
+            self.wire = None
+            self.redraw()
+            self.status("已取消连线")
 
     # ---------- 校验/生成/同步 ----------
 
