@@ -71,6 +71,8 @@ CARD_W, CARD_H = 240, 60    # 节点卡片尺寸
 UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文本）
 LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 JSON 撑到手机端加载不动）
 ZOOM_MIN, ZOOM_MAX = 0.25, 2.5   # 画布缩放范围（下限小一点便于总览 40 节点的长流程）
+TIDY_X = 24                 # 「整理布局」时主链的 x（贴左边，保证点完就能看见）
+PENDING_TPL = "?"           # 拖「＋」球新建的候选占位识别目标：待用户选模板/填OCR
 
 # ---------------- 主题 ----------------
 
@@ -1053,8 +1055,11 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                 spec = switch_cand_spec(c["t"])
                 lab = f"候选{ci + 1}「{c['t']}」"
                 if spec is None:
-                    issues.append(Issue("error", "CAND_FMT",
-                                        f"{no}{title(nd)}{lab}格式应为 模板名.png 或 OCR:文字", nid))
+                    msg = (f"{no}{title(nd)}{lab}还没选识别目标"
+                           f"（拖「＋」球新建的分支需要补上模板或 OCR 文字）"
+                           if c["t"] == PENDING_TPL else
+                           f"{no}{title(nd)}{lab}格式应为 模板名.png 或 OCR:文字")
+                    issues.append(Issue("error", "CAND_FMT", msg, nid))
                 elif spec[0] == "Template" and not os.path.isfile(
                         os.path.join(IMG_DIR, c["t"])):
                     issues.append(Issue(
@@ -2775,6 +2780,7 @@ class FlowEditor:
                                                            "break")[1])
         self.root.bind("<F5>", lambda e: self.on_capture())
         self.root.bind("<Control-s>", lambda e: (self.on_save(), "break")[1])
+        self.root.bind("<Button-1>", self._maybe_close_tpl_pop, add="+")
         self.root.bind("<Control-z>", lambda e: (self.undo(), "break")[1])
         self.root.bind("<Control-Z>", lambda e: (self.redo(), "break")[1])
         self.root.bind("<Control-y>", lambda e: (self.redo(), "break")[1])
@@ -3061,17 +3067,23 @@ class FlowEditor:
         self.log("已挪到侧列（画布已自动滚到该节点；Ctrl+滚轮缩放 / 中键拖动平移）")
 
     def tidy_layout(self):
+        """整理布局：把主链排成靠左的一列。
+        - x 固定在最左边（TIDY_X），不再排到帧右侧 —— 那里超出可视宽，点了就像"节点全跑了"
+        - 纵向间距按每张卡片的【真实高度】留（枝干卡比普通卡高一截，
+          以前按固定 CARD_H 留间距会让下一张压在它身上）"
+        - 排完把视图拉回左上角"""
         self._snapshot()
-        x = self._chain_col_x()
-        y = 50
+        y = 30
         for nid in self.flow["chain"]:
             nd = self.flow["nodes"][nid]
-            nd["x"] = x
+            h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
+            nd["x"] = TIDY_X
             nd["y"] = y
-            y += CARD_H + 30
+            y += h + 26
         self.redraw()
         self.canvas.xview_moveto(0)
         self.canvas.yview_moveto(0)
+        self.log(f"已整理布局：主链排成靠左一列（x={TIDY_X}），纵向不再重叠")
 
     def _chain_col_x(self):
         fw = self.bg_disp[2] if self.bg_disp else 750
@@ -3601,6 +3613,12 @@ class FlowEditor:
                 c.create_oval(px(kx) - 5, py(ky) - 5, px(kx) + 5, py(ky) + 5,
                               outline="#cf9ae8", width=2)
 
+    def _maybe_close_tpl_pop(self, _e=None):
+        """点主窗口任意位置时收起模板补全弹窗（弹窗是独立 Toplevel，
+        点它自己不会走到这里，所以不影响在列表里多选）"""
+        if self._tpl_pop is not None:
+            self._close_tpl_pop()
+
     def _close_tpl_pop(self):
         if self._tpl_pop is not None:
             try:
@@ -3618,23 +3636,46 @@ class FlowEditor:
             return
         top = tk.Toplevel(self.root)
         top.wm_overrideredirect(True)
+        MAX_ROWS = 16
         lb = tk.Listbox(top, bg=THEME["field"], fg=THEME["text"],
                         selectbackground=THEME["accent"], selectforeground=THEME["text"],
                         relief="flat", highlightthickness=1,
                         highlightbackground=THEME["card_line"], font=FONT_SM,
                         activestyle="none", exportselection=False,
                         selectmode=("multiple" if multi else "browse"))
-        for it in items[:14]:
+        for it in items[:MAX_ROWS]:
             lb.insert("end", it)
         if multi:
-            for i, it in enumerate(items[:14]):
+            for i, it in enumerate(items[:MAX_ROWS]):
                 if it in cur_set:
                     lb.selection_set(i)
-        lb.pack(fill="both", expand=True)
-        w = max(cmb.winfo_width(), 240)
-        h = min(len(items), 14) * 21 + 6
-        top.wm_geometry("%dx%d+%d+%d" % (w, h,
-                     cmb.winfo_rootx(), cmb.winfo_rooty() + cmb.winfo_height()))
+        sb = ttk.Scrollbar(top, orient="vertical", command=lb.yview)
+        lb.configure(yscrollcommand=sb.set)
+        if len(items) > MAX_ROWS:
+            sb.pack(side="right", fill="y")
+        lb.pack(side="left", fill="both", expand=True)
+        lb.bind("<MouseWheel>",
+                lambda e: lb.yview_scroll(int(-e.delta / 120), "units"))
+        # 位置：默认贴在控件下方；下方放不下就往上方弹；最后夹进屏幕内。
+        # 以前直接拿 winfo_rootx/y 定位，控件还没被映射时它们是 0 →
+        # 弹窗会飘到窗口左上角（就是那个"点了「选」就跑出来"的现象）。
+        self.root.update_idletasks()
+        w = max(cmb.winfo_width(), 260)
+        h = min(len(items), MAX_ROWS) * 21 + 6
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        # 锚点控件若不在可见区域（在属性面板滚动区之外时 Tk 会取消映射它），
+        # winfo_rootx/y 会返回 0 —— 直接拿来定位会让弹窗飘到屏幕左上角。
+        # 这种情况退回用主窗口位置，保证弹窗永远出现在人看得见的地方。
+        if not cmb.winfo_ismapped() or cmb.winfo_rootx() <= 1:
+            x = self.root.winfo_rootx() + 60
+            y = self.root.winfo_rooty() + 90
+        else:
+            x = cmb.winfo_rootx()
+            y = cmb.winfo_rooty() + cmb.winfo_height()
+        if y + h > sh - 36:                      # 下方不够 → 放到控件上方
+            y = max(0, cmb.winfo_rooty() - h) if cmb.winfo_ismapped() else y
+        x = max(0, min(x, sw - w - 4))
+        y = max(0, min(y, sh - h - 4))
 
         def submit(_e=None):
             sel = lb.curselection()
@@ -3659,6 +3700,13 @@ class FlowEditor:
                  if self._tpl_pop is top else None)
         top.lift()
         top.attributes("-topmost", True)
+        # 定位放在最后设置，并在应用后再核一次：override-redirect 窗口偶发不生效，
+        # 那时会停在 +0+0（屏幕左上角）——就是"点了选就跑出来一个飘着的小列表"的现象。
+        top.wm_geometry("%dx%d+%d+%d" % (w, h, x, y))
+        top.update_idletasks()
+        if (top.winfo_x(), top.winfo_y()) != (x, y):
+            top.wm_geometry("+%d+%d" % (x, y))
+            top.update_idletasks()
         self._tpl_pop = top
 
     def _commit_tpl(self, var, picked, multi=False):
@@ -3943,13 +3991,22 @@ class FlowEditor:
             src = self.flow["nodes"][src_id]
             port = self.wire["port"]
             if port == "new" and src.get("type") == "switch":
-                # 「＋」球：拖到目标节点 → 新建一个候选并直接连过去（一步到位）
+                # 「＋」球：拖到目标节点 → 直接新建一个候选并连过去（不弹表单、不用手输）
                 self.wire = None
+                self.redraw()
                 if hit and hit[0] == "node" and hit[1] != src_id:
+                    self._snapshot("cand")
+                    cands = src["props"].setdefault("candidates", [])
+                    cands.append({"t": PENDING_TPL, "timeout": 3000, "next": hit[1]})
+                    tgt = self.flow["nodes"][hit[1]]
+                    self.build_prop_panel()
                     self.redraw()
-                    self._new_candidate_dialog(src_id, hit[1])
+                    self.log(f"✓ 已新建分支 {len(cands)} → "
+                             f"「{tgt.get('title', hit[1])}」。"
+                             f"这个分支还没选识别目标：在上面的候选列表里选中它，"
+                             f"用「模板」下拉或「OCR 文字」填上即可（校验会提示到填好为止）",
+                             "ok")
                 else:
-                    self.redraw()
                     self.status("把卡片下沿的「＋」球拖到目标节点，即可新建一条分支")
                 return
             if hit and hit[0] == "node" and hit[1] != self.wire["from"]:
@@ -3981,6 +4038,7 @@ class FlowEditor:
     # ---------- 属性面板 ----------
 
     def build_prop_panel(self):
+        self._close_tpl_pop()      # 面板重建时收起可能开着的模板弹窗，避免残留
         # 先解除旧控件变量上的回调（控件销毁时会触发 var 变化，
         # 回调若访问已销毁控件会抛 invalid command）
         for var, tid in self._var_traces:
@@ -4211,7 +4269,10 @@ class FlowEditor:
             lb.delete(0, "end")
             for i, c in enumerate(cands):
                 t = str(c.get("t", ""))
-                disp = "OCR:" + t[4:] if t.lower().startswith("ocr:") else t
+                if t == PENDING_TPL:
+                    disp = "(待填：拖「＋」球建的分支，请选模板或填 OCR)"
+                else:
+                    disp = "OCR:" + t[4:] if t.lower().startswith("ocr:") else t
                 merge = " · 回并主线" if c.get("mergeBack") else ""
                 lb.insert("end", f"{i + 1}. {disp} · {c.get('timeout', 3000)}ms{merge}")
             var.set(str(len(cands)))   # 触发面板重绘钩子
@@ -4425,102 +4486,6 @@ class FlowEditor:
             return "(自动→下一个)" if is_hit else "(流程结束)"
         i = ch.index(target) + 1 if target in ch else "?"
         return f"#{i} {self.flow['nodes'][target].get('title', target)}"
-
-    def _new_candidate_dialog(self, sw_nid, target_nid):
-        """拖「＋」球到目标节点后弹出的小表单：选模板或填 OCR 文字 → 新建候选并连过去。
-        这样「拉球建分支」一步到位，不用先回面板手打模板名。"""
-        if not (self.sel == sw_nid):
-            self.sel = sw_nid
-            self.build_prop_panel()
-        win = tk.Toplevel(self.root)
-        win.title("新建分支")
-        win.configure(bg=THEME["panel"])
-        win.transient(self.root)
-        win.attributes("-topmost", True)
-        win.geometry("+%d+%d" % (self.root.winfo_rootx() + 360,
-                                 self.root.winfo_rooty() + 200))
-        tgt = self.flow["nodes"][target_nid]
-        try:
-            tgt_label = f"#{self.flow['chain'].index(target_nid) + 1} "                         f"{tgt.get('title', '?')}"
-        except ValueError:
-            tgt_label = str(tgt.get("title", target_nid))
-        ttk.Label(win, text=f"新分支 → {tgt_label}",
-                  style="Title.TLabel").pack(anchor="w", padx=12, pady=(10, 2))
-        ttk.Label(win, text="这个分支要识别什么？命中后走上面那个节点。",
-                  style="Dim.TLabel").pack(anchor="w", padx=12, pady=(0, 4))
-        mode = tk.StringVar(value="tpl")
-        mrow = ttk.Frame(win)
-        mrow.pack(anchor="w", padx=12)
-        ttk.Radiobutton(mrow, text="模板", value="tpl", variable=mode).pack(side="left")
-        ttk.Radiobutton(mrow, text="OCR 文字", value="ocr",
-                        variable=mode).pack(side="left", padx=(8, 0))
-        row = ttk.Frame(win)
-        row.pack(fill="x", padx=12, pady=6)
-        self.templates = list_templates()
-        cmb = ttk.Combobox(row, font=FONT_SM, width=24, values=self.templates)
-        cmb.pack(side="left")
-        prev = ttk.Label(win, background=THEME["card"])
-        prev.pack(anchor="w", padx=12)
-
-        def _prev():
-            if mode.get() != "tpl" or not cmb.get().strip():
-                prev.config(image="", text="")
-                return
-            got = self._get_tpl_photo(cmb.get().strip())
-            if got:
-                _, photo, _, _ = got
-                prev.config(image=photo, text="")
-                prev.image = photo
-            else:
-                prev.config(image="", text="模板不存在")
-
-        def _pick():
-            items = _tpl_candidates(self.templates, cmb.get())
-            if items:
-                self._show_tpl_pop(cmb, items, lambda p: (cmb.set(p), _prev()))
-
-        def _mode_changed():
-            cmb.config(values=() if mode.get() == "ocr" else self.templates)
-            _prev()
-        for r in mrow.winfo_children():
-            r.config(command=_mode_changed)
-        self._flat_btn(row, "▾ 选", _pick, padx=6, font=FONT_SM).pack(side="left", padx=3)
-        ttk.Label(row, text="判定ms", style="Dim.TLabel").pack(side="left", padx=(8, 0))
-        e_ms = ttk.Entry(row, width=7, font=FONT_SM)
-        e_ms.insert(0, "3000")
-        e_ms.pack(side="left", padx=3)
-        cmb.bind("<KeyRelease>", lambda e: _pick() if (
-            mode.get() == "tpl" and e.keysym not in
-            ("Down", "Up", "Left", "Right", "Tab", "Return", "Escape")) else None)
-        cmb.bind("<<ComboboxSelected>>", lambda e: _prev())
-        btns = ttk.Frame(win)
-        btns.pack(fill="x", padx=12, pady=(4, 12))
-
-        def _ok(_e=None):
-            raw = cmb.get().strip()
-            if not raw:
-                self.log("请先选模板或填 OCR 文字", "warn")
-                return
-            t = ("OCR:" + raw) if mode.get() == "ocr" else raw
-            try:
-                ms = max(500, int(e_ms.get() or 3000))
-            except ValueError:
-                ms = 3000
-            self._snapshot("cand")
-            cands = self.flow["nodes"][sw_nid]["props"].setdefault("candidates", [])
-            cands.append({"t": t, "timeout": ms, "next": target_nid})
-            self.build_prop_panel()
-            self.redraw()
-            self.log(f"✓ 已新建分支 {len(cands)}：{t} → {tgt_label}"
-                     f"（可继续拖下沿的「＋」球加下一个）", "ok")
-            win.destroy()
-
-        self._flat_btn(btns, "✓ 创建分支", _ok, bg="#2c6e48", fg="#eafff2",
-                       hover="#3a8a5c", font=FONT_B).pack(side="left")
-        self._flat_btn(btns, "取消", win.destroy).pack(side="left", padx=6)
-        win.bind("<Return>", _ok)
-        win.bind("<Escape>", lambda e: win.destroy())
-        cmb.focus_set()
 
     def _sync_branch_ui(self):
         nid = self.sel
