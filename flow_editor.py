@@ -99,6 +99,9 @@ LOG_FONT  = ("Consolas", 9)
 ARROW_SHAPE = (11, 13, 4)
 
 # 公共节点层（whmx/pipeline/common.json）可引用的收口节点
+# 公共节点层（whmx/pipeline/common.json）里可引用的收口节点。
+# 这里是【回退清单】：优先用 common_node_names() 从任务包动态读，
+# 免得 common.json 加了新节点还得回来改 Python。
 COMMON_NODES = [
     "Common_回主页",
     "Common_关弹窗",
@@ -109,6 +112,63 @@ COMMON_NODES = [
     "Common_返回",
     "Common_开始训练",
 ]
+
+
+def common_node_names(root=None):
+    """公共节点清单（可引用的入口节点）。
+    从 whmx/pipeline/common.json 读全部 Common_* 键，剔除内部子节点：
+      · 被某个「带 on_error 的分叉容器」当作 next 的（那是容器的命中子节点）
+      · 被 Or/And 的 any_of/all_of 引用的（那是组合识别的子项）
+      · 名字以 _完成 / _重试 结尾的（收口与兜底重试，不该直接跳进去）
+    这些都是结构判定，不靠名字前缀约定 —— common.json 里
+    Common_弹窗_Hit / Common_主页校验 这种子节点并不遵循前缀规律。
+    读不到任务包时回退到内置 COMMON_NODES。"""
+    root = root or ROOT
+    path = os.path.join(root, "whmx", "pipeline", "common.json")
+    keys, children = [], set()
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = jsonc_loads(f.read())
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            keys = [str(k) for k in data if str(k).startswith("Common_")]
+            for nd in data.values():
+                if not isinstance(nd, dict):
+                    continue
+                nexts = nd.get("next") or []
+                if nd.get("on_error"):
+                    for it in (nexts if isinstance(nexts, list) else [nexts]):
+                        nm = it.get("name") if isinstance(it, dict) else it
+                        if nm:
+                            children.add(_strip_attr(nm))
+                for key in ("any_of", "all_of"):
+                    for it in (nd.get(key) or []):
+                        nm = it.get("name") if isinstance(it, dict) else it
+                        if nm:
+                            children.add(_strip_attr(nm))
+    entries = [k for k in keys
+               if k not in children and not k.endswith(("_完成", "_重试"))]
+    return sorted(entries) or list(COMMON_NODES)
+
+
+# 按节点类型给出的固定提示（与 _hide_hint 的互斥提示互补）
+NODE_HINTS = {
+    "wait_tpl": "本节点只「等模板出现」，不做任何动作。需要未命中时走另一条路，"
+                "请改用『分支(模板在?)』节点（它有 ✓/✗ 两个出口）。",
+    "switch": "候选按从上到下的顺序判定，命中即走该候选的内容，内容跑完枝干就结束；"
+              "全部未中走「✗全未中」出口。",
+    "common": "公共节点是「收口」：进入后本流程即终止，不会返回。放在链中间会让"
+              "其后的节点执行不到。",
+}
+
+
+def _hide_hint(ntype, p):
+    """互斥生效时给出说明，避免字段突然消失让人困惑；否则给出该类型的固定提示"""
+    if ntype == "branch" and str(p.get("ocr_text", "")).strip():
+        return "已填 OCR 文本 → 本节点改用 OCR 判定，模板图与阈值不生效"
+    return NODE_HINTS.get(ntype)
 
 def tpl_summary(p):
     """节点卡片摘要：模板多候选显示 '首个 +N'，单值直接显示"""
@@ -344,13 +404,6 @@ FIELD_HIDDEN_IF = {
     "branch": lambda p: ({"template", "threshold"}
                          if str(p.get("ocr_text", "")).strip() else set()),
 }
-
-
-def _hide_hint(ntype, p):
-    """互斥生效时给出说明，避免字段突然消失让人困惑"""
-    if ntype == "branch" and str(p.get("ocr_text", "")).strip():
-        return "已填 OCR 文本 → 本节点改用 OCR 判定，模板图与阈值不生效"
-    return None
 
 
 # 字段提示（鼠标悬停在字段名上显示）。协议里最容易误解的几条必须写清楚。
@@ -3337,8 +3390,8 @@ class FlowEditor:
             return cmb
         if kind == "common":
             return ttk.Combobox(self.props_inner, textvariable=var,
-                                values=COMMON_NODES, width=22, state="readonly",
-                                font=FONT_SM)
+                                values=common_node_names(), width=22,
+                                state="readonly", font=FONT_SM)
         if kind == "bool":
             return ttk.Checkbutton(self.props_inner, variable=var, text="")
         if kind == "bool_opt":
