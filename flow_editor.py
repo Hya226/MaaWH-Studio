@@ -490,221 +490,271 @@ def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
     return errs, warns
 
 
+def entry_name(flow):
+    """流程的命名空间前缀：VF_<流程名>"""
+    return f"VF_{flow['name']}"
+
+
+def jname(flow, nid):
+    """链上节点的 pipeline 名。
+    switch 节点展开为 J1..JN 级联容器，故链上前驱的 next 指向首个判定 J1。"""
+    base = f"{entry_name(flow)}_{flow['chain'].index(nid) + 1:02d}"
+    if flow["nodes"][nid].get("type") == "switch":
+        return f"{base}_J1"
+    return base
+
+
+def tpl_out(s):
+    """模板字段输出：多候选 → 数组（任一命中），单值 → 字符串"""
+    parts = split_tpls(s)
+    return parts if len(parts) > 1 else (parts[0] if parts else "")
+
+
+def chain_next_names(flow, nid):
+    """链上后继的 pipeline 名列表；★ 与画布共用 linear_successor"""
+    tgt = linear_successor(flow, nid)
+    return [jname(flow, tgt)] if tgt else []
+
+
+# ---------- 各节点类型的产出体 ----------
+# 一个节点 = 识别块 + 动作块 + 流程/时序块 + 出口块。每种节点只产出一个 pipeline
+# 节点（switch 展开为多个），这里按类型分开，新增字段时改对应一个函数即可。
+# 注意：这些函数只负责「产出」，出口一律经 chain_next_names / exits_of 取得。
+
+def _emit_tpl_click(out, name, p, nxt):
+    d = {
+        "recognition": "TemplateMatch",
+        "template": tpl_out(p["template"]),
+        "threshold": float(p["threshold"]),
+        "action": "Click",
+        "timeout": int(p["timeout"]),
+        "post_delay": int(p["post_delay"]),
+    }
+    roi = parse_roi(p.get("roi", ""))
+    if roi:
+        d["roi"] = roi
+    if p.get("order_by"):
+        d["order_by"] = "Score"
+    if int(p.get("rate_limit", 0) or 0) > 0:
+        d["rate_limit"] = int(p["rate_limit"])
+    if int(p.get("pre_delay", 0)):
+        d["pre_delay"] = int(p["pre_delay"])
+    if int(p.get("post_wait_freezes", 0) or 0) > 0:
+        d["post_wait_freezes"] = int(p["post_wait_freezes"])
+    rep = int(p.get("repeat", 1) or 1)
+    if rep > 1:
+        d["repeat"] = rep
+        d["repeat_delay"] = int(p.get("repeat_delay", 350))
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_ocr_click(out, name, p, nxt):
+    texts = [s.strip() for s in str(p.get("text", "")).replace("，", ",").split(",") if s.strip()]
+    if not texts:
+        raise FlowValidationError([f"OCR节点未填写识别文本: {name}"])
+    d = {
+        "recognition": "OCR",
+        "text": texts,
+        "action": "Click",
+        "timeout": int(p["timeout"]),
+        "post_delay": int(p["post_delay"]),
+    }
+    roi = parse_roi(p.get("roi", ""))
+    if roi:
+        d["roi"] = roi
+    if int(p.get("rate_limit", 0) or 0) > 0:
+        d["rate_limit"] = int(p["rate_limit"])
+    if int(p.get("pre_delay", 0)):
+        d["pre_delay"] = int(p["pre_delay"])
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_tap(out, name, p, nxt):
+    d = {
+        "action": "Click",
+        "target": [int(p["x"]), int(p["y"])],
+        "post_delay": int(p["post_delay"]),
+    }
+    if int(p.get("pre_delay", 0)):
+        d["pre_delay"] = int(p["pre_delay"])
+    if int(p.get("post_wait_freezes", 0) or 0) > 0:
+        d["post_wait_freezes"] = int(p["post_wait_freezes"])
+    rep = int(p.get("repeat", 1) or 1)
+    if rep > 1:
+        d["repeat"] = rep
+        d["repeat_delay"] = int(p.get("repeat_delay", 350))
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_swipe(out, name, p, nxt):
+    d = {
+        "action": "Swipe",
+        "begin": [int(p["x1"]), int(p["y1"])],
+        "end": [int(p["x2"]), int(p["y2"])],
+        "duration": int(p["duration"]),
+        "post_delay": int(p["post_delay"]),
+    }
+    rep = int(p.get("repeat", 1) or 1)
+    if rep > 1:
+        d["repeat"] = rep
+        d["repeat_delay"] = int(p.get("repeat_delay", 350))
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_wait_tpl(out, name, p, nxt):
+    d = {
+        "recognition": "TemplateMatch",
+        "template": tpl_out(p["template"]),
+        "threshold": float(p["threshold"]),
+        "action": "DoNothing",
+        "timeout": int(p["timeout"]),
+    }
+    roi = parse_roi(p.get("roi", ""))
+    if roi:
+        d["roi"] = roi
+    if int(p.get("rate_limit", 0) or 0) > 0:
+        d["rate_limit"] = int(p["rate_limit"])
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_branch(flow, out, nid, name, p, nxt):
+    """分叉容器（项目踩坑结论：on_error 只挂在容器节点上才生效）。
+    返回是否需要生成收口节点（miss 未连线时）。"""
+    exits = exits_of(flow, nid)
+    hit, miss = exits["hit"], exits["miss"]
+    hit_ref = [jname(flow, hit)] if hit else nxt      # 未连线 → 自动链中下一个
+    miss_ref = [jname(flow, miss)] if miss else [f"{entry_name(flow)}_End"]
+    end_needed = not miss
+    out[name] = {
+        "action": "DoNothing",
+        "timeout": int(p["timeout"]),
+        "next": [name + "_Hit"],
+        "on_error": miss_ref,
+    }
+    if str(p.get("ocr_text", "")).strip():
+        hd = {
+            "recognition": "OCR",
+            "text": [s.strip() for s in
+                     str(p["ocr_text"]).replace("，", ",").split(",") if s.strip()],
+            "action": "DoNothing",
+        }
+    else:
+        hd = {
+            "recognition": "TemplateMatch",
+            "template": tpl_out(p["template"]),
+            "threshold": float(p["threshold"]),
+            "action": "DoNothing",
+        }
+    roi = parse_roi(p.get("roi", ""))
+    if roi:
+        hd["roi"] = roi
+    if int(p.get("rate_limit", 0) or 0) > 0:
+        hd["rate_limit"] = int(p["rate_limit"])
+    if hit_ref:
+        hd["next"] = hit_ref
+    out[name + "_Hit"] = hd
+    return end_needed
+
+
+def _emit_common(out, name, p):
+    out[name] = {"next": [p["node"]]}
+
+
+def _emit_startapp(out, name, p, nxt):
+    d = {
+        "action": "StartApp",
+        "package": p["package"],
+        "post_delay": int(p["post_delay"]),
+    }
+    if nxt:
+        d["next"] = nxt
+    out[name] = d
+
+
+def _emit_switch(flow, out, nid, i, p):
+    """枝干判定：候选从左到右级联判定，命中→走该候选内容（执行完枝干结束），
+    未中→下一个候选；全部未中→ miss 出口（默认流程结束）。"""
+    E = entry_name(flow)
+    cands = exits_of(flow, nid)["candidates"]
+    seq = f"{E}_{i + 1:02d}"
+    if not cands:
+        return
+    miss_ref = [jname(flow, p["miss_next"])] if p.get("miss_next") else [f"{E}_End"]
+    for ci, c in enumerate(cands):
+        cur = f"{seq}_J{ci + 1}"
+        cur_hit = f"{cur}_Hit"
+        spec = switch_cand_spec(c["t"])
+        # 命中→内容起点（未连则结束）；下一个判定作为未中出口（末位→miss_ref）
+        go = [jname(flow, c["next"])] if c.get("next") else [f"{E}_End"]
+        if spec[0] == "OCR":
+            hd = {"recognition": "OCR",
+                  "text": [spec[1]], "action": "DoNothing", "next": go}
+        else:
+            hd = {"recognition": "TemplateMatch", "template": spec[1],
+                  "action": "DoNothing", "next": go}
+        if ci + 1 < len(cands):
+            on_err = [f"{seq}_J{ci + 2}"]
+        else:
+            on_err = miss_ref
+        out[cur] = {"action": "DoNothing", "timeout": c["timeout"],
+                    "next": [cur_hit], "on_error": on_err}
+        out[cur_hit] = hd
+
+
 def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
     """流程定义 → MaaFramework pipeline dict（VF_ 前缀命名空间）。"""
     errs, _ = validate_flow(flow, frame_wh)
     if errs:
         raise FlowValidationError(errs)
-    name = flow["name"]
     chain = flow["chain"]
     nodes = flow["nodes"]
-    E = f"VF_{name}"
+    E = entry_name(flow)
 
-    def jname(nid):
-        # switch 节点展开为 J1..JN 级联容器；链上前驱的 next（线性链）应指向首个判定 J1
-        base = f"{E}_{chain.index(nid) + 1:02d}"
-        if nodes[nid].get("type") == "switch":
-            return f"{base}_J1"
-        return base
-
-    def tpl_out(s):
-        """模板字段输出：多候选 → 数组（任一命中），单值 → 字符串"""
-        parts = split_tpls(s)
-        return parts if len(parts) > 1 else (parts[0] if parts else "")
-
-    def chain_next(nid):
-        # ★ 与画布共用 linear_successor：生成时断开的出口，画布上也画成断开
-        tgt = linear_successor(flow, nid)
-        return [jname(tgt)] if tgt else []
-
-    out = {E: {"next": [jname(chain[0])] if chain else []}}
+    out = {E: {"next": [jname(flow, chain[0])] if chain else []}}
     end_needed = False
 
     for i, nid in enumerate(chain):
         nd = nodes[nid]
         t, p = nd["type"], nd.get("props", {})
-        base = jname(nid)
-        nxt = chain_next(nid)
+        base = jname(flow, nid)
+        nxt = chain_next_names(flow, nid)
 
         if t == "tpl_click":
-            d = {
-                "recognition": "TemplateMatch",
-                "template": tpl_out(p["template"]),
-                "threshold": float(p["threshold"]),
-                "action": "Click",
-                "timeout": int(p["timeout"]),
-                "post_delay": int(p["post_delay"]),
-            }
-            roi = parse_roi(p.get("roi", ""))
-            if roi:
-                d["roi"] = roi
-            if p.get("order_by"):
-                d["order_by"] = "Score"
-            if int(p.get("rate_limit", 0) or 0) > 0:
-                d["rate_limit"] = int(p["rate_limit"])
-            if int(p.get("pre_delay", 0)):
-                d["pre_delay"] = int(p["pre_delay"])
-            if int(p.get("post_wait_freezes", 0) or 0) > 0:
-                d["post_wait_freezes"] = int(p["post_wait_freezes"])
-            rep = int(p.get("repeat", 1) or 1)
-
-            if rep > 1:
-                d["repeat"] = rep
-                d["repeat_delay"] = int(p.get("repeat_delay", 350))
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_tpl_click(out, base, p, nxt)
 
         elif t == "ocr_click":
-            texts = [s.strip() for s in str(p.get("text", "")).replace("，", ",").split(",") if s.strip()]
-            if not texts:
-                raise FlowValidationError([f"OCR节点未填写识别文本: {base}"])
-            d = {
-                "recognition": "OCR",
-                "text": texts,
-                "action": "Click",
-                "timeout": int(p["timeout"]),
-                "post_delay": int(p["post_delay"]),
-            }
-            roi = parse_roi(p.get("roi", ""))
-            if roi:
-                d["roi"] = roi
-            if int(p.get("rate_limit", 0) or 0) > 0:
-                d["rate_limit"] = int(p["rate_limit"])
-            if int(p.get("pre_delay", 0)):
-                d["pre_delay"] = int(p["pre_delay"])
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_ocr_click(out, base, p, nxt)
 
         elif t == "tap":
-            d = {
-                "action": "Click",
-                "target": [int(p["x"]), int(p["y"])],
-                "post_delay": int(p["post_delay"]),
-            }
-            if int(p.get("pre_delay", 0)):
-                d["pre_delay"] = int(p["pre_delay"])
-            if int(p.get("post_wait_freezes", 0) or 0) > 0:
-                d["post_wait_freezes"] = int(p["post_wait_freezes"])
-            rep = int(p.get("repeat", 1) or 1)
-            if rep > 1:
-                d["repeat"] = rep
-                d["repeat_delay"] = int(p.get("repeat_delay", 350))
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_tap(out, base, p, nxt)
 
         elif t == "swipe":
-            d = {
-                "action": "Swipe",
-                "begin": [int(p["x1"]), int(p["y1"])],
-                "end": [int(p["x2"]), int(p["y2"])],
-                "duration": int(p["duration"]),
-                "post_delay": int(p["post_delay"]),
-            }
-            rep = int(p.get("repeat", 1) or 1)
-            if rep > 1:
-                d["repeat"] = rep
-                d["repeat_delay"] = int(p.get("repeat_delay", 350))
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_swipe(out, base, p, nxt)
 
         elif t == "wait_tpl":
-            d = {
-                "recognition": "TemplateMatch",
-                "template": tpl_out(p["template"]),
-                "threshold": float(p["threshold"]),
-                "action": "DoNothing",
-                "timeout": int(p["timeout"]),
-            }
-            roi = parse_roi(p.get("roi", ""))
-            if roi:
-                d["roi"] = roi
-            if int(p.get("rate_limit", 0) or 0) > 0:
-                d["rate_limit"] = int(p["rate_limit"])
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_wait_tpl(out, base, p, nxt)
 
         elif t == "branch":
-            # 分叉容器（项目踩坑结论：on_error 只挂在容器节点上才生效）
-            exits = exits_of(flow, nid)
-            hit, miss = exits["hit"], exits["miss"]
-            hit_ref = [jname(hit)] if hit else nxt        # 未连线 → 自动链中下一个
-            miss_ref = [jname(miss)] if miss else [f"{E}_End"]
-            if not miss:
-                end_needed = True
-            out[base] = {
-                "action": "DoNothing",
-                "timeout": int(p["timeout"]),
-                "next": [base + "_Hit"],
-                "on_error": miss_ref,
-            }
-            if str(p.get("ocr_text", "")).strip():
-                hd = {
-                    "recognition": "OCR",
-                    "text": [s.strip() for s in
-                             str(p["ocr_text"]).replace("，", ",").split(",") if s.strip()],
-                    "action": "DoNothing",
-                }
-            else:
-                hd = {
-                    "recognition": "TemplateMatch",
-                    "template": tpl_out(p["template"]),
-                    "threshold": float(p["threshold"]),
-                    "action": "DoNothing",
-                }
-            roi = parse_roi(p.get("roi", ""))
-            if roi:
-                hd["roi"] = roi
-            if int(p.get("rate_limit", 0) or 0) > 0:
-                hd["rate_limit"] = int(p["rate_limit"])
-            if hit_ref:
-                hd["next"] = hit_ref
-            out[base + "_Hit"] = hd
+            end_needed |= _emit_branch(flow, out, nid, base, p, nxt)
 
         elif t == "common":
-            out[base] = {"next": [p["node"]]}
+            _emit_common(out, base, p)
 
         elif t == "startapp":
-            d = {
-                "action": "StartApp",
-                "package": p["package"],
-                "post_delay": int(p["post_delay"]),
-            }
-            if nxt:
-                d["next"] = nxt
-            out[base] = d
+            _emit_startapp(out, base, p, nxt)
 
         elif t == "switch":
-            # 枝干判定：候选从左到右级联判定，命中→走该候选内容（执行完枝干结束），
-            # 未中→下一个候选；全部未中→ miss 出口（默认流程结束）
-            cands = exits_of(flow, nid)["candidates"]
-            seq = f"{E}_{i + 1:02d}"
-            if not cands:
-                continue
-            miss_ref = [jname(p["miss_next"])] if p.get("miss_next") else [f"{E}_End"]
-            for ci, c in enumerate(cands):
-                cur = f"{seq}_J{ci + 1}"
-                cur_hit = f"{cur}_Hit"
-                spec = switch_cand_spec(c["t"])
-                # 命中→内容起点（未连则结束）；下一个判定作为未中出口（末位→miss_ref）
-                go = [jname(c["next"])] if c.get("next") else [f"{E}_End"]
-                if spec[0] == "OCR":
-                    hd = {"recognition": "OCR",
-                          "text": [spec[1]], "action": "DoNothing", "next": go}
-                else:
-                    hd = {"recognition": "TemplateMatch", "template": spec[1],
-                          "action": "DoNothing", "next": go}
-                if ci + 1 < len(cands):
-                    on_err = [f"{seq}_J{ci + 2}"]
-                else:
-                    on_err = miss_ref
-                out[cur] = {"action": "DoNothing", "timeout": c["timeout"],
-                            "next": [cur_hit], "on_error": on_err}
-                out[cur_hit] = hd
+            _emit_switch(flow, out, nid, i, p)
 
     if end_needed or any(nodes[n].get("type") == "switch" for n in chain):
         out[f"{E}_End"] = {"action": "DoNothing", "next": []}
