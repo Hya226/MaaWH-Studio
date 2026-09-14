@@ -30,6 +30,7 @@ import subprocess
 import shutil
 import threading
 import queue
+from dataclasses import dataclass
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
@@ -396,21 +397,135 @@ def exits_of(flow, nid):
     return ex
 
 
-def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
-    """返回 (errors, warnings)"""
-    errs, warns = [], []
+@dataclass
+class Issue:
+    """一条校验结论。node_id 让 UI 能把问题标到具体节点上（画布/属性面板）。
+    code 供程序判别（例如以后可配置「哪些检查只警告」）。"""
+    level: str          # "error" | "warn"
+    code: str
+    message: str
+    node_id: str | None = None
+
+    def __str__(self):
+        return self.message
+
+
+def issues_lines(issues):
+    """Issue 列表 → (errors, warnings) 字符串列表（保持出现顺序）"""
+    return ([i.message for i in issues if i.level == "error"],
+            [i.message for i in issues if i.level == "warn"])
+
+
+def _expected_node_names(flow):
+    """本流程将生成的【全部】pipeline 节点名（模型级预测）。
+    用于 I1（同流程内名字必须互不相同）与 I6（不得与任务包内既有节点撞名）。
+    返回 [(名字, 归属说明)]。"""
+    E = entry_name(flow)
+    names = [(E, "流程入口")]
+    nodes = flow.get("nodes", {})
+    for i, nid in enumerate(flow.get("chain", [])):
+        nd = nodes.get(nid) or {}
+        t = nd.get("type")
+        if t not in NODE_TYPES:
+            continue                      # 未识别的类型不产出节点
+        label = f"#{i + 1}「{nd.get('title', '?')}」"
+        base = f"{E}_{node_key(flow, nid)}"
+        if t == "switch":
+            cands = parse_switch_cands((nd.get("props") or {}).get("candidates"))
+            if not cands:
+                continue                  # 空枝干不产出任何节点（已有专门的校验报错）
+            for j in range(1, len(cands) + 1):
+                names.append((f"{base}_J{j}", label))
+                names.append((f"{base}_J{j}_Hit", label))
+        elif t == "branch":
+            names.append((base, label))
+            names.append((base + "_Hit", label))
+        else:
+            names.append((base, label))
+    if _needs_end_node(flow):
+        names.append((f"{E}_End", "流程收口节点"))
+    return names
+
+
+def _needs_end_node(flow):
+    """build_pipeline 是否会在末尾补 VF_x_End（存在 switch，或有 branch 的 miss 未连线）"""
+    nodes = flow.get("nodes", {})
+    chain = flow.get("chain", [])
+    for nid in chain:
+        nd = nodes.get(nid) or {}
+        if nd.get("type") == "switch":
+            return True
+        if nd.get("type") == "branch" and not nd.get("miss_next"):
+            return True
+    return False
+
+
+def _check_naming(flow, issues):
+    """I1：本流程生成的节点名必须互不相同。
+    依据：MaaFramework 同一 Bundle 内节点重名会导致该次资源加载【整体失败】，
+    不是「后者覆盖前者」——所以重名必须在编辑器里就拦住。"""
+    seen = {}
+    for name, label in _expected_node_names(flow):
+        if name in seen:
+            issues.append(Issue(
+                "error", "NAME_DUP",
+                f"节点名重复：{name} 同时被 {seen[name]} 与 {label} 占用"
+                f"（重名会让手机端整包 pipeline 加载失败，不只是这个流程出问题）"))
+        else:
+            seen[name] = label
+    nodes = flow.get("nodes", {})
+    for i, nid in enumerate(flow.get("chain", [])):
+        nd = nodes.get(nid) or {}
+        key = str(nd.get("key") or "").strip()
+        if key and not re.fullmatch(r"[A-Za-z0-9_]+", key):
+            issues.append(Issue(
+                "error", "KEY_CHARSET",
+                f"#{i + 1}「{nd.get('title', '?')}」节点名(key) {key!r} 只能包含"
+                f"英文字母、数字与下划线", nid))
+
+
+# 这几类节点在编辑器里没有 timeout 字段，生成物里也不写 timeout，
+# 于是继承 default_pipeline.json 的 timeout（本任务包为 90000ms）。
+# 协议语义：timeout 管的是【本节点 next 列表的扫描超时】，
+# 所以「点完一个固定坐标后等下一个节点出现」最长会空转 90 秒。
+_INHERIT_TIMEOUT_KINDS = ("tap", "swipe", "startapp", "common")
+
+
+def _check_timeout_declared(flow, issues):
+    """I4：未声明 timeout 的节点汇总提示（一条，不刷屏）"""
+    lack = []
+    nodes = flow.get("nodes", {})
+    for i, nid in enumerate(flow.get("chain", [])):
+        nd = nodes.get(nid) or {}
+        if nd.get("type") not in _INHERIT_TIMEOUT_KINDS:
+            continue
+        p = nd.get("props") or {}
+        if p.get("timeout") in (None, ""):
+            lack.append(f"#{i + 1}「{nd.get('title', '?')}」")
+    if lack:
+        shown = "、".join(lack[:6]) + (" 等" if len(lack) > 6 else "")
+        issues.append(Issue(
+            "warn", "TIMEOUT_INHERIT",
+            f"{len(lack)} 个节点未设置 timeout，将继承全局 90000ms"
+            f"（点完之后等下一个节点出现，最长空转 90 秒）：{shown}"))
+
+
+def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True):
+    """模型级校验（不需要生成结果）。返回 list[Issue]，按检出顺序。"""
+    issues = []
     if not flow.get("name"):
-        errs.append("流程名为空")
+        issues.append(Issue("error", "NAME_EMPTY", "流程名为空"))
     chain = flow.get("chain", [])
     nodes = flow.get("nodes", {})
     if not chain:
-        errs.append("流程没有节点")
+        issues.append(Issue("error", "NO_NODES", "流程没有节点"))
     W, H = frame_wh
     title = lambda nd: f"「{nd.get('title', '?')}」"
     for i, nid in enumerate(chain):
         nd = nodes.get(nid)
         if nd is None:
-            errs.append(f"链上有失效节点引用: {nid}")
+            issues.append(Issue("error", "CHAIN_REF",
+                                f"链上有失效节点引用: {nid}", nid))
             continue
         t, p = nd["type"], nd.get("props", {})
         no = f"#{i+1}"
@@ -419,75 +534,112 @@ def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
         elif t in ("tpl_click", "wait_tpl", "branch"):
             tpls = split_tpls(p.get("template", ""))
             if not tpls:
-                errs.append(f"{no}{title(nd)}未选择模板图")
+                issues.append(Issue("error", "TPL_MISSING",
+                                    f"{no}{title(nd)}未选择模板图", nid))
             else:
                 for tpl in tpls:
                     if not os.path.isfile(os.path.join(IMG_DIR, tpl)):
-                        errs.append(f"{no}{title(nd)}模板不存在: whmx/image/{tpl}")
+                        issues.append(Issue(
+                            "error", "TPL_MISSING",
+                            f"{no}{title(nd)}模板不存在: whmx/image/{tpl}", nid))
         if t in ("tpl_click", "wait_tpl", "branch", "ocr_click") and p.get("roi"):
             roi = parse_roi(p["roi"])
             if roi is None:
-                errs.append(f"{no}{title(nd)}ROI 格式应为 x,y,w,h")
+                issues.append(Issue("error", "ROI_FMT",
+                                    f"{no}{title(nd)}ROI 格式应为 x,y,w,h", nid))
             elif roi[0] < 0 or roi[1] < 0 or roi[0] + roi[2] > W or roi[1] + roi[3] > H:
-                warns.append(f"{no}{title(nd)}ROI {p['roi']} 超出画面 {W}x{H}")
+                issues.append(Issue("warn", "ROI_OOB",
+                                    f"{no}{title(nd)}ROI {p['roi']} 超出画面 {W}x{H}", nid))
         if t == "tap":
             x, y = _num(p.get("x", -1)), _num(p.get("y", -1))
             if not (0 <= x < W and 0 <= y < H):
-                errs.append(f"{no}{title(nd)}点击坐标 ({p.get('x')},{p.get('y')}) "
-                            f"非法或超出画面 {W}x{H}")
+                issues.append(Issue(
+                    "error", "TAP_OOB",
+                    f"{no}{title(nd)}点击坐标 ({p.get('x')},{p.get('y')}) "
+                    f"非法或超出画面 {W}x{H}", nid))
         if t == "swipe":
             for k in ("x1", "y1", "x2", "y2"):
                 v = _num(p.get(k, -1))
                 lim = W if k.startswith("x") else H
                 if not (0 <= v < lim):
-                    errs.append(f"{no}{title(nd)}滑动坐标 {k}={p.get(k)} "
-                                f"非法或超出画面 {W}x{H}")
+                    issues.append(Issue(
+                        "error", "SWIPE_OOB",
+                        f"{no}{title(nd)}滑动坐标 {k}={p.get(k)} "
+                        f"非法或超出画面 {W}x{H}", nid))
         if t in ("tpl_click", "wait_tpl", "branch"):
             try:
                 th = float(p.get("threshold", 0))
                 if not (0.3 <= th <= 0.99):
                     raise ValueError
             except (TypeError, ValueError):
-                errs.append(f"{no}{title(nd)}阈值应为 0.3~0.99 的数字")
+                issues.append(Issue("error", "THRESHOLD",
+                                    f"{no}{title(nd)}阈值应为 0.3~0.99 的数字", nid))
         if t == "branch":
             for port, label in (("hit_next", "✓命中"), ("miss_next", "✗未命中")):
                 tgt = nd.get(port)
                 if tgt is not None and tgt not in nodes:
-                    errs.append(f"{no}{title(nd)}{label}出口指向已删除节点")
+                    issues.append(Issue("error", "EXIT_DEAD",
+                                        f"{no}{title(nd)}{label}出口指向已删除节点", nid))
                 elif tgt == nid:
-                    errs.append(f"{no}{title(nd)}{label}出口不能指向自己")
+                    issues.append(Issue("error", "EXIT_SELF",
+                                        f"{no}{title(nd)}{label}出口不能指向自己", nid))
                 elif tgt is not None and tgt in chain and chain.index(tgt) < i:
-                    warns.append(f"{no}{title(nd)}{label}出口跳回前面的节点（构成循环），"
-                                 f"请确保循环内有终止条件（如分支/收口节点）")
+                    issues.append(Issue(
+                        "warn", "EXIT_BACKWARD",
+                        f"{no}{title(nd)}{label}出口跳回前面的节点（构成循环），"
+                        f"请确保循环内有终止条件（如分支/收口节点）", nid))
         if t == "switch":
             cands = parse_switch_cands(p.get("candidates"))
             if not cands:
-                errs.append(f"{no}{title(nd)}枝干没有可用的候选")
+                issues.append(Issue("error", "SWITCH_EMPTY",
+                                    f"{no}{title(nd)}枝干没有可用的候选", nid))
             for ci, c in enumerate(cands):
                 spec = switch_cand_spec(c["t"])
                 lab = f"候选{ci + 1}「{c['t']}」"
                 if spec is None:
-                    errs.append(f"{no}{title(nd)}{lab}格式应为 模板名.png 或 OCR:文字")
+                    issues.append(Issue("error", "CAND_FMT",
+                                        f"{no}{title(nd)}{lab}格式应为 模板名.png 或 OCR:文字", nid))
                 elif spec[0] == "Template" and not os.path.isfile(
                         os.path.join(IMG_DIR, c["t"])):
-                    errs.append(f"{no}{title(nd)}{lab}模板不存在: whmx/image/{c['t']}")
+                    issues.append(Issue(
+                        "error", "CAND_TPL_MISSING",
+                        f"{no}{title(nd)}{lab}模板不存在: whmx/image/{c['t']}", nid))
                 nxt = c.get("next")
                 if nxt is not None and nxt not in nodes:
-                    errs.append(f"{no}{title(nd)}{lab}命中出口指向已删除节点")
+                    issues.append(Issue("error", "CAND_EXIT_DEAD",
+                                        f"{no}{title(nd)}{lab}命中出口指向已删除节点", nid))
                 elif nxt == nid:
-                    errs.append(f"{no}{title(nd)}{lab}命中出口不能指向自己")
+                    issues.append(Issue("error", "CAND_EXIT_SELF",
+                                        f"{no}{title(nd)}{lab}命中出口不能指向自己", nid))
             mn = p.get("miss_next")
             if mn and mn not in nodes:
-                errs.append(f"{no}{title(nd)}全部未中出口指向已删除节点")
+                issues.append(Issue("error", "MISS_EXIT_DEAD",
+                                    f"{no}{title(nd)}全部未中出口指向已删除节点", nid))
         if t == "common" and i < len(chain) - 1:
             ref = str(p.get("node", ""))
             if ref.startswith("VF_"):
-                warns.append(f"{no}{title(nd)}为跨流程调用（进入 {ref}，"
-                             f"跑完即结束，不会返回本流程）")
+                issues.append(Issue(
+                    "warn", "COMMON_MID",
+                    f"{no}{title(nd)}为跨流程调用（进入 {ref}，"
+                    f"跑完即结束，不会返回本流程）", nid))
             else:
-                warns.append(f"{no}{title(nd)}是公共收口节点（进入后流程即终止），"
-                             f"放在链中间会导致其后的节点执行不到")
-    return errs, warns
+                issues.append(Issue(
+                    "warn", "COMMON_MID",
+                    f"{no}{title(nd)}是公共收口节点（进入后流程即终止），"
+                    f"放在链中间会导致其后的节点执行不到", nid))
+    _check_naming(flow, issues)
+    _check_timeout_declared(flow, issues)
+    if check_namespace:
+        for msg in audit_namespace(flow, root):
+            issues.append(Issue("error", "NS_CLASH", msg))
+    return issues
+
+
+def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
+    """返回 (errors, warnings) 字符串列表。
+    兼容旧调用方（import_pipelines.py / --selftest）；需要节点归属时用 collect_issues。"""
+    return issues_lines(collect_issues(flow, frame_wh))
+
 
 
 def entry_name(flow):
@@ -780,6 +932,255 @@ class FlowValidationError(Exception):
     def __init__(self, errs):
         super().__init__("; ".join(errs))
         self.errors = errs
+
+
+# ================= 生成结果级不变量（P0-4） =================
+# 模型级校验（collect_issues）只看流程定义；这里几条必须看【生成结果】才能判：
+#   I2 引用存在   —— 生成物里 next/on_error 指向的节点必须真的存在
+#   I3 画布=生成  —— 生成物实际连的边，必须与画布/模型表达的边完全一致
+#   I5 无保护环   —— 从入口可达的环上必须至少有一个保护点（max_hit/enabled:false）
+# 只有加载过 pipeline 的引擎才知道 I2，只有画布/生成器自己知道 I3，只有把它们
+# 放在一起比对，才能防止「画布看着对、生成结果不一样」这类静默错误再出现。
+
+def _strip_attr(name):
+    """去掉 NodeAttr 前缀：'[JumpBack]X' / '[Anchor]X' → 'X'"""
+    s = str(name)
+    return s.lstrip("[").split("]", 1)[-1] if s.startswith("[") else s
+
+
+def _out_edges(out, name):
+    """生成节点 name 的全部出边目标名（next + on_error）"""
+    d = out.get(name) or {}
+    for key in ("next", "on_error"):
+        for item in (d.get(key) or []):
+            nm = item.get("name") if isinstance(item, dict) else item
+            if nm:
+                yield _strip_attr(nm)
+
+
+def _name_to_node(flow):
+    """生成节点名 → 链上节点 id（switch 的 jname 就是它的 _J1 名）"""
+    return {jname(flow, nid): nid for nid in flow.get("chain", [])}
+
+
+def _own_artifact_name(flow):
+    """本流程在任务包里对应的生成物文件名"""
+    return f"vf_{safe_name(flow.get('name') or 'flow')}.json"
+
+
+def bundle_node_keys(root=None, exclude_files=()):
+    """读取任务包 pipeline 目录里所有 JSON 的节点键（纯本地文件，不连手机）。
+    依据：同一 Bundle 内节点重名会让整次资源加载失败（不是覆盖）。"""
+    root = root or ROOT
+    pipe_dir = os.path.join(root, "whmx", "pipeline")
+    keys = set()
+    if not os.path.isdir(pipe_dir):
+        return keys
+    skip = {os.path.basename(p) for p in exclude_files}
+    paths = sorted(glob.glob(os.path.join(pipe_dir, "*.json")) +
+                   glob.glob(os.path.join(pipe_dir, "*.jsonc")))
+    for path in paths:
+        if os.path.basename(path) in skip:
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = jsonc_loads(f.read())
+        except Exception:
+            continue                     # 单个文件坏掉不阻断查重
+        if isinstance(data, dict):
+            keys |= {str(k) for k in data if not str(k).startswith("$")}
+    return keys
+
+
+def audit_namespace(flow, root=None):
+    """I6：本流程生成的名字不得与任务包内既有节点撞名。返回错误消息列表。
+    必须排除本流程自己的生成物，否则每次校验都会自撞。"""
+    root = root or ROOT
+    pipe_dir = os.path.join(root, "whmx", "pipeline")
+    if not os.path.isdir(pipe_dir):
+        return []          # 找不到任务包时不误报（启动日志已提示工程根探测结果）
+    mine = {n for n, _ in _expected_node_names(flow)}
+    other = bundle_node_keys(root, exclude_files=[os.path.join(pipe_dir, _own_artifact_name(flow))])
+    clash = sorted(mine & other)
+    if not clash:
+        return []
+    shown = "、".join(clash[:6]) + (" 等" if len(clash) > 6 else "")
+    return [f"节点名与任务包内既有节点冲突（重名会让手机端整包 pipeline 加载失败）："
+            f"{shown}"]
+
+
+def find_unprotected_cycles(out, entry):
+    """I5：从入口可达且环上没有任何保护点（max_hit / enabled:false）的环。
+    依据：节点默认 recognition=DirectHit（永远命中），一个指回自己的 next 会按
+    rate_limit 的节奏永久空转；编辑器当前也不产出 max_hit，所以这种环只可能是意外。"""
+    if entry not in out:
+        return []
+    color, stack, cycles = {}, [], []
+
+    def protected(nm):
+        d = out.get(nm) or {}
+        return bool(d.get("max_hit")) or d.get("enabled") is False
+
+    def dfs(nm):
+        color[nm] = 1
+        stack.append(nm)
+        for tgt in _out_edges(out, nm):
+            if tgt not in out:
+                continue
+            c = color.get(tgt, 0)
+            if c == 1:
+                cyc = stack[stack.index(tgt):]
+                if not any(protected(x) for x in cyc):
+                    cycles.append(list(cyc))
+            elif c == 0:
+                dfs(tgt)
+        stack.pop()
+        color[nm] = 2
+
+    dfs(entry)
+    # 同一片环会被不同回边报成多条（长度不同、互相包含），只保留最小环，避免刷屏
+    uniq = []
+    for c in sorted(cycles, key=len):
+        s = set(c)
+        if any(set(u) <= s for u in uniq):
+            continue
+        uniq.append(c)
+    return uniq
+
+
+def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
+    """生成结果级校验。只在模型级无 error 时调用（否则 out 不可信）。"""
+    issues = []
+    E = entry_name(flow)
+    nodes = flow.get("nodes", {})
+
+    # ---------- I2：生成物里引用的节点必须存在（或属于任务包其它文件） ----------
+    known = set(out)
+    external = bundle_node_keys(root)
+    dock_n = f"{E}_End"
+    for name in sorted(out):
+        for tgt in _out_edges(out, name):
+            if tgt in known or tgt in external or tgt == dock_n:
+                continue
+            issues.append(Issue(
+                "error", "REF_MISSING",
+                f"{name} 引用了不存在的节点 {tgt}"
+                f"（引擎加载时会拒绝整个任务包，不只是这个流程）"))
+
+    # ---------- I3：画布/模型表达的边 == 生成结果实际连的边 ----------
+    name2node = _name_to_node(flow)
+
+    def tgt_of(nm):
+        nm = _strip_attr(nm)
+        if nm == dock_n:
+            return ("end", None)
+        if nm in name2node:
+            return ("node", name2node[nm])
+        return ("ext", nm)
+
+    def show(t):
+        kind, val = t
+        if kind == "end":
+            return "<收口 End>"
+        if kind == "ext":
+            return val
+        return jname(flow, val)
+
+    def show_set(s):
+        return "、".join(sorted(show(t) for t in s)) if s else "（无）"
+
+    for nid in flow.get("chain", []):
+        nd = nodes.get(nid) or {}
+        t = nd["type"]
+        base = jname(flow, nid)
+        ex = exits_of(flow, nid)
+        expect, actual = {}, {}
+        if t == "branch":
+            hit = ex["hit"] or ex["linear"]
+            expect["hit"] = {("node", hit)} if hit else set()
+            expect["miss"] = {("node", ex["miss"])} if ex["miss"] else {("end", None)}
+            d = out.get(base) or {}
+            actual["miss"] = {tgt_of(n) for n in (d.get("on_error") or [])}
+            hd = out.get(base + "_Hit") or {}
+            actual["hit"] = {tgt_of(n) for n in (hd.get("next") or [])}
+        elif t == "switch":
+            cands = ex["candidates"]
+            if not cands:
+                continue                 # 空枝干不产出节点（模型级已报错）
+            for c in cands:
+                expect[f"cand{c['index']}"] = ({("node", c["next"])} if c.get("next")
+                                               else {("end", None)})
+            expect["miss"] = {("node", ex["miss"])} if ex["miss"] else {("end", None)}
+            kb = f"{E}_{node_key(flow, nid)}"
+            j = 1
+            while f"{kb}_J{j}" in out:
+                hd = out.get(f"{kb}_J{j}_Hit") or {}
+                actual[f"cand{j - 1}"] = {tgt_of(n) for n in (hd.get("next") or [])}
+                oe = out[f"{kb}_J{j}"].get("on_error") or []
+                nxt_j = f"{kb}_J{j + 1}"
+                is_cascade = len(oe) == 1 and _strip_attr(
+                    oe[0].get("name") if isinstance(oe[0], dict) else oe[0]) == nxt_j
+                if not is_cascade:
+                    actual["miss"] = {tgt_of(n) for n in oe}
+                j += 1
+        elif t == "common":
+            p = nd.get("props") or {}
+            expect["next"] = {("ext", str(p.get("node")))}
+            d = out.get(base) or {}
+            actual["next"] = {tgt_of(n) for n in (d.get("next") or [])}
+        else:
+            expect["next"] = {("node", ex["linear"])} if ex["linear"] else set()
+            d = out.get(base) or {}
+            actual["next"] = {tgt_of(n) for n in (d.get("next") or [])}
+
+        for role in sorted(set(expect) | set(actual)):
+            e, a = expect.get(role, set()), actual.get(role, set())
+            if e != a:
+                issues.append(Issue(
+                    "error", "EDGE_MISMATCH",
+                    f"「{nd.get('title', '?')}」({base}) 的 {role} 出口不一致："
+                    f"画布= {show_set(e)} ≠ 生成结果= {show_set(a)}", nid))
+
+    # ---------- I5：无保护循环 ----------
+    # 判为【警告】而不是错误：实测本仓库有 4 个流程用「点击 → 判定 → 未中则回去再点」
+    # 的重试循环，这是有意的写法（等到目标出现为止），编辑器无权判定它是 bug。
+    # 但它确实是无界的：一旦条件永远不成立就会永久空转，所以必须明确提示出来。
+    cycles = find_unprotected_cycles(out, E)
+    if cycles:
+        involved = set()
+        for c in cycles:
+            involved |= set(c)
+        examples = "；".join(" → ".join(c[:5]) + (" → …" if len(c) > 5 else "")
+                            for c in cycles[:2])
+        more = f" 等 {len(cycles)} 处" if len(cycles) > 2 else ""
+        issues.append(Issue(
+            "warn", "CYCLE_UNPROTECTED",
+            f"检测到 {len(cycles)} 处无保护循环（涉及 {len(involved)} 个节点）："
+            f"{examples}{more}。节点默认 recognition=DirectHit（永远命中），环上没有 "
+            f"max_hit 时，一旦循环条件永远不成立就会按 rate_limit 的节奏永久空转。"
+            f"若这是有意的「重试直到目标出现」可忽略；否则建议给环上任一节点设置 "
+            f"max_hit 或缩短 timeout"))
+    return issues
+
+
+def collect_all_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None):
+    """完整校验（模型级 + 生成结果级），返回 list[Issue]。"""
+    issues = collect_issues(flow, frame_wh, root)
+    if any(i.level == "error" for i in issues):
+        return issues          # 模型级就有错时生成的图不可信，不再做结果级检查
+    try:
+        out = build_pipeline(flow, frame_wh)
+    except FlowValidationError as ex:
+        for m in ex.errors:
+            issues.append(Issue("error", "BUILD_FAIL", m))
+        return issues
+    issues += collect_pipeline_issues(flow, out, frame_wh, root)
+    return issues
+
+
+def validate_pipeline(flow, frame_wh=(FRAME_W, FRAME_H), root=None):
+    """完整校验的字符串版：返回 (errors, warnings)"""
+    return issues_lines(collect_all_issues(flow, frame_wh, root))
 
 
 # ================= 流程文件读写 =================
@@ -1124,6 +1525,7 @@ class FlowEditor:
         self._tpl_pop = None       # 模板自动补全弹出列表
         self._nid = 0
         self._syncing = False
+        self._issues_by_node = {}  # node_id -> [Issue]，供画布/属性面板标注问题节点
 
         self._build_toolbar()
         self._build_statusbar()
@@ -1780,14 +2182,16 @@ class FlowEditor:
         h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
         x1, y1 = x + CARD_W, y + h
         selected = (nid == self.sel)
+        err_now = any(i.level == "error" for i in self._issues_by_node.get(nid, ()))
         tags = ("node", f"node:{nid}")
         # 阴影
         _round_rect(c, x + 3, y + 5, x1 + 3, y1 + 5, 12,
                     fill=THEME["shadow"], outline="")
-        # 主体
+        # 主体（选中=黄框；有 error 级校验问题=红框，让问题节点一眼可见）
         _round_rect(c, x, y, x1, y1, 12, fill=THEME["card"],
-                    outline=THEME["sel"] if selected else THEME["card_line"],
-                    width=2 if selected else 1, tags=tags)
+                    outline=THEME["sel"] if selected
+                    else (THEME["err"] if err_now else THEME["card_line"]),
+                    width=2 if (selected or err_now) else 1, tags=tags)
         # 左侧类型色条
         _round_rect(c, x + 3, y + 5, x + 9, y1 - 5, 3,
                     fill=spec["color"], outline="", tags=tags)
@@ -2565,11 +2969,20 @@ class FlowEditor:
     # ---------- 校验/生成/同步 ----------
 
     def _collect_issues(self):
-        errs, warns = validate_flow(self.flow, self.frame_wh)
-        for e in errs:
-            self.log("✗ " + e, "err")
-        for w in warns:
-            self.log("⚠ " + w, "warn")
+        """完整校验（模型级 + 生成结果级），把问题按节点归档并写日志。
+        返回 (errors, warnings) 字符串列表，供 on_build/on_sync 判断是否阻断。"""
+        issues = collect_all_issues(self.flow, self.frame_wh)
+        self._issues_by_node = {}
+        for it in issues:
+            if it.node_id:
+                self._issues_by_node.setdefault(it.node_id, []).append(it)
+        for it in issues:
+            if it.level == "error":
+                self.log("✗ " + it.message, "err")
+            else:
+                self.log("⚠ " + it.message, "warn")
+        errs = [i.message for i in issues if i.level == "error"]
+        warns = [i.message for i in issues if i.level == "warn"]
         if not errs:
             self.log("✓ 校验通过" + (f"（{len(warns)} 条警告）" if warns else ""), "ok")
         return errs, warns
