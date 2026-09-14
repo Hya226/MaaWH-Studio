@@ -71,7 +71,8 @@ CARD_W, CARD_H = 240, 60    # 节点卡片尺寸
 UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文本）
 LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 JSON 撑到手机端加载不动）
 ZOOM_MIN, ZOOM_MAX = 0.25, 2.5   # 画布缩放范围（下限小一点便于总览 40 节点的长流程）
-TIDY_X = 24                 # 「整理布局」时主链的 x（贴左边，保证点完就能看见）
+GRID = 46                   # 画布网格步长（px）：拖动吸附与网格线都用它，保证同一套对齐
+TIDY_X = GRID               # 「整理布局」时主链的 x（贴左边一格，保证点完就能看见）
 PENDING_TPL = "?"           # 拖「＋」球新建的候选占位识别目标：待用户选模板/填OCR
 # 枝干各候选分支的配色：球与它的连线同色，一眼能看出"哪个球连到哪"。
 # 球上的数字只表示【判定顺序】（从左到右依次判定），与画布上下位置无关。
@@ -2779,10 +2780,13 @@ class FlowEditor:
         self.canvas.bind("<Button-2>", self.on_pan_start)
         self.canvas.bind("<B2-Motion>", self.on_pan_move)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_end)
-        for key, dx, dy in (("<Left>", -4, 0), ("<Right>", 4, 0),
-                            ("<Up>", 0, -4), ("<Down>", 0, 4),
-                            ("<Shift-Left>", -20, 0), ("<Shift-Right>", 20, 0),
-                            ("<Shift-Up>", 0, -20), ("<Shift-Down>", 0, 20)):
+        # 方向键按【整格】移动（Shift 一次四格）：与拖动吸附一致，不会一格一格歪掉
+        for key, dx, dy in (("<Left>", -GRID, 0), ("<Right>", GRID, 0),
+                            ("<Up>", 0, -GRID), ("<Down>", 0, GRID),
+                            ("<Shift-Left>", -4 * GRID, 0),
+                            ("<Shift-Right>", 4 * GRID, 0),
+                            ("<Shift-Up>", 0, -4 * GRID),
+                            ("<Shift-Down>", 0, 4 * GRID)):
             self.canvas.bind(key, lambda e, dx=dx, dy=dy: (self.nudge_node(dx, dy),
                                                            "break")[1])
         self.root.bind("<F5>", lambda e: self.on_capture())
@@ -2995,25 +2999,48 @@ class FlowEditor:
         p = dict(spec["defaults"])
         if props:
             p.update(props)
+        # ★ 新建节点挂在【当前选中节点】的出口下：链上插到它后面，
+        #   而不是像以前那样一律甩到链尾（链尾决定了 next，会让新节点接到别的节点后面）。
+        #   没有选中任何节点时保持老行为（追加到链尾）。
+        anchor = self.sel if (self.sel and self.sel in self.flow["nodes"]) else None
         if pos:
             x, y = pos
+        elif anchor:
+            a = self.flow["nodes"][anchor]
+            ah = self._sw_h(a) if a["type"] == "switch" else CARD_H
+            x, y = a["x"], a["y"] + ah + 26
         else:
             last = self.flow["chain"][-1] if self.flow["chain"] else None
             if last:
                 nd = self.flow["nodes"][last]
-                x, y = nd["x"], nd["y"] + CARD_H + 30
+                x, y = nd["x"], nd["y"] + CARD_H + 26
             else:
-                x, y = self._chain_col_x(), 60
+                x, y = TIDY_X, GRID
+        x, y = self._snap(x), self._snap(y)
         node = {"type": ntype, "x": x, "y": y, "title": spec["label"], "props": p}
         if ntype == "branch":
             node["hit_next"] = hit_next
             node["miss_next"] = miss_next
         self.flow["nodes"][nid] = node
-        self.flow["chain"].append(nid)
+        if anchor:
+            self.flow["chain"].insert(self.flow["chain"].index(anchor) + 1, nid)
+        else:
+            self.flow["chain"].append(nid)
         self.sel = nid
         self.build_prop_panel()
         self.redraw()
         self._scroll_to(y)
+        if anchor:
+            why = _suppress_reason(self.flow, anchor)
+            if why:
+                msg = {"switch-no-fallthrough": "枝干没有直落出口，得把它某个候选/未中端口拖过来",
+                       "common-terminal": "公共收口节点进入后不返回本流程",
+                       "switch-content-leaf": "它是分支内容叶，跑完即止"}.get(why, "它的出口被截断")
+                self.log(f"⚠ 新节点已插在「{self.flow['nodes'][anchor].get('title', anchor)}」"
+                         f"之后，但{msg} —— 画布上那里显示 ⛔，需要你手动连线", "warn")
+            else:
+                self.log(f"已把新节点挂在「{self.flow['nodes'][anchor].get('title', anchor)}」"
+                         f"的出口下")
         return nid
 
     def delete_selected(self):
@@ -3080,13 +3107,15 @@ class FlowEditor:
           以前按固定 CARD_H 留间距会让下一张压在它身上）"
         - 排完把视图拉回左上角"""
         self._snapshot()
-        y = 30
+        y = GRID
         for nid in self.flow["chain"]:
             nd = self.flow["nodes"][nid]
             h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
             nd["x"] = TIDY_X
-            nd["y"] = y
-            y += h + 26
+            nd["y"] = self._snap(y)
+            # 纵向步长向上取整到网格的整数倍，保证每张卡片都落在网格线上
+            import math as _math
+            y += _math.ceil((h + 26) / GRID) * GRID
         self.redraw()
         self.canvas.xview_moveto(0)
         self.canvas.yview_moveto(0)
@@ -3099,7 +3128,7 @@ class FlowEditor:
     def _side_col_x(self):
         """侧列 x。缩放到最小也放不下时，侧列其实「在右边」——所以 align 之后
         必须自动滚过去（见 align_node），不能让人以为节点没了。"""
-        return self._chain_col_x() + CARD_W + 100
+        return self._snap(self._chain_col_x() + CARD_W + 100)
 
     def _scroll_to(self, y):
         sr = self.canvas.cget("scrollregion").split()
@@ -3205,7 +3234,7 @@ class FlowEditor:
         for nd in self.flow["nodes"].values():
             max_x = max(max_x, nd["x"] + CARD_W + 160)
             max_y = max(max_y, nd["y"] + CARD_H + 140)
-        step = 46
+        step = GRID
         gx = step
         while gx < max_x:
             c.create_line(gx, 0, gx, max_y, fill=THEME["grid"])
@@ -3246,13 +3275,15 @@ class FlowEditor:
             x2, y2 = b["x"] + CARD_W / 2, b["y"]
             if linear_successor(self.flow, cur) == nxt_id:
                 mid = (y1 + y2) / 2
+                ecol, ew = self._edge_style(THEME["arrow"], cur, nxt_id)
                 c.create_line(x1, y1, x1, mid, x2, mid, x2, y2 - 2, smooth=True,
-                              width=2, arrow=tk.LAST, fill=THEME["arrow"],
+                              width=ew, arrow=tk.LAST, fill=ecol,
                               arrowshape=ARROW_SHAPE, splinesteps=24)
             else:
                 cut_y = a_bottom + (30 if a["type"] == "switch" else 0)
                 max_x = max(max_x, self._draw_cut_off(
-                    a["x"] + CARD_W / 2, cut_y, y2, _suppress_reason(self.flow, cur)))
+                    a["x"] + CARD_W / 2, cut_y, y2,
+                    _suppress_reason(self.flow, cur), cur))
         # 分支/枝干出口连线
         for nid in ch:
             nd = self.flow["nodes"][nid]
@@ -3264,14 +3295,15 @@ class FlowEditor:
                     if target and target in self.flow["nodes"]:
                         t = self.flow["nodes"][target]
                         ex, ey = t["x"] + CARD_W / 2, t["y"]
+                        ecol, ew = self._edge_style(color, nid, target)
                         if abs(ex - sx) < 8:
-                            c.create_line(sx, sy, ex, ey - 2, width=2, fill=color,
+                            c.create_line(sx, sy, ex, ey - 2, width=ew, fill=ecol,
                                           arrow=tk.LAST, smooth=True,
                                           arrowshape=ARROW_SHAPE, splinesteps=24)
                         else:
                             mx = max(sx, ex) + 52
                             c.create_line(sx, sy, mx, sy, mx, ey, ex, ey - 2, smooth=True,
-                                          width=2, fill=color, arrow=tk.LAST,
+                                          width=ew, fill=ecol, arrow=tk.LAST,
                                           arrowshape=ARROW_SHAPE, splinesteps=24)
                     else:
                         if port == "hit_next":
@@ -3300,8 +3332,9 @@ class FlowEditor:
                         # 以前是「先向右绕 52px 再拐下来」，几条线会互相交叉成麻花，
                         # 分不清哪个球连的是哪个节点。
                         mid = sy + max(20.0, (ey - sy) * 0.45)
+                        ecol, ew = self._edge_style(col, nid, tgt)
                         c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2,
-                                      smooth=True, width=2, fill=col, arrow=tk.LAST,
+                                      smooth=True, width=ew, fill=ecol, arrow=tk.LAST,
                                       arrowshape=ARROW_SHAPE, splinesteps=24)
                         c.create_text(sx + 7, mid - 9, anchor="w", fill=col,
                                       font=self.f_sm, text=str(ci + 1))
@@ -3318,8 +3351,9 @@ class FlowEditor:
                     t = self.flow["nodes"][mn]
                     ex, ey = t["x"] + CARD_W / 2, t["y"]
                     mid = sy + max(20.0, (ey - sy) * 0.45)
+                    ecol, ew = self._edge_style(THEME["err"], nid, mn)
                     c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2, smooth=True,
-                                  width=2, fill=THEME["err"], arrow=tk.LAST,
+                                  width=ew, fill=ecol, arrow=tk.LAST,
                                   arrowshape=ARROW_SHAPE, splinesteps=24)
                 else:
                     c.create_line(sx, sy, sx + 26, sy, fill=THEME["err"], width=2)
@@ -3505,7 +3539,7 @@ class FlowEditor:
         n = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
         return 64 + 22 * max(n, 1) + 22
 
-    def _draw_cut_off(self, cx, y_from, y_to, reason):
+    def _draw_cut_off(self, cx, y_from, y_to, reason, owner=None):
         """画「此处不向下继续」的显眼标记：红色虚线短桩 + 截止横杠 + ⛔ 徽标。
         与 build_pipeline 共用 linear_successor/_suppress_reason：生成被截断的出口，
         画布上也不得画成连上的样子。返回标记右边界（供 scrollregion 用）。"""
@@ -3513,8 +3547,11 @@ class FlowEditor:
         gap = max(14.0, y_to - y_from)
         stub = min(14.0, gap * 0.45)
         tip = y_from + 2 + stub
-        c.create_line(cx, y_from + 2, cx, tip, fill=THEME["err"], width=2, dash=(5, 3))
-        c.create_line(cx - 8, tip, cx + 8, tip, fill=THEME["err"], width=2)
+        hot = self.sel is not None and self.sel == owner
+        ec = THEME["sel"] if hot else THEME["err"]
+        c.create_line(cx, y_from + 2, cx, tip, fill=ec, width=3 if hot else 2,
+                      dash=(5, 3))
+        c.create_line(cx - 8, tip, cx + 8, tip, fill=ec, width=2)
         txt = {"switch-no-fallthrough": "⛔ 枝干无直落出口（走 ✓ 出口）",
                "switch-content-leaf": "⛔ 分支内容到此结束，不接下一节点",
                "common-terminal": "⛔ 收口节点，进入后不返回本流程",
@@ -3522,8 +3559,9 @@ class FlowEditor:
         tw = 12 * len(txt) + 14
         bx = cx + 16
         _round_rect(c, bx, tip - 11, bx + tw, tip + 11, 5,
-                    fill="#2a1114", outline=THEME["err"])
-        c.create_text(bx + tw / 2, tip, fill="#ffb3b3", font=self.f_sm, text=txt)
+                    fill="#2a1114", outline=ec, width=2 if hot else 1)
+        c.create_text(bx + tw / 2, tip, fill="#ffe9a0" if hot else "#ffb3b3",
+                      font=self.f_sm, text=txt)
         return bx + tw
 
     def _draw_loop_marks(self, nid):
@@ -3560,8 +3598,9 @@ class FlowEditor:
         ex = last["x"] + CARD_W
         ey = last["y"] + (self._sw_h(last) if last["type"] == "switch" else CARD_H) / 2
         mx = max(sx, ex) + 70
+        ecol, ew = self._edge_style(THEME["warn"], nid, body[-1])
         c.create_line(sx, sy, mx, sy, mx, ey, ex + 2, ey, smooth=True, dash=(6, 4),
-                      width=2, fill=THEME["warn"], arrow=tk.LAST,
+                      width=ew, fill=ecol, arrow=tk.LAST,
                       arrowshape=ARROW_SHAPE, splinesteps=24)
         _round_rect(c, mx - 34, (sy + ey) / 2 - 11, mx + 40, (sy + ey) / 2 + 11, 5,
                     fill="#14161d", outline=THEME["card_line"])
@@ -3806,6 +3845,17 @@ class FlowEditor:
         z = self.zoom or 1.0
         return wx * z, wy * z
 
+    def _edge_style(self, base_color, *nids):
+        """连线配色：(颜色, 线宽)。与当前选中节点相连的线加粗高亮成黄色，
+        这样点一个节点就能看清"它连出去/连进来"的是哪几条，不用在麻花里找。"""
+        if self.sel is not None and self.sel in nids:
+            return THEME["sel"], 4
+        return base_color, 2
+
+    def _snap(self, v):
+        """吸附到最近的网格交叉点：让节点像表格一样对齐（拖动/新建/整理布局都用它）"""
+        return float(int(round(float(v) / GRID)) * GRID)
+
     def _apply_zoom_fonts(self):
         """字号跟着缩放走：不缩字号的话，缩小后卡片变小而字不变，会糊成一团。"""
         def scaled(base):
@@ -3961,8 +4011,8 @@ class FlowEditor:
         if not self.drag:
             return
         nd = self.flow["nodes"][self.drag["id"]]
-        nd["x"] = cx - self.drag["dx"]
-        nd["y"] = cy - self.drag["dy"]
+        nd["x"] = self._snap(cx - self.drag["dx"])
+        nd["y"] = self._snap(cy - self.drag["dy"])
         self._reorder_on_drag(self.drag["id"])
         self.redraw()
 
@@ -5067,10 +5117,11 @@ class FlowEditor:
             return
         self._snapshot(f"nudge:{nid}")
         nd = self.flow["nodes"][nid]
-        nd["x"] = max(0, nd["x"] + dx)
-        nd["y"] = max(0, nd["y"] + dy)
+        nd["x"] = self._snap(max(0, nd["x"] + dx))
+        nd["y"] = self._snap(max(0, nd["y"] + dy))
         self.redraw()
-        self.status(f"节点坐标 → ({int(nd['x'])}, {int(nd['y'])})")
+        self.status(f"节点坐标 → ({int(nd['x'])}, {int(nd['y'])})"
+                    f"（网格 {GRID}px；方向键一格 / Shift 四格）")
 
     def on_escape(self, _e=None):
         """Esc：取消 ROI 拖框 / 取消取点 / 取消正在拖的连线"""
