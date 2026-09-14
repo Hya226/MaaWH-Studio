@@ -1561,6 +1561,33 @@ def list_templates():
     return [os.path.basename(p) for p in files]
 
 
+def template_usage(root=None):
+    """{模板文件名: [引用它的流程名, ...]} —— 遍历本目录所有 flows/*.flow.json。
+    用于「这张模板还有没有用」「改这张模板会影响哪些流程」。"""
+    usage = {}
+    for path in sorted(glob.glob(os.path.join(FLOWS_DIR, "*.flow.json"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                flow = normalize_flow(json.load(f))
+        except Exception:
+            continue
+        fname = flow.get("name") or os.path.basename(path)
+        for nd in flow.get("nodes", {}).values():
+            t = nd.get("type")
+            props = nd.get("props") or {}
+            tpls = []
+            if t in ("tpl_click", "wait_tpl", "branch"):
+                tpls += split_tpls(props.get("template"))
+            if t == "switch":
+                tpls += [c["t"] for c in parse_switch_cands(props.get("candidates"))
+                         if str(c["t"]).endswith(".png")]
+            for name in tpls:
+                usage.setdefault(name, [])
+                if fname not in usage[name]:
+                    usage[name].append(fname)
+    return usage
+
+
 def _tpl_candidates(templates, typed):
     """模板下拉过滤：子串匹配，前缀命中者优先（中文名也能搜中间片段）"""
     typed = str(typed).strip().lower()
@@ -2113,6 +2140,8 @@ class FlowEditor:
         self._undo = []             # 撤销栈：[(flow 文本, 合并标签, 时间)]（P2-4）
         self._redo = []
         self._clipboard = None      # 复制的节点（P2-5）
+        self.roi_pick = None        # ROI 拖框状态（P2-6）
+        self.tpl_win = None         # 模板管理窗口
 
         self._build_toolbar()
         self._build_statusbar()
@@ -2268,6 +2297,8 @@ class FlowEditor:
         self._flat_btn(left, "🩺  运行回放…", self.on_replay_open).pack(fill="x", padx=8, pady=1)
         self._flat_btn(left, "✛  框选模板…", self.on_pick_template).pack(fill="x", padx=8, pady=1)
         self._flat_btn(left, "📂  打开帧图…", self.on_open_frame).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(left, "🗂  模板管理…", self.on_template_manager).pack(
+            fill="x", padx=8, pady=1)
         ttk.Checkbutton(left, text="显示背景帧", variable=self.show_bg,
                         command=self.redraw).pack(anchor="w", padx=12, pady=3)
         self.frame_lbl = ttk.Label(left, text="", style="Dim.TLabel", justify="left")
@@ -2789,6 +2820,13 @@ class FlowEditor:
         self._draw_overlays()
         # 回放高亮与识别框（有回放事件时才有东西画）
         self._draw_replay_overlay()
+        # ROI 拖框中的临时矩形
+        if self.roi_pick and self.roi_pick.get("x0") is not None:
+            rp = self.roi_pick
+            c.create_rectangle(rp["x0"], rp["y0"], rp["x1"], rp["y1"],
+                               outline=THEME["warn"], width=2, dash=(6, 4))
+            c.create_text(rp["x0"], rp["y0"] - 8, anchor="sw", fill=THEME["warn"],
+                          font=FONT_SM, text="新 ROI")
         if ch:
             first = self.flow["nodes"][ch[0]]
             entry_txt = f"▶ 入口 VF_{self.flow['name']}"
@@ -3154,6 +3192,14 @@ class FlowEditor:
             self.canvas.focus_set()          # 让方向键微调落到画布而不是别处
         except tk.TclError:
             pass
+        if self.roi_pick is not None:
+            if self._canvas_to_frame(cx, cy) is None:
+                self.status("框选要落在帧画面上（Esc 取消）")
+                return
+            self.roi_pick["x0"], self.roi_pick["y0"] = cx, cy
+            self.roi_pick["x1"], self.roi_pick["y1"] = cx, cy
+            self.redraw()
+            return
         if self.pick_target:
             pt = self._canvas_to_frame(cx, cy)
             self.pick_target = None          # 本次点击后一律退出取点模式
@@ -3186,6 +3232,10 @@ class FlowEditor:
     def on_motion(self, e):
         cx = self.canvas.canvasx(e.x)
         cy = self.canvas.canvasy(e.y)
+        if self.roi_pick is not None and self.roi_pick.get("x0") is not None:
+            self.roi_pick["x1"], self.roi_pick["y1"] = cx, cy
+            self.redraw()
+            return
         if self.wire:
             self.wire["mx"], self.wire["my"] = cx, cy
             self.redraw()
@@ -3225,6 +3275,10 @@ class FlowEditor:
             src[port] = tgt
 
     def on_up(self, _e):
+        if self.roi_pick is not None:
+            self._finish_roi_pick()
+            self.redraw()
+            return
         if self.wire:
             hit = self._hit_test(self.wire["mx"], self.wire["my"])
             src = self.flow["nodes"][self.wire["from"]]
@@ -3456,6 +3510,12 @@ class FlowEditor:
             fr = ttk.Frame(self.props_inner)
             ttk.Entry(fr, textvariable=var, width=8, font=FONT_SM).pack(side="left", ipady=2)
             self._flat_btn(fr, "✛ 取点", lambda: self._start_pick(key),
+                           padx=6, font=FONT_SM).pack(side="left", padx=4)
+            return fr
+        if kind == "roi":
+            fr = ttk.Frame(self.props_inner)
+            ttk.Entry(fr, textvariable=var, width=13, font=FONT_SM).pack(side="left", ipady=2)
+            self._flat_btn(fr, "✛ 框选", lambda: self._start_roi_pick(key),
                            padx=6, font=FONT_SM).pack(side="left", padx=4)
             return fr
         return ttk.Entry(self.props_inner, textvariable=var, width=22, font=FONT_SM)
@@ -4179,14 +4239,121 @@ class FlowEditor:
         self.status(f"节点坐标 → ({int(nd['x'])}, {int(nd['y'])})")
 
     def on_escape(self, _e=None):
-        """Esc：取消取点 / 取消正在拖的连线"""
-        if self.pick_target:
+        """Esc：取消 ROI 拖框 / 取消取点 / 取消正在拖的连线"""
+        if self.roi_pick is not None:
+            self.roi_pick = None
+            self.redraw()
+            self.status("已取消框选 ROI")
+        elif self.pick_target:
             self.pick_target = None
             self.status("已取消取点")
         elif self.wire:
             self.wire = None
             self.redraw()
             self.status("已取消连线")
+
+    def _start_roi_pick(self, key):
+        """在背景帧上拖框来填 ROI（x,y,w,h），省得手敲坐标"""
+        if not self.sel:
+            return
+        if self.bg_disp is None:
+            self.status("框选 ROI 需要先有背景帧：先抓帧（F5）或打开帧图")
+            self.log("⚠ 框选失败：画布上没有背景帧。先点「⟳ 抓帧 (F5)」。", "warn")
+            return
+        self.roi_pick = {"key": key, "x0": None, "y0": None, "x1": None, "y1": None}
+        self.status("拖框模式：在左侧帧画面上拖出识别区域（Esc 取消）")
+
+    def _finish_roi_pick(self):
+        rp = self.roi_pick
+        self.roi_pick = None
+        if not rp or None in (rp["x0"], rp["x1"]):
+            self.status("已取消框选")
+            return
+        if not self.sel or self.sel not in self.flow["nodes"]:
+            return
+        a = self._canvas_to_frame(rp["x0"], rp["y0"])
+        b = self._canvas_to_frame(rp["x1"], rp["y1"])
+        if a is None or b is None:
+            self.log("⚠ 框选超出帧画面范围，未写入", "warn")
+            self.status("框选无效")
+            return
+        x0, x1 = sorted((a[0], b[0]))
+        y0, y1 = sorted((a[1], b[1]))
+        W, H = self.frame_wh
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(W, x1), min(H, y1)
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            self.log("⚠ 框选太小，未写入", "warn")
+            return
+        self._snapshot(f"roi:{self.sel}")
+        self.flow["nodes"][self.sel]["props"][rp["key"]] = f"{x0},{y0},{x1 - x0},{y1 - y0}"
+        self.build_prop_panel()
+        self.redraw()
+        self.log(f"✓ 已写入 ROI {x0},{y0},{x1 - x0},{y1 - y0}"
+                 f"（帧坐标，基准 {W}×{H}）", "ok")
+
+    # ---------- 模板管理（P2-6） ----------
+
+    def on_template_manager(self):
+        """模板清单：尺寸 + 被哪些流程引用；顺便暴露没被任何流程引用的模板"""
+        if getattr(self, "tpl_win", None) and self.tpl_win.winfo_exists():
+            self.tpl_win.lift()
+            return
+        usage = template_usage()
+        win = tk.Toplevel(self.root)
+        self.tpl_win = win
+        win.title("模板管理")
+        win.configure(bg=THEME["panel"])
+        win.geometry("620x560+%d+%d" % (self.root.winfo_rootx() + 200,
+                                        self.root.winfo_rooty() + 160))
+        win.transient(self.root)
+        names = list_templates()
+        used = [t for t in names if usage.get(t)]
+        free = [t for t in names if not usage.get(t)]
+        ttk.Label(win, style="Title.TLabel",
+                  text=f"  模板 {len(names)} 张 · 被引用 {len(used)} 张 · "
+                       f"未被任何流程引用 {len(free)} 张").pack(anchor="w", pady=(10, 4))
+        tip = ("未被引用的模板不一定是垃圾（可能是给别的任务包或以后用的），"
+               "所以这里只列出不自动删。模板图目录：whmx/image/")
+        ttk.Label(win, text=tip, style="Dim.TLabel", wraplength=590,
+                  justify="left").pack(anchor="w", padx=12)
+
+        cols = ("name", "size", "n", "flows")
+        tree = ttk.Treeview(win, columns=cols, show="headings", height=20)
+        for c, w, t in (("name", 220, "模板名"), ("size", 80, "尺寸"),
+                        ("n", 46, "引用"), ("flows", 240, "被哪些流程引用")):
+            tree.heading(c, text=t)
+            tree.column(c, width=w, anchor="w")
+        tree.tag_configure("free", foreground=THEME["warn"])
+        vsb = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y", pady=(6, 10))
+        tree.pack(fill="both", expand=True, padx=(12, 0), pady=(6, 0))
+        for t in names:
+            size = "-"
+            path = os.path.join(IMG_DIR, t)
+            try:
+                with Image.open(path) as im:
+                    size = f"{im.width}×{im.height}"
+            except Exception:
+                size = "读取失败"
+            fs = usage.get(t) or []
+            tree.insert("", "end", values=(t, size, len(fs), "、".join(fs)),
+                        tags=() if fs else ("free",))
+        ttk.Label(win, style="Dim.TLabel", justify="left", wraplength=590,
+                  text="黄色行 = 没有被任何 flows/*.flow.json 引用。"
+                       "选中节点的模板下拉会实时刷新，框好新模板保存后即可选到。").pack(
+            anchor="w", padx=12, pady=(4, 10))
+        win.protocol("WM_DELETE_WINDOW", self._close_tpl_win)
+
+    def _close_tpl_win(self):
+        win = getattr(self, "tpl_win", None)
+        self.tpl_win = None
+        if win:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
 
     # ---------- 校验/生成/同步 ----------
 
