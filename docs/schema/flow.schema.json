@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maawh.local/schema/flow.schema.json",
+  "title": "MaaWH Studio 流程定义（flows/*.flow.json）",
+  "$comment": "结构校验。语义校验（模板是否存在、引用是否存在、命名空间冲突、无保护循环等）由 flow_editor.collect_issues / collect_pipeline_issues 负责，不在本 schema 里重复。",
+  "type": "object",
+  "required": ["name", "chain", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "enum": [1, 2] },
+    "name": { "type": "string", "minLength": 1 },
+    "chain": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[^\\s\"'\\\\]+$",
+        "$comment": "节点 id 只存在于编辑器内部（从不进 pipeline），import_pipelines 生成的 id 带中文，故只禁空白与引号；真正必须 ASCII 的是节点的 key 字段"
+      },
+      "additionalProperties": { "$ref": "#/$defs/node" }
+    },
+    "$meta": { "type": "object" }
+  },
+  "$defs": {
+    "nodeId": { "type": ["string", "null"] },
+    "candidate": {
+      "type": "object",
+      "required": ["t"],
+      "additionalProperties": false,
+      "properties": {
+        "t": {
+          "type": "string",
+          "$comment": "模板名.png 或 OCR:文字；允许空串在结构上合法，语义校验会拦"
+        },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "next": { "$ref": "#/$defs/nodeId" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["type", "x", "y", "props"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["tpl_click", "ocr_click", "tap", "swipe", "wait_tpl",
+                   "branch", "switch", "common", "startapp"]
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,32}$",
+          "$comment": "pipeline 名后缀。缺省时按链序号生成，所以旧文件没有它也是合法的"
+        },
+        "title": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "hit_next": { "$ref": "#/$defs/nodeId" },
+        "miss_next": { "$ref": "#/$defs/nodeId" },
+        "props": { "$ref": "#/$defs/props" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "branch" } },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "props": {
+                "type": "object",
+                "required": ["threshold", "timeout"],
+                "properties": {
+                  "template": { "type": "string" },
+                  "ocr_text": { "type": "string" },
+                  "threshold": { "type": "number" },
+                  "timeout": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "switch" } },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "props": {
+                "type": "object",
+                "required": ["candidates"],
+                "properties": {
+                  "candidates": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/candidate" }
+                  },
+                  "miss_next": { "$ref": "#/$defs/nodeId" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "common" } },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "props": {
+                "type": "object",
+                "required": ["node"],
+                "properties": { "node": { "type": "string", "minLength": 1 } }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "props": {
+      "type": "object",
+      "$comment": "字段随节点类型不同；这里只约束跨类型共用的可选流程字段，其余放开。",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "max_hit": { "type": ["integer", "string"] },
+        "notes": { "type": "string" },
+        "timeout": { "type": ["integer", "string"] },
+        "roi": { "type": "string" },
+        "threshold": { "type": ["number", "string"] },
+        "template": { "type": "string" },
+        "text": { "type": "string" },
+        "expected": { "type": "string" },
+        "ocr_text": { "type": "string" },
+        "order_by": { "type": ["string", "boolean"] },
+        "index": { "type": ["integer", "string"] },
+        "replace": { "type": "string" },
+        "only_rec": { "type": "boolean" },
+        "rate_limit": { "type": ["integer", "string"] },
+        "pre_delay": { "type": ["integer", "string"] },
+        "post_delay": { "type": ["integer", "string"] },
+        "pre_wait_freezes": { "type": ["integer", "string"] },
+        "post_wait_freezes": { "type": ["integer", "string"] },
+        "repeat": { "type": ["integer", "string"] },
+        "repeat_delay": { "type": ["integer", "string"] },
+        "x": { "type": ["integer", "string"] },
+        "y": { "type": ["integer", "string"] },
+        "x1": { "type": ["integer", "string"] },
+        "y1": { "type": ["integer", "string"] },
+        "x2": { "type": ["integer", "string"] },
+        "y2": { "type": ["integer", "string"] },
+        "duration": { "type": ["integer", "string"] },
+        "package": { "type": "string" },
+        "node": { "type": "string" },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/candidate" }
+        },
+        "miss_next": { "$ref": "#/$defs/nodeId" }
+      }
+    }
+  }
+}

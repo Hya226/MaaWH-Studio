@@ -78,7 +78,15 @@ def test_golden(entry):
         assert not os.path.isfile(vf_path), f"{name}: 基线有生成结果，现在却生成失败"
     else:
         assert os.path.isfile(vf_path), f"{name}: 基线无生成结果，现在却能生成"
-        assert _norm(_load(vf_path)) == _norm(out), f"{name}: 生成结果与基线不一致"
+        got = {k: v for k, v in out.items() if k != "$meta"}
+        assert _norm(_load(vf_path)) == _norm(got), f"{name}: 生成结果与基线不一致"
+        # $meta 含时间戳，不参与基线比对，但两个指纹必须能重算出来
+        meta = out.get("$meta")
+        assert isinstance(meta, dict), f"{name}: 生成物缺少 $meta"
+        assert meta.get("flowHash") == fe.flow_fingerprint(flow), \
+            f"{name}: $meta.flowHash 与流程定义对不上"
+        assert meta.get("pipelineHash") == fe.pipeline_fingerprint(out), \
+            f"{name}: $meta.pipelineHash 与生成物对不上"
 
 
 def test_flow_namespace_unique():

@@ -26,6 +26,8 @@ import sys
 import json
 import glob
 import bisect
+import hashlib
+import datetime
 import subprocess
 import shutil
 import threading
@@ -57,6 +59,8 @@ ADB = r"D:\android-studio\Sdk\platform-tools\adb.exe"
 DEVICE = "2c92e197"
 PKG = "com.maawh.app"
 GAME_PKG = "com.cipaishe.wuhua.bilibili"
+
+EDITOR_VERSION = "2.0"      # 写进生成物的 $meta，便于回溯是哪一版编辑器产出的
 
 # 虚拟屏帧基准（横屏 720p，实测 1280x720）：坐标校验/显示用；载入背景帧后按实际图尺寸更新
 FRAME_W, FRAME_H = 1280, 720
@@ -773,6 +777,42 @@ def validate_flow(flow, frame_wh=(FRAME_W, FRAME_H)):
 
 
 
+def _canon(obj):
+    """规范化 JSON 文本，用于稳定哈希"""
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def flow_fingerprint(flow):
+    """流程定义的稳定指纹（sha256）"""
+    return "sha256:" + hashlib.sha256(_canon(flow).encode("utf-8")).hexdigest()
+
+
+def pipeline_fingerprint(out):
+    """生成物的稳定指纹（不含 $meta 本身，避免自引用）。
+    与 $meta.pipelineHash 应当一致；回放面板可用它把手机上的 vf_*.json
+    去掉 $meta 后重算，回答「手机上跑的是不是本地这一版」。"""
+    body = {k: v for k, v in out.items() if k != "$meta"}
+    return "sha256:" + hashlib.sha256(_canon(body).encode("utf-8")).hexdigest()
+
+
+def _inject_meta(out, flow, frame_wh):
+    """在生成物里插入 $meta 元数据。
+    位置是安全的：MaaFramework 会跳过以 $ 开头的根字段
+    （PipelineTypes.h 的 kNodePrefix_Ignore = "$"），引擎不会把它当节点解析。"""
+    body = {k: v for k, v in out.items() if k != "$meta"}
+    meta = {
+        "generatedBy": "MaaWH Studio",
+        "editorVersion": EDITOR_VERSION,
+        "generatedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "flowFile": f"{safe_name(flow.get('name') or 'flow')}.flow.json",
+        "flowHash": flow_fingerprint(flow),
+        "pipelineHash": pipeline_fingerprint(body),
+        "frameW": int(frame_wh[0]),
+        "frameH": int(frame_wh[1]),
+    }
+    return {"$meta": meta, **body}
+
+
 def entry_name(flow):
     """流程的命名空间前缀：VF_<流程名>"""
     return f"VF_{flow['name']}"
@@ -1171,7 +1211,7 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
 
     if end_needed or any(nodes[n].get("type") == "switch" for n in chain):
         out[f"{E}_End"] = {"action": "DoNothing", "next": []}
-    return out
+    return _inject_meta(out, flow, frame_wh)
 
 
 class FlowValidationError(Exception):

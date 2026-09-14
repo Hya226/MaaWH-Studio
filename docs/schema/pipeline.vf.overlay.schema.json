@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maawh.local/schema/pipeline.vf.overlay.schema.json",
+  "title": "MaaWH Studio 生成物（VF_ 命名空间 + $meta）",
+  "$comment": "不重写协议字段，只做两件事：① 叠加官方 pipeline.schema.json；② 约束根字段必须是 VF_* 或 $meta。官方 schema 见 vendor/pipeline.schema.json（只读副本，来源 commit 记录在 vendor/README.md）。",
+  "allOf": [
+    { "$ref": "vendor/pipeline.schema.json" },
+    {
+      "type": "object",
+      "minProperties": 2,
+      "required": ["$meta"],
+      "propertyNames": { "pattern": "^(\\$meta|VF_)" },
+      "additionalProperties": false,
+      "properties": {
+        "$meta": { "$ref": "#/$defs/meta" }
+      },
+      "patternProperties": {
+        "^VF_": { "$ref": "vendor/pipeline.schema.json#/$defs/Node" }
+      }
+    }
+  ],
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "required": ["generatedBy", "editorVersion", "generatedAt", "flowFile",
+                   "flowHash", "pipelineHash", "frameW", "frameH"],
+      "additionalProperties": false,
+      "properties": {
+        "generatedBy": { "type": "string" },
+        "editorVersion": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "flowFile": { "type": "string" },
+        "flowHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "pipelineHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "frameW": { "type": "integer", "minimum": 1 },
+        "frameH": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

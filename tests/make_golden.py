@@ -109,7 +109,10 @@ def main():
                   {"file": os.path.basename(path), "name": name,
                    "errors": errs, "warnings": warns, "crash": crash})
             if out is not None:
-                _dump(os.path.join(GOLDEN_DIR, f"vf_{stem}.json"), out)
+                # 基线只存 pipeline 本体，不含 $meta（$meta 里带生成时间戳，
+                # 存进基线会导致每次重新生成都产生假差异）
+                _dump(os.path.join(GOLDEN_DIR, f"vf_{stem}.json"),
+                      {k: v for k, v in out.items() if k != "$meta"})
             else:
                 p = os.path.join(GOLDEN_DIR, f"vf_{stem}.json")
                 if os.path.isfile(p):

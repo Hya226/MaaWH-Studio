@@ -112,7 +112,7 @@ def check(verbose=False):
                             + "\n".join(f"    - {w}" for w in lost[:5]))
         added = [w for w in warns if w not in (base_issues.get("warnings") or [])]
 
-        # A. 生成结果逐字节一致
+        # A. 生成结果逐字节一致（$meta 含时间戳，不参与基线比对，单独自检）
         if out is None:
             if os.path.isfile(vf_path):
                 failures.append(f"[{name}] 基线有生成结果，但现在生成失败")
@@ -121,12 +121,27 @@ def check(verbose=False):
                 failures.append(f"[{name}] 基线无生成结果，但现在能生成（{len(out)} 个节点）")
             else:
                 base_out = _load(vf_path)
-                if _norm(base_out) != _norm(out):
-                    same_keys = set(base_out) == set(out)
+                got = {k: v for k, v in out.items() if k != "$meta"}
+                if _norm(base_out) != _norm(got):
+                    same_keys = set(base_out) == set(got)
                     failures.append(
                         f"[{name}] 生成结果与基线不一致"
                         f"（{'节点集合相同，字段/值有差异' if same_keys else '节点集合都不同'}）:\n"
-                        + "\n".join(_first_diff(base_out, out)))
+                        + "\n".join(_first_diff(base_out, got)))
+
+            # E. $meta 自检：必须存在，且两个指纹都能重算出来
+            meta = out.get("$meta")
+            if not isinstance(meta, dict):
+                failures.append(f"[{name}] 生成物缺少 $meta 元数据")
+            else:
+                if meta.get("flowHash") != fe.flow_fingerprint(flow):
+                    failures.append(f"[{name}] $meta.flowHash 与流程定义对不上")
+                if meta.get("pipelineHash") != fe.pipeline_fingerprint(out):
+                    failures.append(f"[{name}] $meta.pipelineHash 与生成物对不上")
+                for k in ("generatedBy", "editorVersion", "generatedAt", "flowFile",
+                          "flowHash", "pipelineHash", "frameW", "frameH"):
+                    if k not in meta:
+                        failures.append(f"[{name}] $meta 缺少字段 {k}")
         checked += 1
 
         if verbose:
