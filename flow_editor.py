@@ -1973,8 +1973,15 @@ class FlowEditor:
         self._update_frame_label()
 
     def _build_canvas(self):
-        self.canvas = tk.Canvas(self.root, bg=THEME["canvas"], highlightthickness=0)
-        self.canvas.pack(side="left", fill="both", expand=True)
+        # 画布外套一层容器，好在下沿挂横向滚动条：流程 40 个节点时主链列在
+        # 帧右边缘之外，没有横向滚动就够不到（以前只有 MouseWheel→yview）
+        wrap = ttk.Frame(self.root)
+        wrap.pack(side="left", fill="both", expand=True)
+        self.canvas = tk.Canvas(wrap, bg=THEME["canvas"], highlightthickness=0)
+        self.xsb = ttk.Scrollbar(wrap, orient="horizontal", command=self.canvas.xview)
+        self.canvas.configure(xscrollcommand=self.xsb.set)
+        self.xsb.pack(side="bottom", fill="x")
+        self.canvas.pack(side="top", fill="both", expand=True)
         self.canvas.bind("<ButtonPress-1>", self.on_down)
         self.canvas.bind("<B1-Motion>", self.on_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_up)
@@ -2067,7 +2074,8 @@ class FlowEditor:
         self.log_text.pack(fill="both", expand=True, padx=1, pady=1)
 
     def _build_statusbar(self):
-        self.status_var = tk.StringVar(value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ Delete 删除选中节点")
+        self.status_var = tk.StringVar(value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ "
+                                             "滚轮纵向/Shift+滚轮横向 ｜ Delete 删除选中节点")
         tk.Label(self.root, textvariable=self.status_var, bg=THEME["bg"],
                  fg=THEME["text_dim"], anchor="w", padx=10, pady=3,
                  font=FONT_SM).pack(fill="x", side="bottom")
@@ -2259,7 +2267,11 @@ class FlowEditor:
         self.canvas.yview_moveto(max(0.0, (y - 120) / max(1.0, h)))
 
     def _on_mousewheel(self, e):
-        self.canvas.yview_scroll(int(-e.delta / 120), "units")
+        """滚轮纵向滚动；按住 Shift 横向滚动（配合下沿横向滚动条）"""
+        if e.state & 0x0001:
+            self.canvas.xview_scroll(int(-e.delta / 120), "units")
+        else:
+            self.canvas.yview_scroll(int(-e.delta / 120), "units")
 
     # ---------- 背景帧 ----------
 
@@ -2352,7 +2364,8 @@ class FlowEditor:
             c.create_text(ox + 10, oy + 10, anchor="nw", fill="#cfd6e6",
                           font=FONT_SM,
                           text=f" 参考帧 {self.frame_wh[0]}×{self.frame_wh[1]} ")
-            self._draw_overlays()
+            max_x = max(max_x, ox + dw + 40)     # 帧也能横向滚到（以前只算了纵向）
+            max_y = max(max_y, oy + disp_h + 40)
         else:
             self.bg_disp = None
         # 主链连线（按 chain 顺序纵向连接）：与 build_pipeline 共用 linear_successor。
@@ -2362,7 +2375,8 @@ class FlowEditor:
         for i in range(len(ch) - 1):
             cur, nxt_id = ch[i], ch[i + 1]
             a, b = self.flow["nodes"][cur], self.flow["nodes"][nxt_id]
-            x1, y1 = a["x"] + CARD_W / 2, a["y"] + CARD_H
+            a_bottom = a["y"] + (self._sw_h(a) if a["type"] == "switch" else CARD_H)
+            x1, y1 = a["x"] + CARD_W / 2, a_bottom
             x2, y2 = b["x"] + CARD_W / 2, b["y"]
             if linear_successor(self.flow, cur) == nxt_id:
                 mid = (y1 + y2) / 2
@@ -2370,9 +2384,8 @@ class FlowEditor:
                               width=2, arrow=tk.LAST, fill=THEME["arrow"],
                               arrowshape=ARROW_SHAPE, splinesteps=24)
             else:
-                by = a["y"] + (self._sw_h(a) if a["type"] == "switch" else CARD_H)
                 max_x = max(max_x, self._draw_cut_off(
-                    a["x"] + CARD_W / 2, by, y2, _suppress_reason(self.flow, cur)))
+                    a["x"] + CARD_W / 2, a_bottom, y2, _suppress_reason(self.flow, cur)))
         # 分支/枝干出口连线
         for nid in ch:
             nd = self.flow["nodes"][nid]
@@ -2446,6 +2459,9 @@ class FlowEditor:
         for nid in ch:
             self._draw_node(nid)
         self._draw_branch_labels()
+        # 叠加层（ROI / 点击点 / 滑动线）放在最后画：它是「拿帧对照参数」的依据，
+        # 被节点卡片盖住就失去意义了
+        self._draw_overlays()
         if ch:
             first = self.flow["nodes"][ch[0]]
             entry_txt = f"▶ 入口 VF_{self.flow['name']}"
