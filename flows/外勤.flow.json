@@ -1,0 +1,248 @@
+{
+  "name": "外勤",
+  "chain": [
+    "n_外_演训",
+    "n_外_演训_Hit",
+    "n_外_通识",
+    "n_外_通识_Hit",
+    "n_外_判断",
+    "n_外_一键领",
+    "n_外_领取",
+    "n_外_领取_Hit",
+    "n_外_点565",
+    "n_外_统一",
+    "n_外_统一_Hit",
+    "n_外_确认",
+    "n_外_确认_Hit",
+    "c_Common_回主页"
+  ],
+  "nodes": {
+    "n_外_演训_Hit": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 40,
+      "title": "外_演训_Hit",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "yanxun.png"
+      }
+    },
+    "n_外_通识_Hit": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 220,
+      "title": "外_通识_Hit",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tongshikechengwaiqin.png"
+      }
+    },
+    "n_外_一键领": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 400,
+      "title": "外_一键领",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": true,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "lingqu_waiqin.png"
+      }
+    },
+    "n_外_领取_Hit": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 580,
+      "title": "外_领取_Hit",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "lingqu_waiqin2.png"
+      }
+    },
+    "n_外_点565": {
+      "type": "tap",
+      "x": 60,
+      "y": 760,
+      "title": "外_点565",
+      "props": {
+        "x": 36,
+        "y": 565,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "n_外_统一_Hit": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 850,
+      "title": "外_统一_Hit",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tongyiwaiqin.png"
+      }
+    },
+    "n_外_确认_Hit": {
+      "type": "tpl_click",
+      "x": 380,
+      "y": 1030,
+      "title": "外_确认_Hit",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "querenwaiqin.png"
+      }
+    },
+    "c_Common_回主页": {
+      "type": "common",
+      "x": 60,
+      "y": 1210,
+      "title": "Common_回主页",
+      "props": {
+        "node": "Common_回主页"
+      }
+    },
+    "n_外_确认": {
+      "type": "branch",
+      "x": 60,
+      "y": 1030,
+      "title": "外_确认?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "querenwaiqin.png"
+      },
+      "hit_next": "n_外_确认_Hit",
+      "miss_next": "c_Common_回主页"
+    },
+    "n_外_统一": {
+      "type": "branch",
+      "x": 60,
+      "y": 850,
+      "title": "外_统一?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "tongyiwaiqin.png"
+      },
+      "hit_next": "n_外_统一_Hit",
+      "miss_next": "c_Common_回主页"
+    },
+    "n_外_领取": {
+      "type": "branch",
+      "x": 60,
+      "y": 580,
+      "title": "外_领取?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "lingqu_waiqin2.png"
+      },
+      "hit_next": "n_外_领取_Hit",
+      "miss_next": null
+    },
+    "n_外_判断": {
+      "type": "branch",
+      "x": 60,
+      "y": 400,
+      "title": "外_判断?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 5000,
+        "rate_limit": 0,
+        "template": "lingqu_waiqin.png"
+      },
+      "hit_next": "n_外_一键领",
+      "miss_next": "n_外_领取"
+    },
+    "n_外_通识": {
+      "type": "branch",
+      "x": 60,
+      "y": 220,
+      "title": "外_通识?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "tongshikechengwaiqin.png"
+      },
+      "hit_next": "n_外_通识_Hit",
+      "miss_next": null
+    },
+    "n_外_演训": {
+      "type": "branch",
+      "x": 60,
+      "y": 40,
+      "title": "外_演训?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "yanxun.png"
+      },
+      "hit_next": "n_外_演训_Hit",
+      "miss_next": null
+    }
+  }
+}

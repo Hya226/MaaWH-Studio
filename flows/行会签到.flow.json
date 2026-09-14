@@ -1,0 +1,45 @@
+{
+  "name": "行会签到",
+  "chain": [
+    "n_HH_Entry",
+    "n_HH_Loop"
+  ],
+  "nodes": {
+    "n_HH_Entry": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "HH_Entry",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 1000,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "hanghui_main.png"
+      }
+    },
+    "n_HH_Loop": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "HH_Loop",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 3000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 1000,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "hanghui_fanhui.png"
+      }
+    }
+  }
+}

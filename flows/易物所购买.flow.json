@@ -1,0 +1,48 @@
+{
+  "name": "易物所购买",
+  "chain": [
+    "n0014b12",
+    "home",
+    "n0027725"
+  ],
+  "nodes": {
+    "home": {
+      "type": "common",
+      "x": 220.0,
+      "y": 341.0,
+      "title": "回主页",
+      "props": {
+        "node": "Common_回主页"
+      }
+    },
+    "n0014b12": {
+      "type": "ocr_click",
+      "x": 221.0,
+      "y": 236.0,
+      "title": "OCR识别点击",
+      "props": {
+        "text": "易物所",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      }
+    },
+    "n0027725": {
+      "type": "switch",
+      "x": 220.0,
+      "y": 431.0,
+      "title": "枝干判定(多路)",
+      "props": {
+        "candidates": [
+          {
+            "t": "",
+            "timeout": 3000
+          }
+        ],
+        "miss_next": ""
+      }
+    }
+  }
+}

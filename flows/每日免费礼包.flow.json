@@ -1,0 +1,113 @@
+{
+  "name": "每日免费礼包",
+  "chain": [
+    "n00128f5",
+    "n0024cc6",
+    "n0039749",
+    "n0073f3f",
+    "n0052656",
+    "lb6"
+  ],
+  "nodes": {
+    "lb6": {
+      "type": "common",
+      "x": 500,
+      "y": 476,
+      "title": "关弹窗回主页",
+      "props": {
+        "node": "Common_点中间回主页"
+      }
+    },
+    "n00128f5": {
+      "type": "tpl_click",
+      "x": 219.0,
+      "y": 47.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "shangting.png"
+      }
+    },
+    "n0024cc6": {
+      "type": "tpl_click",
+      "x": 220.0,
+      "y": 136.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "libao.png"
+      }
+    },
+    "n0039749": {
+      "type": "tpl_click",
+      "x": 229.0,
+      "y": 229.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "xunshibuji.png"
+      }
+    },
+    "n0052656": {
+      "type": "tpl_click",
+      "x": 240.0,
+      "y": 393.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "goumai.png"
+      }
+    },
+    "n0073f3f": {
+      "type": "tap",
+      "x": 244.0,
+      "y": 306.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 350,
+        "y": 665,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    }
+  }
+}

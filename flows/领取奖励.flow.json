@@ -1,0 +1,191 @@
+{
+  "name": "领取奖励",
+  "chain": [
+    "n_领_任务_Hit",
+    "n_领_全领1",
+    "n_领_点1",
+    "n_领_周常_Hit",
+    "n_领_全领2",
+    "n_领_点2",
+    "c_Common_回主页",
+    "n_领_判2",
+    "n_领_周常",
+    "n_领_判1",
+    "n_领_任务"
+  ],
+  "nodes": {
+    "n_领_任务_Hit": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "领_任务_Hit",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "renwu.png"
+      }
+    },
+    "n_领_全领1": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "领_全领1",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "quanbulingqu.png"
+      }
+    },
+    "n_领_点1": {
+      "type": "tap",
+      "x": 0,
+      "y": 0,
+      "title": "领_点1",
+      "props": {
+        "x": 36,
+        "y": 600,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "n_领_周常_Hit": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "领_周常_Hit",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 1000,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "zhouchangrenwu.png"
+      }
+    },
+    "n_领_全领2": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "领_全领2",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 2000,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "quanbulingqu.png"
+      }
+    },
+    "n_领_点2": {
+      "type": "tap",
+      "x": 0,
+      "y": 0,
+      "title": "领_点2",
+      "props": {
+        "x": 36,
+        "y": 600,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "c_Common_回主页": {
+      "type": "common",
+      "x": 0,
+      "y": 0,
+      "title": "Common_回主页",
+      "props": {
+        "node": "Common_回主页"
+      }
+    },
+    "n_领_判2": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "领_判2?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 5000,
+        "rate_limit": 0,
+        "template": "quanbulingqu.png"
+      },
+      "hit_next": "n_领_全领2",
+      "miss_next": null
+    },
+    "n_领_周常": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "领_周常?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "zhouchangrenwu.png"
+      },
+      "hit_next": "n_领_周常_Hit",
+      "miss_next": "n_领_判2"
+    },
+    "n_领_判1": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "领_判1?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 5000,
+        "rate_limit": 0,
+        "template": "quanbulingqu.png"
+      },
+      "hit_next": "n_领_全领1",
+      "miss_next": "n_领_周常"
+    },
+    "n_领_任务": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "领_任务?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "renwu.png"
+      },
+      "hit_next": "n_领_任务_Hit",
+      "miss_next": null
+    }
+  }
+}

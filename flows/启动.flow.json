@@ -1,0 +1,26 @@
+{
+  "name": "启动",
+  "chain": [
+    "n_CloseAnno2H"
+  ],
+  "nodes": {
+    "n_CloseAnno2H": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "CloseAnno2H",
+      "props": {
+        "threshold": 0.6,
+        "roi": "822,20,458,220",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "cha_x.png"
+      }
+    }
+  }
+}

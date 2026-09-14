@@ -1,0 +1,671 @@
+{
+  "name": "派遣公司事务",
+  "chain": [
+    "entry",
+    "sq",
+    "r1",
+    "hg",
+    "r2",
+    "b_bg",
+    "bg",
+    "b_yj",
+    "yj",
+    "tb",
+    "mid",
+    "tcbg",
+    "b_tcbg",
+    "tea_nrukou",
+    "tea_n00498da",
+    "tea_n005504d",
+    "n0010b18",
+    "tea_n008d833",
+    "tea_n0099bd1",
+    "tea_n0108097",
+    "tea_nbranch_yaoqing",
+    "tea_n011527d",
+    "tea_n01224fd",
+    "tea_n0083554",
+    "tea_n0136932",
+    "tea_n014a86c",
+    "tea_n009fecc",
+    "tea_n0159955",
+    "tea_n0167080",
+    "tea_n010927f",
+    "tea_n017f641",
+    "tea_n0188abd",
+    "tea_n011df05",
+    "tea_n0199d5c",
+    "tea_n020b804",
+    "tea_n021e8f8",
+    "tea_n0221863",
+    "tui_pq",
+    "b_tcpq",
+    "huizhuye"
+  ],
+  "nodes": {
+    "entry": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 50,
+      "title": "点派遣公司入口",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "paiqiangongsi.png"
+      }
+    },
+    "sq": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 140,
+      "title": "收取资源",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "shouquziyuan.png"
+      }
+    },
+    "r1": {
+      "type": "tap",
+      "x": 500,
+      "y": 230,
+      "title": "感应操作1",
+      "props": {
+        "x": 1086,
+        "y": 400,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "hg": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 320,
+      "title": "获取感应",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "huoquganying.png"
+      }
+    },
+    "r2": {
+      "type": "tap",
+      "x": 500,
+      "y": 410,
+      "title": "感应操作2",
+      "props": {
+        "x": 1186,
+        "y": 400,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "b_bg": {
+      "type": "branch",
+      "x": 500,
+      "y": 500,
+      "title": "办公室标识出现?",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "bangongshi_biaozhi.png"
+      },
+      "hit_next": "bg",
+      "miss_next": "tea_nrukou"
+    },
+    "bg": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 590,
+      "title": "进办公室",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "bangongshi.png"
+      }
+    },
+    "b_yj": {
+      "type": "branch",
+      "x": 500,
+      "y": 680,
+      "title": "易物机购买出现?",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "yiwujigoumai.png"
+      },
+      "hit_next": "yj",
+      "miss_next": "tcbg"
+    },
+    "yj": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 770,
+      "title": "点易物机购买",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "yiwujigoumai.png"
+      }
+    },
+    "tb": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 860,
+      "title": "点击投币",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "dianjitoubi.png"
+      }
+    },
+    "mid": {
+      "type": "tap",
+      "x": 500,
+      "y": 950,
+      "title": "点中央关闭",
+      "props": {
+        "x": 836,
+        "y": 360,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tcbg": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1040,
+      "title": "点退出办公室",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tuichubangongshi.png"
+      }
+    },
+    "b_tcbg": {
+      "type": "branch",
+      "x": 500,
+      "y": 1130,
+      "title": "退出办公室按钮还在?",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "timeout": 1500,
+        "rate_limit": 0,
+        "template": "tuichubangongshi.png"
+      },
+      "hit_next": "tcbg",
+      "miss_next": "tea_nrukou"
+    },
+    "tui_pq": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 3290,
+      "title": "点退出派遣公司",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tuichupaiqiangongsi.png"
+      }
+    },
+    "b_tcpq": {
+      "type": "branch",
+      "x": 500,
+      "y": 3380,
+      "title": "退出派遣公司按钮还在?",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "timeout": 1500,
+        "rate_limit": 0,
+        "template": "tuichupaiqiangongsi.png"
+      },
+      "hit_next": "tui_pq",
+      "miss_next": null
+    },
+    "huizhuye": {
+      "type": "common",
+      "x": 500,
+      "y": 3470,
+      "title": "回主页",
+      "props": {
+        "node": "Common_回主页"
+      }
+    },
+    "tea_n00498da": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1310,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_0.png"
+      }
+    },
+    "tea_n008d833": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1490,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_queren.png"
+      }
+    },
+    "tea_n0099bd1": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1580,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_queren2.png"
+      }
+    },
+    "tea_n0108097": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1670,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_qipao.png",
+        "rate_limit": 200
+      }
+    },
+    "tea_n011527d": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1850,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_yaoqing.png"
+      }
+    },
+    "tea_n01224fd": {
+      "type": "tap",
+      "x": 500.0,
+      "y": 1939.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 642,
+        "y": 284,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0136932": {
+      "type": "tap",
+      "x": 500,
+      "y": 2120,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 978,
+        "y": 376,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 2,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n014a86c": {
+      "type": "tap",
+      "x": 500,
+      "y": 2210,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 642,
+        "y": 284,
+        "pre_delay": 500,
+        "post_delay": 500,
+        "repeat": 2,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0159955": {
+      "type": "tap",
+      "x": 500,
+      "y": 2390,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 978,
+        "y": 376,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0167080": {
+      "type": "tap",
+      "x": 502.0,
+      "y": 2479.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 642,
+        "y": 284,
+        "pre_delay": 0,
+        "post_delay": 2000,
+        "repeat": 2,
+        "repeat_delay": 200
+      }
+    },
+    "tea_n017f641": {
+      "type": "tap",
+      "x": 506.0,
+      "y": 2658.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 988,
+        "y": 266,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0188abd": {
+      "type": "tap",
+      "x": 501.0,
+      "y": 2749.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 642,
+        "y": 284,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0199d5c": {
+      "type": "tap",
+      "x": 500,
+      "y": 2930,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 988,
+        "y": 266,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n020b804": {
+      "type": "tap",
+      "x": 500,
+      "y": 3020,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 642,
+        "y": 284,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "repeat": 1,
+        "repeat_delay": 1500
+      }
+    },
+    "tea_n021e8f8": {
+      "type": "tap",
+      "x": 500,
+      "y": 3110,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 136,
+        "y": 449,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0221863": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 3200,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "chashi_tuichu.png"
+      }
+    },
+    "tea_nbranch_yaoqing": {
+      "type": "branch",
+      "x": 500,
+      "y": 1760,
+      "title": "邀请出现了?",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "tea_yaoqing.png"
+      },
+      "hit_next": null,
+      "miss_next": "tea_n0108097"
+    },
+    "tea_nrukou": {
+      "type": "tpl_click",
+      "x": 500,
+      "y": 1220,
+      "title": "进入茶室",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "chashi_rukou.png"
+      }
+    },
+    "tea_n005504d": {
+      "type": "tap",
+      "x": 500,
+      "y": 1400,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 200,
+        "y": 400,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "tea_n0083554": {
+      "type": "branch",
+      "x": 501.0,
+      "y": 2029.0,
+      "title": "分支(模板在?)",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": null,
+      "miss_next": "tea_n01224fd"
+    },
+    "tea_n009fecc": {
+      "type": "branch",
+      "x": 500,
+      "y": 2300,
+      "title": "分支(模板在?)",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": null,
+      "miss_next": "tea_n014a86c"
+    },
+    "tea_n010927f": {
+      "type": "branch",
+      "x": 500.0,
+      "y": 2569.0,
+      "title": "分支(模板在?)",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": null,
+      "miss_next": "tea_n0159955"
+    },
+    "tea_n011df05": {
+      "type": "branch",
+      "x": 500,
+      "y": 2840,
+      "title": "分支(模板在?)",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": null,
+      "miss_next": "tea_n017f641"
+    },
+    "n0010b18": {
+      "type": "tpl_click",
+      "x": 201.0,
+      "y": 1439.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tea_max.png"
+      }
+    }
+  }
+}

@@ -1,0 +1,539 @@
+{
+  "name": "升好感度",
+  "chain": [
+    "n_升1_Hit",
+    "n_升2_Hit",
+    "n_升好_好感",
+    "n_升好_礼物",
+    "n_升好_同享_Hit",
+    "c_Common_回主页",
+    "n_升好_同享",
+    "n_升2",
+    "n_升2_S0",
+    "n_升2_G1",
+    "n_升2_S1",
+    "n_升2_G2",
+    "n_升2_S2",
+    "n_升2_G3",
+    "n_升2_S3",
+    "n_升2_G4",
+    "n_升2_S4",
+    "n_升2_G5",
+    "n_升2_S5",
+    "n_升2_G6",
+    "n_升2_S6",
+    "n_升2_G7",
+    "n_升2_S7",
+    "n_升2_G8",
+    "n_升2_S8",
+    "n_升2_G9",
+    "n_升2_S9",
+    "n_升2_G10",
+    "n_升2_S10",
+    "n_升2_G11",
+    "n_升2_S11",
+    "n_升2_G12",
+    "n_升1"
+  ],
+  "nodes": {
+    "n_升1_Hit": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "升1_Hit",
+      "props": {
+        "threshold": 0.72,
+        "roi": "",
+        "order_by": true,
+        "timeout": 5000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "qizhe.png"
+      }
+    },
+    "n_升2_Hit": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "升2_Hit",
+      "props": {
+        "threshold": 0.85,
+        "roi": "",
+        "order_by": true,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "蛙锣.png"
+      }
+    },
+    "n_升好_好感": {
+      "type": "tap",
+      "x": 0,
+      "y": 0,
+      "title": "升好_好感",
+      "props": {
+        "x": 48,
+        "y": 200,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "n_升好_礼物": {
+      "type": "tap",
+      "x": 0,
+      "y": 0,
+      "title": "升好_礼物",
+      "props": {
+        "x": 1170,
+        "y": 425,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350
+      }
+    },
+    "n_升好_同享_Hit": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "升好_同享_Hit",
+      "props": {
+        "threshold": 0.65,
+        "roi": "",
+        "order_by": true,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tongxiang.png"
+      }
+    },
+    "c_Common_回主页": {
+      "type": "common",
+      "x": 0,
+      "y": 0,
+      "title": "Common_回主页",
+      "props": {
+        "node": "Common_回主页"
+      }
+    },
+    "n_升好_同享": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升好_同享?",
+      "props": {
+        "threshold": 0.65,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "tongxiang.png"
+      },
+      "hit_next": "n_升好_同享_Hit",
+      "miss_next": null
+    },
+    "n_升2": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S0"
+    },
+    "n_升2_S0": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S0",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G1": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G1?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S1"
+    },
+    "n_升2_S1": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S1",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G2": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G2?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S2"
+    },
+    "n_升2_S2": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S2",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G3": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G3?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S3"
+    },
+    "n_升2_S3": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S3",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G4": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G4?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S4"
+    },
+    "n_升2_S4": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S4",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G5": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G5?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S5"
+    },
+    "n_升2_S5": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S5",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G6": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G6?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S6"
+    },
+    "n_升2_S6": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S6",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G7": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G7?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S7"
+    },
+    "n_升2_S7": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S7",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G8": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G8?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S8"
+    },
+    "n_升2_S8": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S8",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G9": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G9?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S9"
+    },
+    "n_升2_S9": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S9",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G10": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G10?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S10"
+    },
+    "n_升2_S10": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S10",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G11": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G11?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": "n_升2_S11"
+    },
+    "n_升2_S11": {
+      "type": "swipe",
+      "x": 0,
+      "y": 0,
+      "title": "升2_S11",
+      "props": {
+        "x1": 1000,
+        "y1": 650,
+        "x2": 200,
+        "y2": 650,
+        "duration": 900,
+        "post_delay": 600
+      }
+    },
+    "n_升2_G12": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升2_G12?",
+      "props": {
+        "threshold": 0.85,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "蛙锣.png"
+      },
+      "hit_next": "n_升2_Hit",
+      "miss_next": null
+    },
+    "n_升1": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "升1?",
+      "props": {
+        "threshold": 0.72,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "qizhe.png"
+      },
+      "hit_next": "n_升1_Hit",
+      "miss_next": null
+    }
+  }
+}

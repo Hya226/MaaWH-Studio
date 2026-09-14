@@ -1,0 +1,93 @@
+{
+  "name": "征集",
+  "chain": [
+    "n_ZJ_Entry",
+    "n_ZJ_HasConfirm",
+    "n_ZJ_TiaoGuoCK",
+    "n_ZJ_DuiGouCK",
+    "c_Common_点中间回主页"
+  ],
+  "nodes": {
+    "n_ZJ_Entry": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "ZJ_Entry",
+      "props": {
+        "threshold": 0.65,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "qizhezhengji.png"
+      }
+    },
+    "n_ZJ_HasConfirm": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "ZJ_HasConfirm",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 4000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "quanbuqueren.png"
+      }
+    },
+    "n_ZJ_TiaoGuoCK": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "ZJ_TiaoGuoCK",
+      "props": {
+        "threshold": 0.55,
+        "roi": "",
+        "order_by": true,
+        "timeout": 20000,
+        "rate_limit": 500,
+        "pre_delay": 1000,
+        "post_delay": 1000,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tiaoguochouka.png"
+      }
+    },
+    "n_ZJ_DuiGouCK": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "ZJ_DuiGouCK",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 900,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      }
+    },
+    "c_Common_点中间回主页": {
+      "type": "common",
+      "x": 0,
+      "y": 0,
+      "title": "Common_点中间回主页",
+      "props": {
+        "node": "Common_点中间回主页"
+      }
+    }
+  }
+}

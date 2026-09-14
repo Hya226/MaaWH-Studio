@@ -1,0 +1,44 @@
+# ── Python 缓存 ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# ── 编辑器/框选工具产物 ──────────────────────────────────────
+# flows/*.flow.json 是流程定义（唯一数据源，必须入库）；
+# flows/build/ 是编辑器生成物，可重新生成，不入库
+flows/build/
+*.tmp
+*.bak
+*.bak.*
+
+# ── 日志与临时状态 ───────────────────────────────────────────
+*.log
+recent.txt
+
+# ── 调试用帧图/裁图（下划线开头，如 _check_frame.png）────────
+_*.png
+_*.jpg
+pick_frame.jpg
+
+# ── 密钥 / 凭据（绝不入库）──────────────────────────────────
+*.keystore
+*.jks
+*.pepk
+*.p12
+*.pfx
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.env
+.env.*
+secrets*.json
+credentials*.json
+*token*.json
+
+# ── 系统垃圾文件 ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
