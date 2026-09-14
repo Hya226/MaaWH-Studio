@@ -180,8 +180,9 @@ def tpl_summary(p):
 
 def parse_switch_cands(raw):
     """解析枝干候选列表：
-    raw 为 [{t, timeout, next}, ...]；t 支持 '模板名.png'（模板识别）或 'OCR:文字'。
-    返回规范化列表，剔除空候选；next = 命中内容起点节点 id（可缺省）。"""
+    raw 为 [{t, timeout, next, mergeBack}, ...]；t 支持 '模板名.png'（模板识别）或 'OCR:文字'。
+    返回规范化列表，剔除空候选；next = 命中内容起点节点 id（可缺省）；
+    mergeBack = 命中内容跑完后是否回到主线（默认 False，与历史行为一致）。"""
     out = []
     if not raw:
         return out
@@ -198,6 +199,8 @@ def parse_switch_cands(raw):
         item = {"t": t, "timeout": max(500, timeout)}
         if c.get("next"):
             item["next"] = c["next"]
+        if c.get("mergeBack"):
+            item["mergeBack"] = True
         out.append(item)
     return out
 
@@ -497,13 +500,17 @@ def safe_name(name):
 
 def _switch_content_leaves(flow):
     """被 switch 候选引用的「内容起点」节点集合 —— 命中后执行它即止，
-    不沿线性链继续（防分支内容串线）。与旧 build_pipeline 内的 switch_leaf 等价。"""
+    不沿线性链继续（防分支内容串线）。
+
+    例外：候选勾了「命中后回并主线」(mergeBack) 时，该内容节点的链上后继
+    会被保留，于是它与 branch 的命中内容行为一致（跑完继续走主线）。
+    默认不勾 → 与历史行为完全一致，因此生成的 pipeline 不变。"""
     leaves = set()
     for nd in flow.get("nodes", {}).values():
         if nd.get("type") != "switch":
             continue
         for c in parse_switch_cands((nd.get("props") or {}).get("candidates")):
-            if c.get("next"):
+            if c.get("next") and not c.get("mergeBack"):
                 leaves.add(c["next"])
     return leaves
 
@@ -3436,7 +3443,8 @@ class FlowEditor:
             for i, c in enumerate(cands):
                 t = str(c.get("t", ""))
                 disp = "OCR:" + t[4:] if t.lower().startswith("ocr:") else t
-                lb.insert("end", f"{i + 1}. {disp} · {c.get('timeout', 3000)}ms")
+                merge = " · 回并主线" if c.get("mergeBack") else ""
+                lb.insert("end", f"{i + 1}. {disp} · {c.get('timeout', 3000)}ms{merge}")
             var.set(str(len(cands)))   # 触发面板重绘钩子
 
         row = ttk.Frame(wrap)
@@ -3446,6 +3454,9 @@ class FlowEditor:
         e_d = ttk.Entry(row, width=6, font=FONT_SM)
         e_d.insert(0, "3000")
         e_d.pack(side="left", padx=4)
+        e_m = tk.BooleanVar(value=False)
+        ttk.Checkbutton(wrap, text="命中后回并主线（不勾=内容跑完即结束）",
+                        variable=e_m).pack(anchor="w", padx=(8, 0), pady=(2, 0))
 
         def _fill_sel(_e=None):
             sel = lb.curselection()
@@ -3456,33 +3467,44 @@ class FlowEditor:
             e_t.insert(0, c.get("t", ""))
             e_d.delete(0, "end")
             e_d.insert(0, str(c.get("timeout", 3000)))
+            e_m.set(bool(c.get("mergeBack")))
 
-        def on_add():
+        def _read_form():
             t = e_t.get().strip()
             if not t:
-                return
+                return None
             try:
                 timeout = max(500, int(e_d.get() or 3000))
             except ValueError:
                 timeout = 3000
-            _cands().append({"t": t, "timeout": timeout})
+            item = {"t": t, "timeout": timeout}
+            if e_m.get():
+                item["mergeBack"] = True
+            return item
+
+        def on_add():
+            item = _read_form()
+            if item is None:
+                return
+            _cands().append(item)
             e_t.delete(0, "end")
             e_d.delete(0, "end")
             e_d.insert(0, "3000")
+            e_m.set(False)
             refresh()
 
         def on_update():
             sel = lb.curselection()
             if not sel:
                 return
-            t = e_t.get().strip()
-            if not t:
+            item = _read_form()
+            if item is None:
                 return
-            try:
-                timeout = max(500, int(e_d.get() or 3000))
-            except ValueError:
-                timeout = 3000
-            _cands()[sel[0]] = {"t": t, "timeout": timeout}
+            old = _cands()[sel[0]]
+            # 保留画布上拖出来的命中出口（next），否则「更新」会把连线清掉
+            if old.get("next"):
+                item["next"] = old["next"]
+            _cands()[sel[0]] = item
             refresh()
 
         def on_del():
