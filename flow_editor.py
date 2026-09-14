@@ -2611,6 +2611,7 @@ class FlowEditor:
         if load_path:
             self.root.after(200, lambda: self.open_flow_file(load_path))
         # 启动就把工程根打在日志里：模板图/生成物落到哪个任务包一目了然
+        self._update_undo_buttons()
         self.root.after(150, lambda: self.log(
             project_paths.describe(), "" if project_paths.PACK_OK else "warn"))
 
@@ -2695,6 +2696,13 @@ class FlowEditor:
         self.flow_combo.pack(side="left", padx=3, ipady=2)
         self._flat_btn(bar, "打开 ▶", self.on_open_selected).pack(side="left", padx=3)
         self._flat_btn(bar, "保存", self.on_save).pack(side="left", padx=3)
+        # 撤回/重做做成按钮：快捷键一直在，但界面上没提示等于没有
+        self._btn_undo = self._flat_btn(bar, "↶ 撤回", self.undo, padx=8,
+                                        font=FONT_SM, bg="#2a2f3d")
+        self._btn_undo.pack(side="left", padx=(8, 2))
+        self._btn_redo = self._flat_btn(bar, "↷ 重做", self.redo, padx=8,
+                                        font=FONT_SM, bg="#2a2f3d")
+        self._btn_redo.pack(side="left", padx=2)
 
         self._vsep(bar)
         self._flat_btn(bar, "✓ 校验", self.on_validate).pack(side="left", padx=3)
@@ -2795,6 +2803,8 @@ class FlowEditor:
         self.root.bind("<Control-z>", lambda e: (self.undo(), "break")[1])
         self.root.bind("<Control-Z>", lambda e: (self.redo(), "break")[1])
         self.root.bind("<Control-y>", lambda e: (self.redo(), "break")[1])
+        self.root.bind("<Control-Shift-Z>", lambda e: (self.redo(), "break")[1])
+        self.root.bind("<Control-Shift-z>", lambda e: (self.redo(), "break")[1])
         self.root.bind("<Control-c>", lambda e: (self.on_copy(), "break")[1])
         self.root.bind("<Control-v>", lambda e: (self.on_paste(), "break")[1])
         self.root.bind("<Control-d>", lambda e: (self.on_duplicate(), "break")[1])
@@ -2893,8 +2903,9 @@ class FlowEditor:
         self.log_text.pack(fill="both", expand=True, padx=1, pady=1)
 
     def _build_statusbar(self):
-        self.status_var = tk.StringVar(value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ "
-                                             "Ctrl+滚轮缩放 ｜ 中键拖动平移 ｜ Delete 删除")
+        self.status_var = tk.StringVar(
+            value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ Ctrl+Z 撤回 / Ctrl+Y 重做 ｜ "
+                  "Ctrl+滚轮缩放 ｜ 中键拖动平移 ｜ Delete 删除 ｜ Ctrl+S 保存")
         tk.Label(self.root, textvariable=self.status_var, bg=THEME["bg"],
                  fg=THEME["text_dim"], anchor="w", padx=10, pady=3,
                  font=FONT_SM).pack(fill="x", side="bottom")
@@ -2919,6 +2930,7 @@ class FlowEditor:
     def on_new(self):
         self._undo.clear()
         self._redo.clear()
+        self._update_undo_buttons()
         self.flow = new_flow("测试流程")
         self.name_var.set(self.flow["name"])
         self.sel = None
@@ -2940,6 +2952,7 @@ class FlowEditor:
                 raise ValueError("不是流程定义文件")
             self._undo.clear()
             self._redo.clear()
+            self._update_undo_buttons()
             self.flow = normalize_flow(data)
             self.flow.setdefault("chain", [])
             self.flow.setdefault("nodes", {})
@@ -5057,6 +5070,19 @@ class FlowEditor:
         if len(self._undo) > UNDO_LIMIT:
             self._undo.pop(0)
         self._redo.clear()
+        self._update_undo_buttons()
+
+    def _update_undo_buttons(self):
+        """把可撤销/可重做的步数显示在按钮上（还能当"改了没保存"的提示）"""
+        for btn, n, label in ((getattr(self, "_btn_undo", None), len(self._undo), "↶ 撤回"),
+                              (getattr(self, "_btn_redo", None), len(self._redo), "↷ 重做")):
+            if btn is None:
+                continue
+            try:
+                btn.config(text=f"{label}({n})" if n else label,
+                           state=("normal" if n else "disabled"))
+            except tk.TclError:
+                pass
 
     def _restore_flow_text(self, text):
         self.flow = json.loads(text)
@@ -5074,7 +5100,8 @@ class FlowEditor:
         self._redo.append((self._flow_text(), self._undo[-1][1], time.time()))
         text = self._undo.pop()[0]
         self._restore_flow_text(text)
-        self.log(f"↶ 已撤销（还可撤销 {len(self._undo)} 步）")
+        self._update_undo_buttons()
+        self.log(f"↶ 已撤销（还可撤销 {len(self._undo)} 步，Ctrl+Y 重做）")
 
     def redo(self):
         if not self._redo:
@@ -5083,6 +5110,7 @@ class FlowEditor:
         self._undo.append((self._flow_text(), self._redo[-1][1], time.time()))
         text = self._redo.pop()[0]
         self._restore_flow_text(text)
+        self._update_undo_buttons()
         self.log(f"↷ 已重做（还可重做 {len(self._redo)} 步）")
 
     def on_copy(self, _e=None):
