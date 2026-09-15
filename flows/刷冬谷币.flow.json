@@ -2,36 +2,581 @@
   "name": "刷冬谷币",
   "chain": [
     "n_刷谷段1",
-    "n_CloseAnno2"
+    "n_CloseAnno2",
+    "b_CloseAnno2",
+    "n_ToEnterPage",
+    "n_TapToEnter",
+    "n_YanXun",
+    "n_StartTrain",
+    "n_StartTrain_候选",
+    "n_DongGuBiTpl",
+    "b_DongGuBiTpl",
+    "n_DongGuBiOcr",
+    "b_DongGuBiOcr",
+    "n_SuTongClick",
+    "n_刷谷_速通判定",
+    "n_刷谷_调次数",
+    "n_刷谷_加次数",
+    "n_ConfirmBattle",
+    "n_ConfirmBattle_候选",
+    "n_FavYes",
+    "b_FavYes",
+    "n_WaitClaim",
+    "n_ClaimFixed",
+    "c_Common_回主页验证",
+    "n_刷谷_返回战前",
+    "b_YanXun",
+    "n_StageHome"
   ],
   "nodes": {
     "n_刷谷段1": {
       "type": "startapp",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 46.0,
       "title": "刷谷段1",
       "props": {
         "package": "com.cipaishe.wuhua.bilibili",
         "post_delay": 1000
-      }
+      },
+      "num": 1,
+      "next": "n_StageHome"
     },
     "n_CloseAnno2": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 138.0,
       "title": "CloseAnno2",
       "props": {
         "threshold": 0.6,
         "roi": "822,20,458,220",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "cha_x.png"
+      },
+      "num": 2,
+      "next": "n_StageHome"
+    },
+    "b_CloseAnno2": {
+      "type": "branch",
+      "x": 46,
+      "y": 230.0,
+      "title": "CloseAnno2?",
+      "props": {
+        "threshold": 0.6,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "cha_x.png"
+      },
+      "hit_next": "n_CloseAnno2",
+      "miss_next": null,
+      "num": 3
+    },
+    "n_ToEnterPage": {
+      "type": "branch",
+      "x": 46,
+      "y": 322.0,
+      "title": "ToEnterPage?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "进入游戏,点击任意处,任意处进入,久进,进斿戈",
+        "roi": "191,120,1000,480",
+        "timeout": 150000,
+        "rate_limit": 800
+      },
+      "hit_next": "n_TapToEnter",
+      "miss_next": null,
+      "num": 4
+    },
+    "n_TapToEnter": {
+      "type": "tap",
+      "x": 46,
+      "y": 414.0,
+      "title": "TapToEnter",
+      "props": {
+        "x": 640,
+        "y": 360,
+        "pre_delay": 500,
+        "post_delay": 2500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 5,
+      "next": "n_StageHome"
+    },
+    "n_YanXun": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 506.0,
+      "title": "YanXun",
+      "props": {
+        "threshold": 0.55,
+        "roi": "580,100,700,460",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "yanxun.png"
+      },
+      "num": 6,
+      "next": "n_StartTrain"
+    },
+    "n_StartTrain": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 598.0,
+      "title": "StartTrain",
+      "props": {
+        "threshold": 0.5,
+        "roi": "",
+        "order_by": "Score",
+        "timeout": 6000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "kaishi_xunlian.png"
+      },
+      "num": 7,
+      "next": "n_StartTrain_候选"
+    },
+    "n_DongGuBiOcr": {
+      "type": "ocr_click",
+      "x": 46,
+      "y": 690.0,
+      "title": "DongGuBiOcr",
+      "props": {
+        "text": "05冬谷币：辰,冬谷币：辰",
+        "roi": "236,150,1000,520",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      },
+      "num": 8,
+      "next": "n_SuTongClick"
+    },
+    "n_SuTongClick": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 782.0,
+      "title": "SuTongClick",
+      "props": {
+        "threshold": 0.8,
+        "roi": "922,600,358,120",
+        "order_by": "Score",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "sutong.png"
+      },
+      "num": 9,
+      "next": "n_刷谷_速通判定"
+    },
+    "n_刷谷_速通判定": {
+      "type": "branch",
+      "x": 46,
+      "y": 874.0,
+      "title": "刷谷_速通判定?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 6000,
+        "rate_limit": 0,
+        "template": "sutong_dialog.png"
+      },
+      "hit_next": "n_刷谷_调次数",
+      "miss_next": "n_刷谷_返回战前",
+      "num": 10
+    },
+    "n_刷谷_调次数": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 966.0,
+      "title": "刷谷_调次数",
+      "props": {
+        "threshold": 0.85,
+        "roi": "566,300,390,85",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 9,
+        "repeat_delay": 350,
+        "template": "sutong_minus.png"
+      },
+      "num": 11,
+      "next": "n_刷谷_加次数"
+    },
+    "n_刷谷_加次数": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1058.0,
+      "title": "刷谷_加次数",
+      "props": {
+        "threshold": 0.85,
+        "roi": "566,300,390,85",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 1400,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 2,
+        "repeat_delay": 400,
+        "template": "sutong_plus.png"
+      },
+      "num": 12,
+      "next": "n_ConfirmBattle"
+    },
+    "n_ConfirmBattle": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1150.0,
+      "title": "ConfirmBattle",
+      "props": {
+        "threshold": 0.8,
+        "roi": "736,330,240,160",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 13,
+      "next": "n_ConfirmBattle_候选"
+    },
+    "n_FavYes": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1242.0,
+      "title": "FavYes",
+      "props": {
+        "threshold": 0.7,
+        "roi": "656,360,240,160",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 1800,
+        "post_delay": 1000,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 14,
+      "next": "n_WaitClaim"
+    },
+    "n_WaitClaim": {
+      "type": "branch",
+      "x": 46,
+      "y": 1334.0,
+      "title": "WaitClaim?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "完成",
+        "roi": "636,300,644,420",
+        "timeout": 420000,
+        "rate_limit": 1500
+      },
+      "hit_next": "n_ClaimFixed",
+      "miss_next": null,
+      "num": 15
+    },
+    "n_ClaimFixed": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1426.0,
+      "title": "ClaimFixed",
+      "props": {
+        "threshold": 0.8,
+        "roi": "772,570,508,150",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 2000,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "claim_done.png"
+      },
+      "num": 16,
+      "next": "c_Common_回主页验证"
+    },
+    "c_Common_回主页验证": {
+      "type": "common",
+      "x": 46,
+      "y": 1518.0,
+      "title": "Common_回主页验证",
+      "props": {
+        "node": "Common_回主页验证"
+      },
+      "num": 17
+    },
+    "n_刷谷_返回战前": {
+      "type": "tap",
+      "x": 46,
+      "y": 1610.0,
+      "title": "刷谷_返回战前",
+      "props": {
+        "x": 107,
+        "y": 33,
+        "pre_delay": 0,
+        "post_delay": 1500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 18,
+      "next": "n_SuTongClick"
+    },
+    "b_YanXun": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 506.0,
+      "title": "YanXun?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "yanxun.png"
+      },
+      "hit_next": "n_YanXun",
+      "miss_next": null,
+      "num": 19
+    },
+    "n_StageHome": {
+      "type": "switch",
+      "x": 368.0,
+      "y": 230.0,
+      "title": "StageHome（多候选）",
+      "props": {
+        "candidates": [
+          {
+            "timeout": 240000,
+            "next": "b_CloseAnno2"
+          },
+          {
+            "timeout": 240000,
+            "next": "n_ToEnterPage"
+          },
+          {
+            "timeout": 240000,
+            "next": "b_YanXun"
+          }
+        ],
+        "miss_next": null
+      },
+      "num": 20
+    },
+    "n_opt_刷冬谷币_刷冬谷币次数": {
+      "type": "pick",
+      "x": 736.0,
+      "y": 46.0,
+      "title": "选择(下拉)",
+      "num": 21,
+      "props": {
+        "option": "刷冬谷币次数",
+        "var_label": "",
+        "default": "3",
+        "desc": "",
+        "cases": [
+          {
+            "name": "1",
+            "node": "n_刷谷_调次数",
+            "field": "next",
+            "value": "VF_刷冬谷币_13"
+          },
+          {
+            "name": "2",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "1"
+          },
+          {
+            "name": "3",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "2"
+          },
+          {
+            "name": "4",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "3"
+          },
+          {
+            "name": "5",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "4"
+          },
+          {
+            "name": "6",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "5"
+          },
+          {
+            "name": "7",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "6"
+          },
+          {
+            "name": "8",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "7"
+          },
+          {
+            "name": "9",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "8"
+          },
+          {
+            "name": "10",
+            "node": "n_刷谷_加次数",
+            "field": "repeat",
+            "value": "9"
+          }
+        ],
+        "targets": []
       }
+    },
+    "n_ConfirmBattle_候选": {
+      "type": "switch",
+      "x": 368.0,
+      "y": 1150.0,
+      "title": "ConfirmBattle（多候选）",
+      "props": {
+        "candidates": [
+          {
+            "timeout": 8000,
+            "next": "b_FavYes"
+          },
+          {
+            "timeout": 8000,
+            "next": "n_WaitClaim"
+          }
+        ],
+        "miss_next": null
+      },
+      "num": 22
+    },
+    "n_DongGuBiTpl": {
+      "type": "tpl_click",
+      "x": 368.0,
+      "y": 598.0,
+      "title": "DongGuBiTpl",
+      "props": {
+        "threshold": 0.6,
+        "roi": "436,200,800,400",
+        "order_by": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 1000,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "donggubi.png"
+      },
+      "num": 23,
+      "next": "n_SuTongClick"
+    },
+    "n_StartTrain_候选": {
+      "type": "switch",
+      "x": 368.0,
+      "y": 598.0,
+      "title": "StartTrain（多候选）",
+      "props": {
+        "candidates": [
+          {
+            "timeout": 6000,
+            "next": "b_DongGuBiOcr"
+          },
+          {
+            "timeout": 6000,
+            "next": "b_DongGuBiTpl"
+          }
+        ],
+        "miss_next": null
+      },
+      "num": 24
+    },
+    "b_FavYes": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 1242.0,
+      "title": "FavYes?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "656,360,240,160",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "duigou.png"
+      },
+      "hit_next": "n_FavYes",
+      "miss_next": null,
+      "num": 25
+    },
+    "b_DongGuBiOcr": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 690.0,
+      "title": "DongGuBiOcr?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "05冬谷币：辰,冬谷币：辰",
+        "roi": "236,150,1000,520",
+        "timeout": 8000,
+        "rate_limit": 0
+      },
+      "hit_next": "n_DongGuBiOcr",
+      "miss_next": null,
+      "num": 26
+    },
+    "b_DongGuBiTpl": {
+      "type": "branch",
+      "x": 690.0,
+      "y": 598.0,
+      "title": "DongGuBiTpl?",
+      "props": {
+        "threshold": 0.6,
+        "ocr_text": "",
+        "roi": "436,200,800,400",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "template": "donggubi.png"
+      },
+      "hit_next": "n_DongGuBiTpl",
+      "miss_next": null,
+      "num": 27
     }
-  }
+  },
+  "schemaVersion": 4
 }

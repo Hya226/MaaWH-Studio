@@ -1,16 +1,17 @@
 {
   "VF_升好感度": {
     "next": [
-      "VF_升好感度_01"
+      "VF_升好感度_33"
     ]
   },
   "VF_升好感度_01": {
     "action": "Click",
     "next": [
-      "VF_升好感度_02"
+      "VF_升好感度_08"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
     "threshold": 0.72,
@@ -23,6 +24,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1500,
     "recognition": "TemplateMatch",
     "template": "蛙锣.png",
     "threshold": 0.85,
@@ -37,18 +39,20 @@
     "target": [
       48,
       200
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_升好感度_04": {
     "action": "Click",
     "next": [
-      "VF_升好感度_05"
+      "VF_升好感度_07"
     ],
     "post_delay": 800,
     "target": [
       1170,
       425
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_升好感度_05": {
     "action": "Click",
@@ -57,6 +61,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1000,
     "recognition": "TemplateMatch",
     "template": "tongxiang.png",
     "threshold": 0.65,
@@ -73,7 +78,7 @@
       "VF_升好感度_07_Hit"
     ],
     "on_error": [
-      "VF_升好感度_End"
+      "VF_升好感度_06"
     ],
     "timeout": 8000
   },
@@ -119,7 +124,8 @@
     "next": [
       "VF_升好感度_10"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_10": {
     "action": "DoNothing",
@@ -154,7 +160,8 @@
     "next": [
       "VF_升好感度_12"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_12": {
     "action": "DoNothing",
@@ -189,7 +196,8 @@
     "next": [
       "VF_升好感度_14"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_14": {
     "action": "DoNothing",
@@ -224,7 +232,8 @@
     "next": [
       "VF_升好感度_16"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_16": {
     "action": "DoNothing",
@@ -259,7 +268,8 @@
     "next": [
       "VF_升好感度_18"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_18": {
     "action": "DoNothing",
@@ -294,7 +304,8 @@
     "next": [
       "VF_升好感度_20"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_20": {
     "action": "DoNothing",
@@ -329,7 +340,8 @@
     "next": [
       "VF_升好感度_22"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_22": {
     "action": "DoNothing",
@@ -364,7 +376,8 @@
     "next": [
       "VF_升好感度_24"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_24": {
     "action": "DoNothing",
@@ -399,7 +412,8 @@
     "next": [
       "VF_升好感度_26"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_26": {
     "action": "DoNothing",
@@ -434,7 +448,8 @@
     "next": [
       "VF_升好感度_28"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_28": {
     "action": "DoNothing",
@@ -469,7 +484,8 @@
     "next": [
       "VF_升好感度_30"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_30": {
     "action": "DoNothing",
@@ -504,7 +520,8 @@
     "next": [
       "VF_升好感度_32"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_升好感度_32": {
     "action": "DoNothing",
@@ -512,7 +529,7 @@
       "VF_升好感度_32_Hit"
     ],
     "on_error": [
-      "VF_升好感度_End"
+      "VF_升好感度_03"
     ],
     "timeout": 3000
   },
@@ -531,7 +548,7 @@
       "VF_升好感度_33_Hit"
     ],
     "on_error": [
-      "VF_升好感度_End"
+      "VF_升好感度_08"
     ],
     "timeout": 8000
   },
@@ -543,9 +560,5 @@
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
     "threshold": 0.72
-  },
-  "VF_升好感度_End": {
-    "action": "DoNothing",
-    "next": []
   }
 }

@@ -1,16 +1,17 @@
 {
   "VF_装卸装备": {
     "next": [
-      "VF_装卸装备_01"
+      "VF_装卸装备_36"
     ]
   },
   "VF_装卸装备_01": {
     "action": "Click",
     "next": [
-      "VF_装卸装备_02"
+      "VF_装卸装备_11"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
     "threshold": 0.72,
@@ -19,10 +20,11 @@
   "VF_装卸装备_02": {
     "action": "Click",
     "next": [
-      "VF_装卸装备_03"
+      "VF_装卸装备_10"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1500,
     "recognition": "TemplateMatch",
     "template": "蛙锣.png",
     "threshold": 0.85,
@@ -35,6 +37,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "wuqizhuangbei.png",
     "threshold": 0.72,
@@ -43,21 +46,24 @@
   "VF_装卸装备_04": {
     "action": "Click",
     "next": [
-      "VF_装卸装备_05"
+      "VF_装卸装备_09"
     ],
     "post_delay": 500,
+    "post_wait_freezes": 1200,
     "target": [
       316,
       600
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_装卸装备_05": {
     "action": "Click",
     "next": [
-      "VF_装卸装备_06"
+      "VF_装卸装备_08"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "chuandai.png",
     "threshold": 0.55,
@@ -70,6 +76,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "xiexia.png",
     "threshold": 0.65,
@@ -86,7 +93,7 @@
       "VF_装卸装备_08_Hit"
     ],
     "on_error": [
-      "VF_装卸装备_End"
+      "VF_装卸装备_07"
     ],
     "timeout": 8000
   },
@@ -105,7 +112,7 @@
       "VF_装卸装备_09_Hit"
     ],
     "on_error": [
-      "VF_装卸装备_End"
+      "VF_装卸装备_08"
     ],
     "timeout": 8000
   },
@@ -124,7 +131,7 @@
       "VF_装卸装备_10_Hit"
     ],
     "on_error": [
-      "VF_装卸装备_End"
+      "VF_装卸装备_04"
     ],
     "timeout": 8000
   },
@@ -170,7 +177,8 @@
     "next": [
       "VF_装卸装备_13"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_13": {
     "action": "DoNothing",
@@ -205,7 +213,8 @@
     "next": [
       "VF_装卸装备_15"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_15": {
     "action": "DoNothing",
@@ -240,7 +249,8 @@
     "next": [
       "VF_装卸装备_17"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_17": {
     "action": "DoNothing",
@@ -275,7 +285,8 @@
     "next": [
       "VF_装卸装备_19"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_19": {
     "action": "DoNothing",
@@ -310,7 +321,8 @@
     "next": [
       "VF_装卸装备_21"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_21": {
     "action": "DoNothing",
@@ -345,7 +357,8 @@
     "next": [
       "VF_装卸装备_23"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_23": {
     "action": "DoNothing",
@@ -380,7 +393,8 @@
     "next": [
       "VF_装卸装备_25"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_25": {
     "action": "DoNothing",
@@ -415,7 +429,8 @@
     "next": [
       "VF_装卸装备_27"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_27": {
     "action": "DoNothing",
@@ -450,7 +465,8 @@
     "next": [
       "VF_装卸装备_29"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_29": {
     "action": "DoNothing",
@@ -485,7 +501,8 @@
     "next": [
       "VF_装卸装备_31"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_31": {
     "action": "DoNothing",
@@ -520,7 +537,8 @@
     "next": [
       "VF_装卸装备_33"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_33": {
     "action": "DoNothing",
@@ -555,7 +573,8 @@
     "next": [
       "VF_装卸装备_35"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_装卸装备_35": {
     "action": "DoNothing",
@@ -563,7 +582,7 @@
       "VF_装卸装备_35_Hit"
     ],
     "on_error": [
-      "VF_装卸装备_End"
+      "VF_装卸装备_10"
     ],
     "timeout": 3000
   },
@@ -582,7 +601,7 @@
       "VF_装卸装备_36_Hit"
     ],
     "on_error": [
-      "VF_装卸装备_End"
+      "VF_装卸装备_11"
     ],
     "timeout": 8000
   },
@@ -594,9 +613,5 @@
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
     "threshold": 0.72
-  },
-  "VF_装卸装备_End": {
-    "action": "DoNothing",
-    "next": []
   }
 }

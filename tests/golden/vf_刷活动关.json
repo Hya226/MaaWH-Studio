@@ -1,0 +1,126 @@
+{
+  "VF_刷活动关": {
+    "next": [
+      "VF_刷活动关_01"
+    ]
+  },
+  "VF_刷活动关_01": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_02"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "wjwy.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_02": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_03"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "jhft.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_03": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_03_Hit"
+    ],
+    "on_error": [
+      "VF_刷活动关_05"
+    ],
+    "timeout": 3000
+  },
+  "VF_刷活动关_03_Hit": {
+    "action": "DoNothing",
+    "expected": [
+      "09"
+    ],
+    "next": [
+      "VF_刷活动关_04"
+    ],
+    "recognition": "OCR"
+  },
+  "VF_刷活动关_04": {
+    "action": "Click",
+    "expected": [
+      "09"
+    ],
+    "next": [
+      "VF_刷活动关_06"
+    ],
+    "post_delay": 600,
+    "recognition": "OCR",
+    "timeout": 8000
+  },
+  "VF_刷活动关_05": {
+    "action": "Swipe",
+    "begin": [
+      1000,
+      600
+    ],
+    "duration": 900,
+    "end": [
+      280,
+      600
+    ],
+    "next": [
+      "VF_刷活动关_03"
+    ],
+    "post_delay": 600
+  },
+  "VF_刷活动关_06": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_07"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "sutong.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_07": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_09"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "jiahao.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_09": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_10"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "duigou.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_10": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_11"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "wancheng.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_刷活动关_11": {
+    "next": [
+      "Common_回主页"
+    ]
+  }
+}

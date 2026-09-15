@@ -1,0 +1,223 @@
+{
+  "name": "刷活动关",
+  "chain": [
+    "n00104c2",
+    "n003204a",
+    "n00490f1",
+    "n006e985",
+    "n005119f",
+    "n0079287",
+    "n008d2db",
+    "n0102bd9",
+    "n01150db",
+    "n0123e4f"
+  ],
+  "nodes": {
+    "n00104c2": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 138.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "wjwy.png"
+      },
+      "num": 1,
+      "next": "n003204a"
+    },
+    "n003204a": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 230.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "jhft.png"
+      },
+      "num": 2,
+      "next": "n00490f1"
+    },
+    "n00490f1": {
+      "type": "branch",
+      "x": 230.0,
+      "y": 368.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "09",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0
+      },
+      "num": 3,
+      "hit_next": "n005119f",
+      "miss_next": "n006e985"
+    },
+    "n005119f": {
+      "type": "ocr_click",
+      "x": 230.0,
+      "y": 506.0,
+      "title": "OCR识别点击",
+      "props": {
+        "text": "09",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      },
+      "num": 4,
+      "next": "n0079287"
+    },
+    "n006e985": {
+      "type": "swipe",
+      "x": 644.0,
+      "y": 368.0,
+      "title": "滑动",
+      "props": {
+        "x1": 1000,
+        "y1": 600,
+        "x2": 280,
+        "y2": 600,
+        "duration": 900,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600
+      },
+      "num": 5,
+      "next": "n00490f1"
+    },
+    "n0079287": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 598.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "sutong.png"
+      },
+      "num": 6,
+      "next": "n008d2db"
+    },
+    "n008d2db": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 690.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "jiahao.png"
+      },
+      "num": 7,
+      "next": "n0102bd9"
+    },
+    "n009a491": {
+      "type": "input",
+      "x": 644.0,
+      "y": 690.0,
+      "title": "输入",
+      "props": {
+        "option": "刷取次数",
+        "var": "",
+        "var_label": "",
+        "kind": "整数",
+        "default": "1",
+        "desc": "",
+        "field": "命中次数 (repeat)",
+        "value": "",
+        "verify": "",
+        "pattern_msg": "",
+        "targets": [
+          "n008d2db"
+        ]
+      },
+      "num": 8
+    },
+    "n0102bd9": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 782.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 9,
+      "next": "n01150db"
+    },
+    "n01150db": {
+      "type": "tpl_click",
+      "x": 230.0,
+      "y": 874.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "wancheng.png"
+      },
+      "num": 10,
+      "next": "n0123e4f"
+    },
+    "n0123e4f": {
+      "type": "common",
+      "x": 230.0,
+      "y": 966.0,
+      "title": "公共节点(收口)",
+      "props": {
+        "node": "Common_回主页"
+      },
+      "num": 11,
+      "next": null
+    }
+  },
+  "schemaVersion": 4
+}

@@ -1,11 +1,14 @@
 {
   "VF_启动": {
     "next": [
-      "VF_启动_01"
+      "VF_启动_06_J1"
     ]
   },
   "VF_启动_01": {
     "action": "Click",
+    "next": [
+      "VF_启动_06_J1"
+    ],
     "post_delay": 800,
     "recognition": "TemplateMatch",
     "roi": [
@@ -17,5 +20,175 @@
     "template": "cha_x.png",
     "threshold": 0.6,
     "timeout": 8000
+  },
+  "VF_启动_02": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_02_Hit"
+    ],
+    "on_error": [
+      "VF_启动_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_启动_02_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_01"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "cha_x.png",
+    "threshold": 0.6
+  },
+  "VF_启动_03": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_03_Hit"
+    ],
+    "on_error": [
+      "VF_启动_End"
+    ],
+    "timeout": 150000
+  },
+  "VF_启动_03_Hit": {
+    "action": "DoNothing",
+    "expected": [
+      "进入游戏",
+      "点击任意处",
+      "任意处进入",
+      "久进",
+      "进斿戈"
+    ],
+    "next": [
+      "VF_启动_04"
+    ],
+    "rate_limit": 800,
+    "recognition": "OCR",
+    "roi": [
+      191,
+      120,
+      1000,
+      480
+    ]
+  },
+  "VF_启动_04": {
+    "action": "Click",
+    "next": [
+      "VF_启动_06_J1"
+    ],
+    "post_delay": 2500,
+    "pre_delay": 500,
+    "target": [
+      640,
+      360
+    ]
+  },
+  "VF_启动_05": {
+    "next": [
+      "Common_关弹窗"
+    ]
+  },
+  "VF_启动_06_J1": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_06_J1_Hit"
+    ],
+    "on_error": [
+      "VF_启动_06_J2"
+    ],
+    "timeout": 240000
+  },
+  "VF_启动_06_J1_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_02"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "cha_x.png",
+    "threshold": 0.6
+  },
+  "VF_启动_06_J2": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_06_J2_Hit"
+    ],
+    "on_error": [
+      "VF_启动_06_J3"
+    ],
+    "timeout": 240000
+  },
+  "VF_启动_06_J2_Hit": {
+    "action": "DoNothing",
+    "expected": [
+      "进入游戏",
+      "点击任意处",
+      "任意处进入",
+      "久进",
+      "进斿戈"
+    ],
+    "next": [
+      "VF_启动_03"
+    ],
+    "recognition": "OCR",
+    "roi": [
+      191,
+      120,
+      1000,
+      480
+    ]
+  },
+  "VF_启动_06_J3": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_06_J3_Hit"
+    ],
+    "on_error": [
+      "VF_启动_End"
+    ],
+    "timeout": 240000
+  },
+  "VF_启动_06_J3_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_07"
+    ],
+    "recognition": "TemplateMatch",
+    "roi": [
+      580,
+      100,
+      700,
+      460
+    ],
+    "template": "yanxun.png",
+    "threshold": 0.5
+  },
+  "VF_启动_07": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_07_Hit"
+    ],
+    "on_error": [
+      "VF_启动_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_启动_07_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_05"
+    ],
+    "recognition": "TemplateMatch",
+    "roi": [
+      580,
+      100,
+      700,
+      460
+    ],
+    "template": "yanxun.png",
+    "threshold": 0.5
+  },
+  "VF_启动_End": {
+    "action": "DoNothing",
+    "next": []
   }
 }

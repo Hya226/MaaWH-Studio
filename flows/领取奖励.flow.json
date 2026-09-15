@@ -1,6 +1,7 @@
 {
   "name": "领取奖励",
   "chain": [
+    "n_领_任务",
     "n_领_任务_Hit",
     "n_领_全领1",
     "n_领_点1",
@@ -10,8 +11,7 @@
     "c_Common_回主页",
     "n_领_判2",
     "n_领_周常",
-    "n_领_判1",
-    "n_领_任务"
+    "n_领_判1"
   ],
   "nodes": {
     "n_领_任务_Hit": {
@@ -22,15 +22,18 @@
       "props": {
         "threshold": 0.5,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "renwu.png"
-      }
+      },
+      "num": 1,
+      "next": "n_领_判1"
     },
     "n_领_全领1": {
       "type": "tpl_click",
@@ -40,15 +43,18 @@
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 4000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 1500,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "quanbulingqu.png"
-      }
+      },
+      "num": 2,
+      "next": "n_领_点1"
     },
     "n_领_点1": {
       "type": "tap",
@@ -60,9 +66,13 @@
         "y": 600,
         "pre_delay": 0,
         "post_delay": 500,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 3,
+      "next": "n_领_周常"
     },
     "n_领_周常_Hit": {
       "type": "tpl_click",
@@ -72,15 +82,18 @@
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 1000,
         "post_delay": 800,
+        "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "zhouchangrenwu.png"
-      }
+      },
+      "num": 4,
+      "next": "n_领_判2"
     },
     "n_领_全领2": {
       "type": "tpl_click",
@@ -90,15 +103,18 @@
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 4000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 2000,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "quanbulingqu.png"
-      }
+      },
+      "num": 5,
+      "next": "n_领_点2"
     },
     "n_领_点2": {
       "type": "tap",
@@ -110,9 +126,13 @@
         "y": 600,
         "pre_delay": 0,
         "post_delay": 500,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 6,
+      "next": "c_Common_回主页"
     },
     "c_Common_回主页": {
       "type": "common",
@@ -121,7 +141,8 @@
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
-      }
+      },
+      "num": 7
     },
     "n_领_判2": {
       "type": "branch",
@@ -137,7 +158,8 @@
         "template": "quanbulingqu.png"
       },
       "hit_next": "n_领_全领2",
-      "miss_next": null
+      "miss_next": "c_Common_回主页",
+      "num": 8
     },
     "n_领_周常": {
       "type": "branch",
@@ -153,7 +175,8 @@
         "template": "zhouchangrenwu.png"
       },
       "hit_next": "n_领_周常_Hit",
-      "miss_next": "n_领_判2"
+      "miss_next": "n_领_判2",
+      "num": 9
     },
     "n_领_判1": {
       "type": "branch",
@@ -169,7 +192,8 @@
         "template": "quanbulingqu.png"
       },
       "hit_next": "n_领_全领1",
-      "miss_next": "n_领_周常"
+      "miss_next": "n_领_周常",
+      "num": 10
     },
     "n_领_任务": {
       "type": "branch",
@@ -185,7 +209,9 @@
         "template": "renwu.png"
       },
       "hit_next": "n_领_任务_Hit",
-      "miss_next": null
+      "miss_next": null,
+      "num": 11
     }
-  }
+  },
+  "schemaVersion": 4
 }

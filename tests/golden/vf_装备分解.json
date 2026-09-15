@@ -1,16 +1,17 @@
 {
   "VF_装备分解": {
     "next": [
-      "VF_装备分解_01"
+      "VF_装备分解_11"
     ]
   },
   "VF_装备分解_01": {
     "action": "Click",
     "next": [
-      "VF_装备分解_02"
+      "VF_装备分解_10"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "wuziku.png",
     "threshold": 0.55,
@@ -23,6 +24,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "fenjie.png",
     "threshold": 0.55,
@@ -31,21 +33,23 @@
   "VF_装备分解_03": {
     "action": "Click",
     "next": [
-      "VF_装备分解_04"
+      "VF_装备分解_09"
     ],
     "post_delay": 800,
     "target": [
       548,
       175
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_装备分解_04": {
     "action": "Click",
     "next": [
-      "VF_装备分解_05"
+      "VF_装备分解_08"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1000,
     "recognition": "TemplateMatch",
     "template": "duigou1.png",
     "threshold": 0.6,
@@ -58,6 +62,7 @@
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1000,
     "recognition": "TemplateMatch",
     "template": "duigou2.png",
     "threshold": 0.6,
@@ -72,7 +77,8 @@
     "target": [
       640,
       360
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_装备分解_07": {
     "next": [

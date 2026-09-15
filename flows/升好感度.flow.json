@@ -1,6 +1,7 @@
 {
   "name": "升好感度",
   "chain": [
+    "n_升1",
     "n_升1_Hit",
     "n_升2_Hit",
     "n_升好_好感",
@@ -32,105 +33,122 @@
     "n_升2_S10",
     "n_升2_G11",
     "n_升2_S11",
-    "n_升2_G12",
-    "n_升1"
+    "n_升2_G12"
   ],
   "nodes": {
     "n_升1_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 46.0,
       "title": "升1_Hit",
       "props": {
         "threshold": 0.72,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "qizhe.png"
-      }
+      },
+      "num": 1,
+      "next": "n_升2"
     },
     "n_升2_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 138.0,
       "title": "升2_Hit",
       "props": {
         "threshold": 0.85,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 4000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1500,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "蛙锣.png"
-      }
+      },
+      "num": 2,
+      "next": "n_升好_好感"
     },
     "n_升好_好感": {
       "type": "tap",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 230.0,
       "title": "升好_好感",
       "props": {
         "x": 48,
         "y": 200,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 3,
+      "next": "n_升好_礼物"
     },
     "n_升好_礼物": {
       "type": "tap",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 322.0,
       "title": "升好_礼物",
       "props": {
         "x": 1170,
         "y": 425,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 4,
+      "next": "n_升好_同享"
     },
     "n_升好_同享_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 414.0,
       "title": "升好_同享_Hit",
       "props": {
         "threshold": 0.65,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 4000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1000,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "tongxiang.png"
-      }
+      },
+      "num": 5,
+      "next": "c_Common_回主页"
     },
     "c_Common_回主页": {
       "type": "common",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 506.0,
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
-      }
+      },
+      "num": 6
     },
     "n_升好_同享": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 414.0,
       "title": "升好_同享?",
       "props": {
         "threshold": 0.65,
@@ -141,12 +159,13 @@
         "template": "tongxiang.png"
       },
       "hit_next": "n_升好_同享_Hit",
-      "miss_next": null
+      "miss_next": "c_Common_回主页",
+      "num": 7
     },
     "n_升2": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 690.0,
       "title": "升2?",
       "props": {
         "threshold": 0.85,
@@ -157,12 +176,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S0"
+      "miss_next": "n_升2_S0",
+      "num": 8
     },
     "n_升2_S0": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 782.0,
       "title": "升2_S0",
       "props": {
         "x1": 1000,
@@ -170,13 +190,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 9,
+      "next": "n_升2_G1"
     },
     "n_升2_G1": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 874.0,
       "title": "升2_G1?",
       "props": {
         "threshold": 0.85,
@@ -187,12 +214,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S1"
+      "miss_next": "n_升2_S1",
+      "num": 10
     },
     "n_升2_S1": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 966.0,
       "title": "升2_S1",
       "props": {
         "x1": 1000,
@@ -200,13 +228,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 11,
+      "next": "n_升2_G2"
     },
     "n_升2_G2": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1058.0,
       "title": "升2_G2?",
       "props": {
         "threshold": 0.85,
@@ -217,12 +252,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S2"
+      "miss_next": "n_升2_S2",
+      "num": 12
     },
     "n_升2_S2": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1150.0,
       "title": "升2_S2",
       "props": {
         "x1": 1000,
@@ -230,13 +266,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 13,
+      "next": "n_升2_G3"
     },
     "n_升2_G3": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1242.0,
       "title": "升2_G3?",
       "props": {
         "threshold": 0.85,
@@ -247,12 +290,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S3"
+      "miss_next": "n_升2_S3",
+      "num": 14
     },
     "n_升2_S3": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1334.0,
       "title": "升2_S3",
       "props": {
         "x1": 1000,
@@ -260,13 +304,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 15,
+      "next": "n_升2_G4"
     },
     "n_升2_G4": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1426.0,
       "title": "升2_G4?",
       "props": {
         "threshold": 0.85,
@@ -277,12 +328,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S4"
+      "miss_next": "n_升2_S4",
+      "num": 16
     },
     "n_升2_S4": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1518.0,
       "title": "升2_S4",
       "props": {
         "x1": 1000,
@@ -290,13 +342,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 17,
+      "next": "n_升2_G5"
     },
     "n_升2_G5": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1610.0,
       "title": "升2_G5?",
       "props": {
         "threshold": 0.85,
@@ -307,12 +366,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S5"
+      "miss_next": "n_升2_S5",
+      "num": 18
     },
     "n_升2_S5": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1702.0,
       "title": "升2_S5",
       "props": {
         "x1": 1000,
@@ -320,13 +380,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 19,
+      "next": "n_升2_G6"
     },
     "n_升2_G6": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1794.0,
       "title": "升2_G6?",
       "props": {
         "threshold": 0.85,
@@ -337,12 +404,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S6"
+      "miss_next": "n_升2_S6",
+      "num": 20
     },
     "n_升2_S6": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1886.0,
       "title": "升2_S6",
       "props": {
         "x1": 1000,
@@ -350,13 +418,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 21,
+      "next": "n_升2_G7"
     },
     "n_升2_G7": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 1978.0,
       "title": "升2_G7?",
       "props": {
         "threshold": 0.85,
@@ -367,12 +442,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S7"
+      "miss_next": "n_升2_S7",
+      "num": 22
     },
     "n_升2_S7": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2070.0,
       "title": "升2_S7",
       "props": {
         "x1": 1000,
@@ -380,13 +456,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 23,
+      "next": "n_升2_G8"
     },
     "n_升2_G8": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2162.0,
       "title": "升2_G8?",
       "props": {
         "threshold": 0.85,
@@ -397,12 +480,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S8"
+      "miss_next": "n_升2_S8",
+      "num": 24
     },
     "n_升2_S8": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2254.0,
       "title": "升2_S8",
       "props": {
         "x1": 1000,
@@ -410,13 +494,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 25,
+      "next": "n_升2_G9"
     },
     "n_升2_G9": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2346.0,
       "title": "升2_G9?",
       "props": {
         "threshold": 0.85,
@@ -427,12 +518,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S9"
+      "miss_next": "n_升2_S9",
+      "num": 26
     },
     "n_升2_S9": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2438.0,
       "title": "升2_S9",
       "props": {
         "x1": 1000,
@@ -440,13 +532,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 27,
+      "next": "n_升2_G10"
     },
     "n_升2_G10": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2530.0,
       "title": "升2_G10?",
       "props": {
         "threshold": 0.85,
@@ -457,12 +556,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S10"
+      "miss_next": "n_升2_S10",
+      "num": 28
     },
     "n_升2_S10": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2622.0,
       "title": "升2_S10",
       "props": {
         "x1": 1000,
@@ -470,13 +570,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 29,
+      "next": "n_升2_G11"
     },
     "n_升2_G11": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2714.0,
       "title": "升2_G11?",
       "props": {
         "threshold": 0.85,
@@ -487,12 +594,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": "n_升2_S11"
+      "miss_next": "n_升2_S11",
+      "num": 30
     },
     "n_升2_S11": {
       "type": "swipe",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 2806.0,
       "title": "升2_S11",
       "props": {
         "x1": 1000,
@@ -500,13 +608,20 @@
         "x2": 200,
         "y2": 650,
         "duration": 900,
-        "post_delay": 600
-      }
+        "repeat": 1,
+        "repeat_delay": 350,
+        "pre_wait_freezes": 0,
+        "post_wait_freezes": 0,
+        "post_delay": 600,
+        "timeout": 2000
+      },
+      "num": 31,
+      "next": "n_升2_G12"
     },
     "n_升2_G12": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 138.0,
       "title": "升2_G12?",
       "props": {
         "threshold": 0.85,
@@ -517,12 +632,13 @@
         "template": "蛙锣.png"
       },
       "hit_next": "n_升2_Hit",
-      "miss_next": null
+      "miss_next": "n_升好_好感",
+      "num": 32
     },
     "n_升1": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 46.0,
       "title": "升1?",
       "props": {
         "threshold": 0.72,
@@ -533,7 +649,56 @@
         "template": "qizhe.png"
       },
       "hit_next": "n_升1_Hit",
-      "miss_next": null
+      "miss_next": "n_升2",
+      "num": 33
+    },
+    "n_opt_升好感度_目标角色": {
+      "type": "input",
+      "x": 736.0,
+      "y": 138.0,
+      "title": "输入",
+      "num": 34,
+      "props": {
+        "option": "目标角色",
+        "var": "角色",
+        "var_label": "角色名",
+        "kind": "文本",
+        "default": "蛙锣",
+        "desc": "选择要操作的角色，需与 image/ 下 <角色名>.png 模板一致",
+        "raw": "VF_装卸装备_11_Hit, VF_装卸装备_02, VF_查找器者_03_Hit, VF_查找器者_02",
+        "field": "template",
+        "value": "",
+        "verify": "",
+        "pattern_msg": "",
+        "targets": [
+          "n_升2",
+          "n_升2_Hit"
+        ]
+      }
+    },
+    "n_opt_升好感度_礼物次数": {
+      "type": "input",
+      "x": 736.0,
+      "y": 322.0,
+      "title": "输入",
+      "num": 35,
+      "props": {
+        "option": "礼物次数",
+        "var": "",
+        "var_label": "次数",
+        "kind": "整数",
+        "default": "1",
+        "desc": "升好感度时点击礼物的次数（1~20）",
+        "raw": "",
+        "field": "repeat",
+        "value": "",
+        "verify": "^([1-9]|1[0-9]|20)$",
+        "pattern_msg": "请输入 1~20 的整数",
+        "targets": [
+          "n_升好_礼物"
+        ]
+      }
     }
-  }
+  },
+  "schemaVersion": 4
 }

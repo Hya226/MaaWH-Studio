@@ -1,26 +1,172 @@
 {
   "name": "启动",
   "chain": [
-    "n_CloseAnno2H"
+    "n0018d7f",
+    "n004914b",
+    "n002c32e",
+    "n003882b",
+    "n0081576",
+    "n0094d42",
+    "n010ccd9",
+    "n011b55e",
+    "n0130b97"
   ],
   "nodes": {
-    "n_CloseAnno2H": {
-      "type": "tpl_click",
-      "x": 0,
-      "y": 0,
-      "title": "CloseAnno2H",
+    "n0018d7f": {
+      "type": "startapp",
+      "x": 138.0,
+      "y": 92.0,
+      "title": "启动游戏",
       "props": {
-        "threshold": 0.6,
-        "roi": "822,20,458,220",
-        "order_by": false,
+        "package": "com.cipaishe.wuhua.bilibili",
+        "post_delay": 1000
+      },
+      "num": 1,
+      "next": "n004914b"
+    },
+    "n002c32e": {
+      "type": "tpl_click",
+      "x": 138.0,
+      "y": 276.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
-        "template": "cha_x.png"
-      }
+        "template": "qd_cha.png"
+      },
+      "num": 2,
+      "next": "n003882b"
+    },
+    "n003882b": {
+      "type": "tap",
+      "x": 138.0,
+      "y": 368.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 611,
+        "y": 361,
+        "pre_delay": 0,
+        "post_delay": 6000,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 3,
+      "next": "n0081576"
+    },
+    "n004914b": {
+      "type": "wait_tpl",
+      "x": 138.0,
+      "y": 184.0,
+      "title": "等待模板出现",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 10000,
+        "rate_limit": 0,
+        "template": "qd_cha.png"
+      },
+      "num": 4,
+      "next": "n002c32e"
+    },
+    "n0081576": {
+      "type": "branch",
+      "x": 138.0,
+      "y": 460.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "wu.png"
+      },
+      "num": 5,
+      "hit_next": "n0094d42",
+      "miss_next": "n011b55e"
+    },
+    "n0094d42": {
+      "type": "tap",
+      "x": 138.0,
+      "y": 598.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 640,
+        "y": 360,
+        "pre_delay": 0,
+        "post_delay": 0,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 6,
+      "next": "n010ccd9"
+    },
+    "n010ccd9": {
+      "type": "tpl_click",
+      "x": 138.0,
+      "y": 690.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.85,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 6000,
+        "post_wait_freezes": 100,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "qd_cha.png"
+      },
+      "num": 7,
+      "next": "n011b55e"
+    },
+    "n011b55e": {
+      "type": "branch",
+      "x": 138.0,
+      "y": 828.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 200,
+        "template": "tc_cha.png"
+      },
+      "num": 8,
+      "hit_next": "n0130b97",
+      "miss_next": null
+    },
+    "n0130b97": {
+      "type": "tpl_click",
+      "x": 552.0,
+      "y": 828.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 200,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "tc_cha.png"
+      },
+      "num": 9,
+      "next": "n011b55e"
     }
-  }
+  },
+  "schemaVersion": 4
 }

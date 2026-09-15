@@ -1,0 +1,131 @@
+{
+  "VF_易物所购买": {
+    "next": [
+      "VF_易物所购买_01"
+    ]
+  },
+  "VF_易物所购买_01": {
+    "action": "Click",
+    "expected": [
+      "易物所"
+    ],
+    "next": [
+      "VF_易物所购买_02_J1"
+    ],
+    "post_delay": 600,
+    "recognition": "OCR",
+    "timeout": 8000
+  },
+  "VF_易物所购买_02_J1": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_02_J1_Hit"
+    ],
+    "on_error": [
+      "VF_易物所购买_02_J2"
+    ],
+    "timeout": 3000
+  },
+  "VF_易物所购买_02_J1_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_03"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "zhaojiyishi.png",
+    "threshold": 0.7
+  },
+  "VF_易物所购买_02_J2": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_02_J2_Hit"
+    ],
+    "on_error": [
+      "VF_易物所购买_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_易物所购买_02_J2_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_04"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "shimoyishi.png",
+    "threshold": 0.7
+  },
+  "VF_易物所购买_03": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_03_Hit"
+    ],
+    "on_error": [
+      "VF_易物所购买_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_易物所购买_03_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_05"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "zhaojiyishi.png",
+    "threshold": 0.7
+  },
+  "VF_易物所购买_04": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_04_Hit"
+    ],
+    "on_error": [
+      "VF_易物所购买_End"
+    ],
+    "timeout": 3000
+  },
+  "VF_易物所购买_04_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_易物所购买_06"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "shimoyishi.png",
+    "threshold": 0.7
+  },
+  "VF_易物所购买_05": {
+    "action": "Click",
+    "next": [
+      "VF_易物所购买_07"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "zhaojiyishi.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_易物所购买_06": {
+    "action": "Click",
+    "next": [
+      "VF_易物所购买_08"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "shimoyishi.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_易物所购买_07": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_易物所购买_08": {
+    "next": [
+      "Common_回主页"
+    ]
+  },
+  "VF_易物所购买_End": {
+    "action": "DoNothing",
+    "next": []
+  }
+}

@@ -1,380 +1,379 @@
 {
   "name": "喝茶",
   "chain": [
-    "nrukou",
-    "n00498da",
-    "n005504d",
-    "n008d833",
-    "n0099bd1",
-    "n0108097",
-    "nbranch_yaoqing",
-    "n011527d",
-    "n01224fd",
-    "n0083554",
-    "n0136932",
-    "n014a86c",
-    "n009fecc",
-    "n0159955",
-    "n0167080",
-    "n010927f",
-    "n017f641",
-    "n0188abd",
-    "n011df05",
-    "n0199d5c",
-    "n020b804",
-    "n021e8f8",
-    "n0221863"
+    "n_VF_喝茶_01",
+    "n_VF_喝茶_02",
+    "n_VF_喝茶_03",
+    "n_VF_喝茶_04",
+    "n_VF_喝茶_05",
+    "n_VF_喝茶_06",
+    "n_VF_喝茶_07",
+    "n_VF_喝茶_08",
+    "n_VF_喝茶_09",
+    "n_VF_喝茶_10",
+    "n_VF_喝茶_11",
+    "n_VF_喝茶_12",
+    "n_VF_喝茶_13",
+    "n_VF_喝茶_14",
+    "n_VF_喝茶_15",
+    "n_VF_喝茶_16",
+    "n_VF_喝茶_17",
+    "n_VF_喝茶_18",
+    "n_VF_喝茶_19",
+    "n_VF_喝茶_20",
+    "n_VF_喝茶_21",
+    "n_VF_喝茶_22",
+    "n_VF_喝茶_23"
   ],
   "nodes": {
-    "n00498da": {
+    "n_VF_喝茶_01": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 230,
+      "x": 0,
+      "y": 0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
         "roi": "",
         "order_by": false,
         "timeout": 8000,
-        "pre_delay": 0,
+        "rate_limit": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
+        "template": "chashi_rukou.png"
+      },
+      "num": 1,
+      "next": "n_VF_喝茶_02"
+    },
+    "n_VF_喝茶_02": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
         "template": "tea_0.png"
-      }
+      },
+      "num": 2,
+      "next": "n_VF_喝茶_03"
     },
-    "n008d833": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 410,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_queren.png"
-      }
-    },
-    "n0099bd1": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 500,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_queren2.png"
-      }
-    },
-    "n0108097": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 590,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_qipao.png",
-        "rate_limit": 200
-      }
-    },
-    "n011527d": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 770,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_yaoqing.png"
-      }
-    },
-    "n01224fd": {
+    "n_VF_喝茶_03": {
       "type": "tap",
-      "x": 499.0,
-      "y": 858.0,
+      "x": 0,
+      "y": 0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 200,
+        "y": 400,
+        "post_delay": 500
+      },
+      "num": 3,
+      "next": "n_VF_喝茶_04"
+    },
+    "n_VF_喝茶_04": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_queren.png"
+      },
+      "num": 4,
+      "next": "n_VF_喝茶_05"
+    },
+    "n_VF_喝茶_05": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_queren2.png"
+      },
+      "num": 5,
+      "next": "n_VF_喝茶_06"
+    },
+    "n_VF_喝茶_06": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 200,
+        "post_delay": 800,
+        "template": "tea_qipao.png"
+      },
+      "num": 6,
+      "next": "n_VF_喝茶_07"
+    },
+    "n_VF_喝茶_07": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "邀请出现了?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "tea_yaoqing.png"
+      },
+      "hit_next": "n_VF_喝茶_08",
+      "miss_next": "n_VF_喝茶_06",
+      "num": 7
+    },
+    "n_VF_喝茶_08": {
+      "type": "tpl_click",
+      "x": 0,
+      "y": 0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "order_by": false,
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_yaoqing.png"
+      },
+      "num": 8,
+      "next": "n_VF_喝茶_09"
+    },
+    "n_VF_喝茶_09": {
+      "type": "tap",
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 9,
+      "next": "n_VF_喝茶_10"
     },
-    "n0136932": {
+    "n_VF_喝茶_10": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_喝茶_11",
+      "miss_next": "n_VF_喝茶_09",
+      "num": 10
+    },
+    "n_VF_喝茶_11": {
       "type": "tap",
-      "x": 496.0,
-      "y": 952.0,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 978,
         "y": 376,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 11,
+      "next": "n_VF_喝茶_12"
     },
-    "n014a86c": {
+    "n_VF_喝茶_12": {
       "type": "tap",
-      "x": 500,
-      "y": 1040,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 12,
+      "next": "n_VF_喝茶_13"
     },
-    "n0159955": {
+    "n_VF_喝茶_13": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_喝茶_14",
+      "miss_next": "n_VF_喝茶_12",
+      "num": 13
+    },
+    "n_VF_喝茶_14": {
       "type": "tap",
-      "x": 500,
-      "y": 1130,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 978,
         "y": 376,
         "pre_delay": 6000,
-        "post_delay": 1500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 1500
+      },
+      "num": 14,
+      "next": "n_VF_喝茶_15"
     },
-    "n0167080": {
+    "n_VF_喝茶_15": {
       "type": "tap",
-      "x": 500,
-      "y": 1220,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 4000
-      }
+        "post_delay": 500
+      },
+      "num": 15,
+      "next": "n_VF_喝茶_16"
     },
-    "n017f641": {
+    "n_VF_喝茶_16": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_喝茶_17",
+      "miss_next": "n_VF_喝茶_15",
+      "num": 16
+    },
+    "n_VF_喝茶_17": {
       "type": "tap",
-      "x": 500,
-      "y": 1310,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 988,
         "y": 266,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 17,
+      "next": "n_VF_喝茶_18"
     },
-    "n0188abd": {
+    "n_VF_喝茶_18": {
       "type": "tap",
-      "x": 500,
-      "y": 1400,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 18,
+      "next": "n_VF_喝茶_19"
     },
-    "n0199d5c": {
+    "n_VF_喝茶_19": {
+      "type": "branch",
+      "x": 0,
+      "y": 0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_喝茶_20",
+      "miss_next": "n_VF_喝茶_18",
+      "num": 19
+    },
+    "n_VF_喝茶_20": {
       "type": "tap",
-      "x": 493.0,
-      "y": 1490.0,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 988,
         "y": 266,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 20,
+      "next": "n_VF_喝茶_21"
     },
-    "n020b804": {
+    "n_VF_喝茶_21": {
       "type": "tap",
-      "x": 500,
-      "y": 1580,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 1500,
-        "repeat": 1,
-        "repeat_delay": 1500
-      }
+        "post_delay": 1500
+      },
+      "num": 21,
+      "next": "n_VF_喝茶_22"
     },
-    "n021e8f8": {
+    "n_VF_喝茶_22": {
       "type": "tap",
-      "x": 500,
-      "y": 1670,
+      "x": 0,
+      "y": 0,
       "title": "固定坐标点击",
       "props": {
         "x": 136,
         "y": 449,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 22,
+      "next": "n_VF_喝茶_23"
     },
-    "n0221863": {
+    "n_VF_喝茶_23": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 1760,
+      "x": 0,
+      "y": 0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
         "roi": "",
         "order_by": false,
         "timeout": 8000,
-        "pre_delay": 0,
+        "rate_limit": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "chashi_tuichu.png"
-      }
-    },
-    "nbranch_yaoqing": {
-      "type": "branch",
-      "x": 500,
-      "y": 680,
-      "title": "邀请出现了?",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "tea_yaoqing.png"
       },
-      "hit_next": null,
-      "miss_next": "n0108097"
-    },
-    "nrukou": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 50,
-      "title": "进入茶室",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "chashi_rukou.png"
-      }
-    },
-    "n005504d": {
-      "type": "tap",
-      "x": 499.0,
-      "y": 318.0,
-      "title": "固定坐标点击",
-      "props": {
-        "x": 200,
-        "y": 400,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
-    },
-    "n0083554": {
-      "type": "branch",
-      "x": 110.0,
-      "y": 908.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "n01224fd"
-    },
-    "n009fecc": {
-      "type": "branch",
-      "x": 67.0,
-      "y": 1076.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "n014a86c"
-    },
-    "n010927f": {
-      "type": "branch",
-      "x": 80.0,
-      "y": 1258.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "n0167080"
-    },
-    "n011df05": {
-      "type": "branch",
-      "x": 55.0,
-      "y": 1444.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": "n0199d5c",
-      "miss_next": "n0188abd"
+      "num": 23,
+      "next": null
     }
-  }
+  },
+  "schemaVersion": 4
 }

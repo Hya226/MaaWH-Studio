@@ -26,7 +26,6 @@ import sys
 import json
 import glob
 import time
-import bisect
 import hashlib
 import datetime
 import subprocess
@@ -72,11 +71,45 @@ UNDO_LIMIT = 60             # 撤销栈上限（存的是流程定义 JSON 文�
 LOOP_MAX_TIMES = 50         # 循环展开次数上限（防止一次生成把 JSON 撑到手机端加载不动）
 ZOOM_MIN, ZOOM_MAX = 0.25, 2.5   # 画布缩放范围（下限小一点便于总览 40 节点的长流程）
 GRID = 46                   # 画布网格步长（px）：拖动吸附与网格线都用它，保证同一套对齐
+CARD_MARGIN = 5 * GRID      # 画布滚动区在内容之外至少留 5 格（空地方便放/拖节点）
+# 流程文件格式版本。3 =【分支】命中出口只认显式连线（不再自动走链上下一个）；
+# 老文件（没有这个字段）在 normalize_flow 里会被补成显式连线，存盘时打上 3。
+SCHEMA_VERSION = 4
 TIDY_X = GRID               # 「整理布局」时主链的 x（贴左边一格，保证点完就能看见）
-PENDING_TPL = "?"           # 拖「＋」球新建的候选占位识别目标：待用户选模板/填OCR
+
+
+def regex_error(text):
+    """把文本当正则编译，合法返回 None，否则返回引擎那句报错。
+    ★ 引擎把 OCR 的 expected（以及 replace 的键）当【正则】编译，用的 boost::wregex
+    （ECMAScript 语法）。一个非法表达式（典型：漏填的占位符「?」）会让
+    PipelineChecker::check_all_regex 失败 → PipelineResMgr 拒绝加载整个 pipeline
+    目录 → 手机上【所有任务】都跑不起来，不只是出问题这一个。所以要在本地拦下。"""
+    try:
+        re.compile(text)
+    except re.error as ex:
+        return str(ex)
+    return None
 # 枝干各候选分支的配色：球与它的连线同色，一眼能看出"哪个球连到哪"。
 # 球上的数字只表示【判定顺序】（从左到右依次判定），与画布上下位置无关。
 BRANCH_COLORS = ["#58c470", "#5b8cff", "#e8a33d", "#c884e8", "#3fc9c9", "#e0d24d"]
+# 【输入】参数注入线/小球的颜色：它只表示"参数注入到哪个节点"，与流程顺序无关，
+# 所以画法与流程连线区分开（虚线 + 这个专属色）。
+INJECT_COLOR = "#c9a0ff"
+# 取点字段的说明（属性面板、帧窗口、状态栏共用一份，免得几处说法不一致）
+PICK_LABELS = {"x": "点击坐标", "x1": "滑动起点", "x2": "滑动终点"}
+# 各类出口/连线端口的中文说法（日志里用，免得只说 hit_next 这种内部名）
+PORT_LABELS = {"hit_next": "✓命中", "miss_next": "✗未中", "miss": "✗全未中",
+               "inject": "参数注入", "body_end": "循环体末尾", "new": "新建候选",
+               "next": "下一个"}
+
+
+def port_label(port):
+    if str(port).startswith("cand"):
+        try:
+            return f"候选{int(port[4:]) + 1}"
+        except ValueError:
+            return str(port)
+    return PORT_LABELS.get(port, str(port))
 
 
 def branch_color(i):
@@ -169,9 +202,10 @@ def common_node_names(root=None):
 # 按节点类型给出的固定提示（与 _hide_hint 的互斥提示互补）
 NODE_HINTS = {
     "wait_tpl": "本节点只「等模板出现」，不做任何动作。需要未命中时走另一条路，"
-                "请改用『分支(模板在?)』节点（它有 ✓/✗ 两个出口）。",
-    "switch": "候选按从上到下的顺序判定，命中即走该候选的内容，内容跑完枝干就结束；"
-              "全部未中走「✗全未中」出口。",
+                "请改用『分支』节点（它有 ✓/✗ 两个出口）。",
+    "switch": "候选按从上到下的顺序判定，命中即走该候选连到的节点，内容跑完枝干就结束；"
+              "全部未中走「✗全未中」出口。★ 候选判什么 = 它连到的【分支】判什么："
+              "模板图/OCR 文字只在分支里配（枝干这里不重复配）。",
     "common": "公共节点是「收口」：进入后本流程即终止，不会返回。放在链中间会让"
               "其后的节点执行不到。",
     "subflow": "把另一个流程的节点整段【内联】进来：生成时它的节点会带上 "
@@ -185,8 +219,10 @@ NODE_HINTS = {
 def _hide_hint(ntype, p):
     """互斥生效时给出说明，避免字段突然消失让人困惑；否则给出该类型的固定提示"""
     if ntype == "branch" and str(p.get("ocr_text", "")).strip():
-        return "已填 OCR 文本 → 本节点改用 OCR 判定，模板图与阈值不生效"
+        return ("已填 OCR 文本 → 本节点改用 OCR 判定：上面的模板图组与阈值已置灰、"
+                "不生效。想改用模板图，把「OCR文本」清空即可")
     return NODE_HINTS.get(ntype)
+
 
 def tpl_summary(p):
     """节点卡片摘要：模板多候选显示 '首个 +N'，单值直接显示"""
@@ -197,24 +233,23 @@ def tpl_summary(p):
 
 
 def parse_switch_cands(raw):
-    """解析枝干候选列表：
-    raw 为 [{t, timeout, next, mergeBack}, ...]；t 支持 '模板名.png'（模板识别）或 'OCR:文字'。
-    返回规范化列表，剔除空候选；next = 命中内容起点节点 id（可缺省）；
-    mergeBack = 命中内容跑完后是否回到主线（默认 False，与历史行为一致）。"""
+    """解析枝干候选列表：raw 为 [{timeout, next, mergeBack}, ...]。
+
+    ★ 候选【不再自带识别目标】（旧字段 t 已废弃、读了也不再用）：一个候选判什么，
+      完全取决于它连到的那个分支节点 —— 模板图/OCR 文字只在分支里配一次。
+      next = 连到的内容起点节点 id；mergeBack = 命中内容跑完后是否回到主线。
+    """
     out = []
     if not raw:
         return out
     for c in raw:
         if not isinstance(c, dict):
             continue
-        t = str(c.get("t", "")).strip()
-        if not t:
-            continue
         try:
             timeout = int(float(c.get("timeout", 3000)))
         except (TypeError, ValueError):
             timeout = 3000
-        item = {"t": t, "timeout": max(500, timeout)}
+        item = {"timeout": max(500, timeout)}
         if c.get("next"):
             item["next"] = c["next"]
         if c.get("mergeBack"):
@@ -229,14 +264,241 @@ def switch_summary(p):
     return f"{len(cands)} 路" if cands else "空枝干"
 
 
-def switch_cand_spec(t):
-    """候选识别规格：('OCR', text) 或 ('Template', name)；非法返回 None"""
-    t = str(t).strip()
-    if t.lower().startswith("ocr:"):
-        return ("OCR", t[4:].strip())
-    if t.endswith(".png"):
-        return ("Template", t)
+def find_input_for(flow, nid, field):
+    """哪个【输入】参数注入到 (节点, 字段) → (那个输入节点的编号, 标题)；没有返回 None。
+    用来把"未选择模板图"这类报错说准：字段由参数注入时，节点里仍要填一个默认值，
+    否则不带参数单独跑（编辑器直达入口 / 手点任务）就会失败。"""
+    for other, nd in (flow.get("nodes") or {}).items():
+        if not isinstance(nd, dict) or nd.get("type") != "input":
+            continue
+        p = nd.get("props") or {}
+        if input_field(p) == field and nid in input_targets(nd):
+            return node_no(flow, other, 0), nd.get("title", "输入")
     return None
+
+
+def input_summary(p):
+    """卡片摘要：'参数名 → 改哪个字段 ×注入数'（字段只显示中文名，卡片放得下）"""
+    opt = str(p.get("option") or "").strip() or "?"
+    raw = str(p.get("field") or "").strip()
+    n = len(p.get("targets") or []) if isinstance(p, dict) else 0
+    tail = f" ×{n}" if n > 1 else ""
+    ext = parse_raw_targets(p)
+    if ext:                       # 作用在手写管线的节点上：卡片上要说一声
+        tail += " →" + "、".join(ext[:2]) + ("…" if len(ext) > 2 else "")
+    return (f"{opt} → {raw.split(' (')[0]}{tail}" if raw else opt)
+
+
+def pass_summary(p):
+    """【通道/跳转】摘要：显示它运行时的名字（手写管线名）和下一步"""
+    nm = str((p or {}).get("emit_name") or "").strip()
+    return ("运行时名 " + nm) if nm else "纯跳转（按本流程编号命名）"
+
+
+def pick_summary(p):
+    """【选择】卡片摘要：'参数名（N 个选项）'"""
+    opt = str((p or {}).get("option") or "").strip() or "?"
+    n = len((p or {}).get("cases") or [])
+    return f"{opt}（{n} 个选项）"
+
+
+# 【输入】参数能覆盖的字段：下拉里显示成"模板图 (template)"这种带中文说明的写法
+# （数据里存的就是它，流程文件因此自解释；input_field() 负责抽出协议字段名）。
+# 注意两点：① pipeline_override 是自由的，覆盖目标节点"自己不读"的字段不会让引擎报错，
+# 只是白填 —— 所以那种情况只给警告；② 字段名写错则一定是问题，直接报错。
+INPUT_FIELD_LABELS = (
+    ("模板图", "template"),
+    ("OCR文字", "expected"),
+    ("命中次数", "repeat"),
+    ("命中间隔ms", "repeat_delay"),
+    ("阈值", "threshold"),
+    ("识别区域ROI", "roi"),
+    ("等待超时ms", "timeout"),
+    ("识别间隔ms", "rate_limit"),
+    ("动作前延时ms", "pre_delay"),
+    ("动作后延时ms", "post_delay"),
+    ("最多命中次数", "max_hit"),
+    ("结果排序", "order_by"),
+    ("命中第几个", "index"),
+)
+INPUT_FIELDS = tuple(f"{lab} ({name})" for lab, name in INPUT_FIELD_LABELS)
+INPUT_FIELD_NAMES = tuple(name for _lab, name in INPUT_FIELD_LABELS)
+
+
+def input_field(p):
+    """「改它的哪个字段」→ 协议里的字段名（下拉里那种"模板图 (template)"写法也能取）。
+    手工直接写成 template 这种纯字段名同样认。"""
+    raw = str((p or {}).get("field") or "template").strip()
+    m = re.search(r"\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$", raw)
+    return m.group(1) if m else raw
+
+
+# 【选择】节点的每个选项能覆盖的字段：除了【输入】能覆盖的那些，还多两个
+# "按次数切分支"常用的字段（征集次数就是这么写的：选项 1 → 征集段2.next，
+# 选项 2~4 → ZJ_JiaHao2.repeat）。
+PICK_FIELD_LABELS = (("下一个出口", "next"), ("启用", "enabled")) + INPUT_FIELD_LABELS
+PICK_FIELDS = tuple(f"{lab} ({name})" for lab, name in PICK_FIELD_LABELS)
+_PICK_FIELD_DISPLAY = {name: f"{lab} ({name})" for lab, name in PICK_FIELD_LABELS}
+
+
+def pick_field_display(name):
+    """协议字段名 → 下拉里显示的写法（认不出来就原样回显，方便手写奇特字段）"""
+    return _PICK_FIELD_DISPLAY.get(str(name or "").strip(), str(name or "").strip())
+
+
+def parse_raw_targets(p):
+    """【输入】节点上「手写管线的节点名」列表 —— 老流程（cdzb.json 等手写管线）的参数
+    要作用在【外面】的节点上（`查2_Hit`、`升好_礼物`…），编辑器流程里没有这些名字。
+    逗号分隔，允许 #编号（指本流程画布上的节点）。"""
+    raw = str((p or {}).get("raw") or "")
+    return [s.strip() for s in re.split(r"[,，]", raw) if s.strip()]
+
+
+def emit_name_of(flow, nid):
+    """节点在生成物里的名字：默认 jname()，【通道/跳转】可以用 props.emit_name 指定
+    （老流程要保留手写管线的节点名，参数覆盖才对得上）。"""
+    nd = (flow.get("nodes") or {}).get(nid) or {}
+    if nd.get("type") == "pass":
+        nm = str((nd.get("props") or {}).get("emit_name") or "").strip()
+        if nm:
+            return nm
+    return jname(flow, nid) if nid in (flow.get("chain") or []) else ""
+
+
+def target_name_of(flow, token):
+    """选项/参数的目标写的是什么 → 生成物里的节点名。
+    ① 画布节点 id；② `#编号`（按固定编号反查，**不是**链序下标）；
+    ③ 都不是就原样当手写管线的节点名用。"""
+    token = str(token or "").strip()
+    nodes = flow.get("nodes") or {}
+    if token in nodes:
+        return emit_name_of(flow, token) or jname(flow, token)
+    m = re.match(r"^#(\d+)$", token)
+    if m:
+        want = int(m.group(1))
+        for nid in nodes:
+            if node_no(flow, nid) == want:
+                return jname(flow, nid)
+    return token
+
+
+def case_value(field, raw):
+    """选项里那一格"值"文本 → 写进 pipeline_override 的值。
+    `next` 是节点名列表（多个用逗号分隔）；`[..]` 开头按 JSON 解析；纯数字认成 int；
+    其余当字符串。"""
+    text = str(raw or "").strip()
+    if text.startswith("["):
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
+    if field == "next":
+        return [s.strip() for s in re.split(r"[,，]", text) if s.strip()]
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    if text in ("true", "false"):
+        return text == "true"
+    return text
+
+
+def pick_cases(flow, nd):
+    """【选择】节点的选项 → interface.json 的 cases（形状与 App 端 TaskPack 逐字段对齐）。
+    每个选项一行：选项名 + 目标（画布节点 / #编号 / 手写管线节点名）+ 字段 + 值。"""
+    out = []
+    for row in ((nd or {}).get("props") or {}).get("cases") or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        node = str(row.get("node") or "").strip()
+        field = input_field({"field": row.get("field")})
+        if not name or not node or not field:
+            continue
+        tgt = target_name_of(flow, node)
+        out.append({"name": name,
+                    "pipeline_override": {tgt: {field: case_value(field, row.get("value"))}}})
+    return out
+
+
+def case_brief(flow, row):
+    """选项在列表里的一行摘要（只读回显用）"""
+    field = input_field({"field": row.get("field")})
+    tgt = target_name_of(flow, str(row.get("node") or "").strip())
+    val = row.get("value")
+    if field == "next" and not str(val or "").strip().startswith("["):
+        val = "[" + str(val or "").strip() + "]"
+    return f"{row.get('name', '?')}: {tgt}.{field} = {val}"
+
+
+def cand_target(flow, c):
+    """候选连到的内容起点：返回 (节点id, 节点dict)；节点不存在时 dict 为 None。"""
+    tgt = c.get("next")
+    nd = (flow.get("nodes") or {}).get(tgt) if tgt else None
+    return tgt, (nd if isinstance(nd, dict) else None)
+
+
+def branch_hit_block(flow, nid):
+    """【分支】节点的判定块：recognition + 期望文本/模板图(+threshold) + action + roi。
+    branch 自己生成的 *_Hit 用它，枝干候选的判定也用它 —— 条件只有一处定义，
+    两处不可能算出不同结论（以前枝干候选另配一份，还会漏掉 threshold/roi）。
+    条件还没配好（既没填 OCR 文字也没选模板图）返回 None。"""
+    nd = (flow.get("nodes") or {}).get(nid) or {}
+    if nd.get("type") != "branch":
+        return None
+    p = nd.get("props") or {}
+    texts = split_ocr_texts(p.get("ocr_text", ""))
+    tpls = split_tpls(p.get("template", ""))
+    if texts:
+        hd = {"recognition": "OCR", "expected": texts}
+    elif tpls:
+        hd = {"recognition": "TemplateMatch", "template": tpl_out(p["template"]),
+              "threshold": float(p.get("threshold", 0.7))}
+    else:
+        return None
+    hd["action"] = "DoNothing"
+    roi = parse_roi(p.get("roi", ""))
+    if roi:
+        hd["roi"] = roi
+    return hd
+
+
+def switch_cand_block(flow, c):
+    """枝干候选的判定块 = 它连到的分支节点的判定块 + 命中出口。
+    连不到分支、或那个分支还没配条件 → None（校验/生成会给对症提示）。"""
+    tgt, tnd = cand_target(flow, c)
+    if tnd is None or tnd.get("type") != "branch":
+        return None
+    hd = branch_hit_block(flow, tgt)
+    if hd is None:
+        return None
+    hd["next"] = [jname(flow, tgt)]
+    return hd
+
+
+def cand_cond_short(flow, c):
+    """候选判定条件的极简说法（卡片/列表共用）：模板 x.png / OCR 文字 / 问题提示。"""
+    tgt, tnd = cand_target(flow, c)
+    if not tgt:
+        return "未连线"
+    if tnd is None:
+        return "节点已删除"
+    if tnd.get("type") != "branch":
+        return "连到的不是分支"
+    blk = branch_hit_block(flow, tgt)
+    if blk is None:
+        return "分支还没配判定条件"
+    if blk["recognition"] == "OCR":
+        return "OCR " + "、".join(blk["expected"])
+    tpl = blk["template"]
+    return "模板 " + (tpl if isinstance(tpl, str) else "、".join(tpl))
+
+
+def cand_brief(flow, c):
+    """属性面板列表里那一行：连到哪个节点 + 用它什么条件判定（只读展示）。"""
+    tgt, tnd = cand_target(flow, c)
+    head = f"#{node_no(flow, tgt)}「{tnd.get('title', tgt)}」" if tnd else (
+        f"#{tgt}" if tgt else "")
+    cond = cand_cond_short(flow, c)
+    return f"{head} {cond}" if head else cond
 
 
 # ---------------- 节点类型定义 ----------------
@@ -304,7 +566,8 @@ NODE_TYPES = {
     },
     "swipe": {
         "label": "滑动", "icon": "⇅", "color": "#8a63b0", "light": "#c8a8ec",
-        "summary": lambda p: f"({p.get('x1', 0)},{p.get('y1', 0)})→({p.get('x2', 0)},{p.get('y2', 0)})",
+        "summary": lambda p: (f"起 ({p.get('x1', 0)},{p.get('y1', 0)})"
+                              f"\n终 ({p.get('x2', 0)},{p.get('y2', 0)})"),
         "fields": [
             ("x1", "起点X", "pick"),
             ("y1", "起点Y", "int"),
@@ -336,7 +599,7 @@ NODE_TYPES = {
         "defaults": {"threshold": 0.8, "roi": "", "timeout": 10000, "rate_limit": 0},
     },
     "branch": {
-        "label": "分支(模板在?)", "icon": "Ж", "color": "#c08a3e", "light": "#f0c68a",
+        "label": "分支", "icon": "Ж", "color": "#c08a3e", "light": "#f0c68a",
         "summary": tpl_summary,
         "fields": [
             ("template", "模板图组(逗号分隔,任一命中)", "tpl_multi"),
@@ -382,6 +645,62 @@ NODE_TYPES = {
         ],
         "defaults": {"package": GAME_PKG, "post_delay": 1000},
     },
+    "pass": {
+        "icon": "⇢", "label": "通道/跳转", "color": "#37514f", "light": "#9ed4cd",
+        "summary": pass_summary,
+        # 不做识别、不做动作的"过路"节点：只为给流程留一个可连线的位置。
+        # ★ 它存在的意义是「运行时的名字」：生成名默认为本流程编号（VF_x_NN），
+        #   但可以写成**手写管线里的节点名**（如 征集段2）—— 老流程的参数
+        #   （interface.json 里 `征集段2.next` 这种覆盖）才有一个能连上去的卡片。
+        #   生成物就是 {"next": [...]}（引擎默认 DirectHit + DoNothing），
+        #   与手写管线的写法逐字段相同。
+        "fields": [
+            ("emit_name", "运行时名(手写管线里的节点名，空=用本流程编号)", "str_opt"),
+        ],
+        "defaults": {"emit_name": ""},
+    },
+    "input": {
+        "label": "输入", "icon": "⌨", "color": "#8a6d3b", "light": "#e8cf9a",
+        "summary": input_summary,
+        # 这个节点不做事，只在任务的【参数】里声明一个让用户在 App 任务编辑栏里填的
+        # 值，并说明它覆盖到哪个节点的哪个字段（interface.json 的 option.pipeline_override）。
+        # 对应 ProjectInterface v2：type=input + inputs + pipeline_override，
+        # 值里 {变量名} 会被 App 替换（如 template: "{角色}.png"）。
+        "fields": [
+            ("option", "参数名(进 interface.json / App 里显示)", "str"),
+            ("var", "变量名(值里写 {变量名}，空=同参数名)", "str_opt"),
+            ("var_label", "该参数的字段标题(App 里 '参数名 · 这里')", "str_opt"),
+            ("kind", "类型", "choice", ("文本", "整数")),
+            ("default", "默认值", "str_opt"),
+            ("desc", "说明(App 里的提示)", "str_opt"),
+            ("targets", "已注入到(拖右侧小球增删)", "inject_list"),
+            ("raw", "手写管线的节点名(逗号分隔，老流程用)", "str_opt"),
+            ("field", "改它的哪个字段", "choice", INPUT_FIELDS),
+            ("value", "值(空=自动：模板→{变量}.png)", "str_opt"),
+            ("verify", "整数校验正则(空=不校验)", "str_opt"),
+            ("pattern_msg", "校验失败提示", "str_opt"),
+        ],
+        "defaults": {"option": "", "var": "", "var_label": "", "kind": "文本",
+                     "default": "", "desc": "", "target": "", "raw": "",
+                     "field": "template",
+                     "value": "", "verify": "", "pattern_msg": ""},
+    },
+    "pick": {
+        "label": "选择(下拉)", "icon": "☰", "color": "#4a4a7a", "light": "#a8b0e0",
+        "summary": pick_summary,
+        # 同样是"参数声明"，但值是【从几个选项里挑一个】，每个选项覆盖不同字段
+        # （对应 PI v2 的 type=select + cases）：征集次数就是这么写的 ——
+        # 选 1 时把「征集段2」的下一个换成 ZJ_DuiGou2，选 2~4 时改「ZJ_JiaHao2」的重复次数。
+        "fields": [
+            ("option", "参数名(进 interface.json / App 里显示)", "str"),
+            ("var_label", "该参数的字段标题", "str_opt"),
+            ("default", "默认选项名(空=第一个)", "str_opt"),
+            ("desc", "说明(App 里的提示)", "str_opt"),
+            ("cases", "选项(名称 / 目标节点 / 字段 / 值)", "cases_list"),
+        ],
+        "defaults": {"option": "", "var_label": "", "default": "", "desc": "",
+                     "cases": []},
+    },
     "switch": {
         "label": "枝干判定(多路)", "icon": "☰", "color": "#7a5cb0", "light": "#c0a8f0",
         "summary": switch_summary,
@@ -389,19 +708,20 @@ NODE_TYPES = {
             ("candidates", "候选(每行: 模板名 或 OCR:文字 / 判定ms)", "switch_list"),
         ],
         "defaults": {
-            "candidates": [{"t": "", "timeout": 3000}],
+            "candidates": [{"timeout": 3000}],
             "miss_next": "",
         },
     },
 }
 
 TYPE_ORDER = ["ocr_click", "tpl_click", "tap", "swipe", "wait_tpl", "branch",
-              "switch", "loop", "subflow", "common", "startapp"]
+              "switch", "loop", "subflow", "common", "startapp", "input", "pick",
+              "pass"]
 
 # 所有节点类型共用的可选字段（属性面板在类型专属字段之后追加渲染）。
 # notes 只是编辑器便签，不进生成物；enabled/max_hit 见 _put_common_fields。
 COMMON_NODE_FIELDS = [
-    ("enabled", "启用(取消勾选=跳过本节点)", "bool_opt"),
+    ("enabled", "启用（✓ 执行 / ✗ 跳过本节点）", "bool_opt"),
     ("max_hit", "最多命中次数(空=无限)", "int_opt"),
     ("notes", "备注(仅编辑器可见)", "str_opt"),
 ]
@@ -435,9 +755,14 @@ def _group_fields(fields):
     return out
 
 
-# 互斥字段：满足条件时隐藏。否则「填了 A 就忽略 B」只能靠用户自己理解。
-# 注意只隐藏被忽略的那一侧，触发互斥的字段本身始终可见（否则没法改回来）。
-FIELD_HIDDEN_IF = {
+# 互斥字段的两种处理方式：
+#   FIELD_HIDDEN_IF      —— 满足条件就整行收走（连看都看不见，目前没有节点用这条规则）
+#   FIELD_OVERRIDDEN_IF  —— 保留显示，但置灰 + 标签注明被谁覆盖
+# 后者比前者友好得多：字段"消失"会让人以为功能没了（branch 的模板图组就踩过这个坑 ——
+# 填了 OCR 文本后模板图组整行不见，看着就是"选不了模板"）。置灰能让人看见
+# "它还在、只是现在被 OCR 覆盖"，也知道清空 OCR 文本就能用回来。
+FIELD_HIDDEN_IF = {}
+FIELD_OVERRIDDEN_IF = {
     "branch": lambda p: ({"template", "threshold"}
                          if str(p.get("ocr_text", "")).strip() else set()),
 }
@@ -460,6 +785,15 @@ FIELD_TIPS = {
                 "注意不是最高分）、Score=分数最高、Vertical、Random。\n"
                 "精确点单个目标建议选 Score 并把阈值抬到高于弱匹配。",
     "index": "命中第几个结果（0 起，可负数）。越界视为未识别。",
+    "field": "这个参数要覆盖目标节点的哪个字段（App 会在运行时按你填的值替换）：\n"
+             "· 模板图 template —— 输入的文字当模板图名。值默认 {变量}.png，\n"
+             "  就是「对着文字找同名模板」（装卸装备的『目标角色』）\n"
+             "· OCR文字 expected —— 输入的文字当 OCR 识别文字\n"
+             "· 命中次数 repeat —— 输入的数字当重复次数（礼物次数、刷冬谷币次数）\n"
+             "· 其余（阈值/ROI/超时/间隔/前后延时）是进阶项，一般不用改。\n"
+             "选 template 时：作用目标若是【分支】，覆盖会自动落到它的 *_Hit（识别块在那里）。",
+    "option": "参数名：写进 interface.json 顶层 option 的键，也是 App 任务编辑栏里\n"
+              "显示的标题（例如『目标角色』）。同名参数会覆盖清单里已有的定义。",
     "max_hit": "本节点最多被识别命中多少次，超出后会从 next 列表被跳过。\n"
                "用于给重试循环加界，防止永久空转。",
     "enabled": "取消勾选 = 生成物写 enabled:false，引擎会跳过本节点（不识别、不执行）。",
@@ -483,14 +817,149 @@ def _num(v, default=-1):
         return default
 
 
+def card_h(nd):
+    """节点卡片的【绘制高度】：枝干卡按候选数变高，其余都是 CARD_H。
+    必须与画布 _draw_node 用的高度一致，否则判断重叠/留间距都会算错。"""
+    if (nd or {}).get("type") == "switch":
+        n = len(parse_switch_cands((nd.get("props") or {}).get("candidates")))
+        return 64 + 22 * max(n, 1) + 22
+    return CARD_H
+
+
+def overlapping_nodes(flow):
+    """画布上互相重叠的节点 id 集合（卡片矩形相交就算子）。空集 = 布局正常。
+    老流程（导入进来的那些）常常所有节点同一个坐标，一打开就叠成一坨 —— 用它检出来。"""
+    items = []
+    for nid, nd in (flow.get("nodes") or {}).items():
+        if not isinstance(nd, dict):
+            continue
+        items.append((nid, _num(nd.get("x"), 0), _num(nd.get("y"), 0), card_h(nd)))
+    bad = set()
+    for i in range(len(items)):
+        n1, x1, y1, h1 = items[i]
+        for j in range(i + 1, len(items)):
+            n2, x2, y2, h2 = items[j]
+            if x1 < x2 + CARD_W and x2 < x1 + CARD_W and y1 < y2 + h2 and y2 < y1 + h1:
+                bad.add(n1)
+                bad.add(n2)
+    return bad
+
+
 def _field_spec(f):
     """字段声明 → (props键, 标签, 控件类型, 附加参数)。
     三元组是历史写法；第四元可选（例如 choice 的候选列表），故这里统一解包。"""
     return f[0], f[1], f[2], (f[3] if len(f) > 3 else None)
 
 
+def exit_targets_of(flow, nid):
+    """某个节点"出口"指向的所有节点 id（分支 ✓/✗、枝干候选与全部未中、循环体末尾）。"""
+    nd = (flow.get("nodes") or {}).get(nid) or {}
+    if not isinstance(nd, dict):
+        return []
+    p = nd.get("props") or {}
+    out = []
+    if nd.get("type") == "branch":
+        out += [nd.get("hit_next"), nd.get("miss_next")]
+    elif nd.get("type") == "switch":
+        out.append(p.get("miss_next"))
+        for c in parse_switch_cands(p.get("candidates")):
+            out.append(c.get("next"))
+    elif nd.get("type") == "loop":
+        out.append(p.get("body_end"))
+    return [x for x in out if x]
+
+
+def _materialize_next(flow):
+    """v3 → v4 迁移：把当时由【链序】隐式决定的"下一个"固化成节点上的 next 字段。
+
+    ★ 为什么要这一步：以前"下一个"不看任何显式记录，只看链序里谁排在谁后面 ——
+      于是链序一被改动（或者节点被接进来/挪出去），连接就跟着变，凭空多出用户
+      没画过的线（"我把 3 接到 4，#4 却自动连到 #11"就是链序给的）。
+      v4 起边就是边：nd["next"] 是唯一来源；链序只决定【显示顺序】和"哪些节点参与生成"。
+      这里按【当时的链序】逐条补出来，所以生成结果一字不变（golden 基线可证）。"""
+    chain = flow.get("chain") or []
+    nodes = flow.get("nodes") or {}
+    for i, nid in enumerate(chain):
+        nd = nodes.get(nid)
+        if not isinstance(nd, dict):
+            continue
+        nxt = chain[i + 1] if i + 1 < len(chain) else None
+        t = nd.get("type")
+        if nd.get("cut") or t in ("branch", "switch", "input", "common"):
+            # 断开标记的意思就是"没有下一个"；分支/枝干没有直落出口；
+            # 【输入】是参数声明、收口节点进入后不返回 —— 都不该有链上下一个。
+            nxt = None
+        nd.pop("cut", None)      # 断开的意思已经由 next=None 表达了，不再需要这个标记
+        nd["next"] = nxt
+
+
+def _pull_exit_targets_into_chain(flow):
+    """把"被出口指着、却没接进主链"的节点接进主链（跟在指着它的节点后面）。
+
+    ★ 这是为了让"出口指着谁，谁就在流程里"这条直觉成立：以前这种节点不生成，
+      而出口照样指着它的名字 —— 生成物里就是一条指向不存在节点的引用，
+      本机引擎实测整包 loaded=False（手机上所有任务都跑不起来）。
+    【输入】不在此列：它设计上就离链（参数声明）。"""
+    chain = flow.get("chain") or []
+    nodes = flow.get("nodes") or {}
+    for nid in list(chain):
+        for tgt in exit_targets_of(flow, nid):
+            if tgt not in nodes or tgt in chain:
+                continue
+            if (nodes.get(tgt) or {}).get("type") in ("input", "pick"):
+                continue
+            chain.insert(chain.index(nid) + 1, tgt)
+            flow.setdefault("nodes", {})[tgt].pop("cut", None)
+    flow["chain"] = chain
+
+
 def normalize_flow(flow):
-    """把旧版本流程文件里存成字符串的数值字段转回 int"""
+    """把旧版本流程文件里存成字符串的数值字段转回 int；顺带做两处结构迁移。
+
+    ★ 【输入】节点统一移出主链：它是"参数声明"，不是流程步骤 —— 不该占一个生成节点
+      （以前要在管线里生成一个空步 DoNothing），也不该参与链序执行。
+    ★ 它的注入目标从早期的单值 target 升级为 targets 列表（右侧小球可以拉多条线）。
+    """
+    chain = flow.get("chain") or []
+    nodes = flow.get("nodes") or {}
+    flow["chain"] = [n for n in chain
+                     if (nodes.get(n) or {}).get("type") not in ("input", "pick")]
+    for nd in nodes.values():
+        if not isinstance(nd, dict) or nd.get("type") != "input":
+            continue
+        p = nd.setdefault("props", {})
+        old = p.pop("target", None)
+        if not isinstance(p.get("targets"), list):
+            p["targets"] = []
+        if old and old not in p["targets"]:
+            p["targets"].append(old)
+    # 【分支】的命中出口不再"自动走链上下一个"：老流程（文件里还没有 schemaVersion，
+    # 说明是这次改动之前存的）里没连线的那些，按【当时的生成结果】补成显式连线 ——
+    # 生成物因此一字不变（golden 基线可证）。补完由 save_flow 打上 schemaVersion=3，
+    # 之后打开就不再补：新建的分支"没连线"就是没连线，语义才是"命中即结束"。
+    if _num(flow.get("schemaVersion"), 1) < 3:
+        for nid in list(chain):
+            nd = nodes.get(nid) or {}
+            if not isinstance(nd, dict) or nd.get("type") != "branch":
+                continue
+            if nd.get("hit_next"):
+                continue
+            succ = linear_successor(flow, nid)
+            if succ:
+                nd["hit_next"] = succ
+    # ★ 出口指向"离链"的节点 → 把那个节点接进主链（紧跟指着它的那个节点之后）。
+    #   否则生成物里会出现一条指向不存在节点的 next，引擎会拒绝加载【整个任务包】。
+    #   出口既然指着它，它在用户心里就是流程的一部分 —— 不该还要他去别处手动接一次。
+    #   （【输入】不在此列：它是参数声明，本来就不进链。）
+    if _num(flow.get("schemaVersion"), 1) < 4:
+        _materialize_next(flow)
+    _pull_exit_targets_into_chain(flow)
+    # 边指向已不存在的节点 → 当作"到此结束"（否则生成物里会是悬空引用）
+    for _nid, _nd in (flow.get("nodes") or {}).items():
+        if isinstance(_nd, dict) and "next" in _nd:
+            _nx = _nd.get("next")
+            if _nx and (_nx not in (flow.get("nodes") or {}) or _nx == _nid):
+                _nd["next"] = None
     for nd in flow.get("nodes", {}).values():
         spec = NODE_TYPES.get(nd.get("type"))
         if not spec:
@@ -574,10 +1043,15 @@ def _suppress_reason(flow, nid):
       switch    —— 协议上枝干没有「直落」出口：每个候选各有内容起点，全部未中走
                    miss 出口，所以链上下一个节点只能靠候选 next 连过去。
       common    —— 生成 {next:[Common_*]}，进入公共节点后流程即终止，不返回本流程。
-      switch-content-leaf —— 分支内容叶，跑完即止。"""
+      switch-content-leaf —— 分支内容叶，跑完即止。
+      node-cut  —— 手动标记的「此处断开」：不接下一个（流程到此为止）。"""
     nd = flow.get("nodes", {}).get(nid)
     if nd is None:
         return None
+    if nd.get("cut"):
+        # 断开一个节点时给它的前一个节点打的标记：否则链上"移走中间那个"会让前后
+        # 两个节点自动挨上，等于替你连了一条没画过的线（用户明确不要这种自动补位）。
+        return "node-cut"
     t = nd.get("type")
     if nid in _switch_content_leaves(flow):
         return "switch-content-leaf"
@@ -592,15 +1066,31 @@ def _suppress_reason(flow, nid):
 
 
 def linear_successor(flow, nid):
-    """★ 单一真相源：该节点在生成时的链上后继节点 id；None = 出口被抑制或本就是链尾。
-    调用方：build_pipeline() 与 FlowEditor.redraw()。禁止在别处自行推导链上后继。"""
+    """★ 单一真相源：该节点的"下一个"是哪个节点；None = 到此结束（没有下一个）。
+
+    调用方：build_pipeline() 与 FlowEditor.redraw()。禁止在别处自行推导。
+    ★ v4 起这是一条【真实的边】（nd["next"]）：链序只决定显示顺序，不再自动产生连接。
+      老文件（还没迁移）回退到"链上后继"，保证生成结果不变。"""
     if _suppress_reason(flow, nid) is not None:
         return None
-    chain = flow.get("chain", [])
-    if nid not in chain:
-        return None
-    i = chain.index(nid)
-    return chain[i + 1] if i + 1 < len(chain) else None
+    nd = (flow.get("nodes") or {}).get(nid) or {}
+    if "next" in nd:
+        nxt = nd.get("next")
+        nodes = flow.get("nodes") or {}
+        return nxt if (nxt and nxt in nodes and nxt != nid) else None
+    # ★ "回退到链上后继"只对【老文件】成立（v1~v3 的语义就是链序决定下一个，
+    #   normalize_flow 里的 _materialize_next 会把它们补成显式 next）。
+    #   v4 文件里缺 next 键必须当【到此结束】——无条件回退的话，一个"没写 next 的节点"
+    #   （新建时没选中任何节点 → 放在未接入区 → 后来被接进链的那种）会悄悄连到链上后继：
+    #   博物研学里链尾是滑动 #22，于是"新建一个节点，画布上总多出一根连到 #22 的线"，
+    #   而且生成物里也真多一条 VF_博物研学_36 → VF_博物研学_22 的边（运行时真的会跳过去）。
+    if _num(flow.get("schemaVersion"), 1) < 4:
+        chain = flow.get("chain", [])
+        if nid not in chain:
+            return None
+        i = chain.index(nid)
+        return chain[i + 1] if i + 1 < len(chain) else None
+    return None
 
 
 def exits_of(flow, nid):
@@ -993,6 +1483,190 @@ def _check_disabled(flow, issues):
             f"有 {len(off)} 个节点被禁用，生成物里会被引擎跳过（不会执行）：{shown}"))
 
 
+def _check_ocr_regex(flow, issues):
+    """OCR 文字在引擎里是【正则】而不是普通字符串，非法就会让整个任务包加载失败。
+    这里按生成器的同一套规则（split_ocr_texts / branch_hit_block / _ocr_replace）
+    把每个会写进 expected、replace 的文本编译一遍，把问题在本地拦下。"""
+    for nid, nd in (flow.get("nodes") or {}).items():
+        if not isinstance(nd, dict):
+            continue
+        t, p = nd.get("type"), nd.get("props") or {}
+        if t == "ocr_click":
+            texts, repl = _ocr_expected(p), _ocr_replace(p)
+        elif t == "branch" and str(p.get("ocr_text", "")).strip():
+            texts, repl = split_ocr_texts(p["ocr_text"]), None
+        elif t == "switch":
+            # 枝干候选的判定块取自它连到的分支，文本也会进 expected，
+            # 所以这里按生成物口径再查一遍（分支那边的检查覆盖不到派生值）
+            texts, repl = [], None
+            for c in parse_switch_cands(p.get("candidates")):
+                blk = switch_cand_block(flow, c)
+                if blk and blk.get("recognition") == "OCR":
+                    texts += list(blk.get("expected") or [])
+        else:
+            continue
+        where = f"#{node_no(flow, nid)}「{nd.get('title', '?')}」"
+        for s in texts:
+            err = regex_error(s)
+            if err:
+                issues.append(Issue(
+                    "error", "OCR_REGEX",
+                    f"{where}的 OCR 文字「{s}」不是合法正则"
+                    f"（{err}）；引擎会因此拒绝加载整个任务包，"
+                    f"手机上所有任务都跑不了。要么填普通文字，要么改成合法的正则写法",
+                    nid))
+        for key, _val in (repl or []):
+            err = regex_error(key)
+            if err:
+                issues.append(Issue(
+                    "error", "OCR_REGEX",
+                    f"{where}的易错字替换「{key}」不是合法正则（{err}）", nid))
+
+
+def _check_offchain(flow, issues):
+    """离链节点：只有【输入】【选择】是设计上就离链的（参数声明，靠注入线/选项建立关系）；
+    其它类型离链 = 没接进流程，既不生成也不执行 —— 报个警告，
+    免得"点了节点库加了节点却没反应"找不到原因。"""
+    ch = set(flow.get("chain") or [])
+    nodes = flow.get("nodes") or {}
+    orphan = [n for n, nd in nodes.items()
+              if isinstance(nd, dict) and nd.get("type") not in ("input", "pick")
+              and n not in ch]
+    if not orphan:
+        return
+    shown = "、".join(f"#{node_no(flow, n)}「{nodes[n].get('title', n)}」"
+                     for n in orphan[:6])
+    issues.append(Issue(
+        "warn", "NODE_OFFCHAIN",
+        f"有 {len(orphan)} 个节点还没接进流程（不会生成也不会执行）：{shown}"
+        f"{' 等' if len(orphan) > 6 else ''} —— 选中它，在右侧「连接」把「下一个」"
+        f"选成一个节点即可接进去"))
+
+
+def _check_offchain_exits(flow, issues):
+    """出口指向"还在 nodes 里、但没接进主链"的节点 —— 那是个【不参与生成】的节点。
+
+    这类引用比"指向已删除节点"更隐蔽：删除的节点 tgt 不在 nodes 里，有各自的 *_DEAD 报；
+    离链的节点还在，所以以前一路绿灯，但生成物里会留下一条指向不存在节点的 next/on_error。
+    本机 MaaFw 引擎实测（Resource.post_bundle）：check_next_list 报
+    "Invalid next node name" → check_all_validity failed → 整包 loaded=False，
+    也就是手机上所有任务都跑不起来（铁律 1）。所以这里必须报 error，不能只给警告。"""
+    ch = set(flow.get("chain") or [])
+    nodes = flow.get("nodes") or {}
+    for nid, nd in nodes.items():
+        if not isinstance(nd, dict) or nid not in ch:
+            continue          # 离链节点自己不生成，它的出口不算数（由 NODE_OFFCHAIN 提醒）
+        ex = exits_of(flow, nid) or {}
+        targets = []
+        if ex.get("hit"):
+            targets.append(("✓命中出口", ex["hit"]))
+        if ex.get("miss"):
+            targets.append(("✗未命中出口", ex["miss"]))
+        if ex.get("body_end"):
+            targets.append(("循环体末尾", ex["body_end"]))
+        for ci, c in enumerate(ex.get("candidates") or []):
+            if c.get("next"):
+                targets.append((f"候选{ci + 1}出口", c["next"]))
+        for label, tgt in targets:
+            tnd = nodes.get(tgt)
+            if tnd is None or tgt in ch:
+                continue      # 已删除 / 正常在链上
+            issues.append(Issue(
+                "error", "EXIT_OFFCHAIN",
+                f"#{node_no(flow, nid, 0)}「{nd.get('title', '?')}」的{label}指向"
+                f"「#{node_no(flow, tgt, 0)}{tnd.get('title', tgt)}」，"
+                f"而它【还没接进流程】（不生成也不执行）：生成出来是一条指向不存在节点的"
+                f"引用，引擎会拒绝加载整个任务包，手机上所有任务都跑不起来。"
+                f"请把那个节点接回主链（选中它，在右侧「连接」里给「下一个」选一个节点），"
+                f"或把这个出口改指别的节点", nid))
+
+
+def _check_inputs(flow, issues):
+    """【输入】节点的校验：参数名、注入目标、字段是否存在于目标、校验正则、重复。
+    这些参数最终会写进 interface.json 给 App 的任务编辑栏用，填错等于参数没用。
+    ★ 输入节点是离链的（声明，不是流程步骤），所以这里遍历【全部节点】而不是链。"""
+    nodes = flow.get("nodes") or {}
+    seen_opt = {}
+    seen_slot = {}
+    items = sorted((node_no(flow, nid, 0), nid, nd)
+                   for nid, nd in nodes.items()
+                   if isinstance(nd, dict) and nd.get("type") == "input")
+    for _no, nid, nd in items:
+        p = nd.get("props") or {}
+        no = f"#{node_no(flow, nid, 0)}"
+        where = f"{no}「{nd.get('title', '输入')}」"
+        name = str(p.get("option") or "").strip()
+        if not name:
+            issues.append(Issue("error", "IN_NAME_EMPTY",
+                                f"{where}还没填参数名（App 的【参数】里显示这个名字）", nid))
+        elif name in seen_opt:
+            # 同名是允许的（一个参数覆盖多个节点/字段，写进 interface.json 时合并）——
+            # 但字段定义不一致就是真问题：App 只会拿到第一份 inputs 定义。
+            prev = seen_opt[name]
+            if (str(p.get("var") or "").strip() or name,
+                    str(p.get("kind") or "文本").strip()) != prev[1]:
+                issues.append(Issue(
+                    "warn", "IN_NAME_MIX",
+                    f"{where}和 #{prev[0]} 用了同一个参数名「{name}」但字段定义不一样"
+                    f"（变量名/类型），合并后只有 #{prev[0]} 那份生效", nid))
+        else:
+            seen_opt[name] = (node_no(flow, nid, 0),
+                              (str(p.get("var") or "").strip() or name,
+                               str(p.get("kind") or "文本").strip()))
+        tgts = list(input_targets(nd))
+        # ★ "手写管线的节点名"（老流程的 target_raw）也算连上了：那批流程的注入目标是
+        #   手写管线里的节点（查2_Hit / 升好_礼物…），编辑器流程里没有它们，
+        #   只能按名字写死 —— 这种情况不该报"还没连到要注入的节点"。
+        if not tgts and not parse_raw_targets(p):
+            issues.append(Issue(
+                "error", "IN_NO_TARGET",
+                f"{where}还没连到要注入的节点：把卡片右侧的小球拖到目标节点上，"
+                f"或在「手写管线的节点名」里直接写节点名"
+                f"（注入线只表示参数注入，不代表流程顺序）", nid))
+        field = input_field(p)
+        for tgt in tgts:
+            tnd = nodes.get(tgt)
+            if not isinstance(tnd, dict):
+                issues.append(Issue("error", "IN_TARGET_DEAD",
+                                    f"{where}的注入目标指向已删除的节点", nid))
+                continue
+            if tgt == nid:
+                issues.append(Issue("error", "IN_SELF",
+                                    f"{where}不能把参数注入到自己身上", nid))
+                continue
+            spec = NODE_TYPES.get(tnd.get("type")) or {}
+            keys = {f[0] for f in spec.get("fields", ())}
+            if field not in INPUT_FIELD_NAMES:
+                issues.append(Issue("error", "IN_FIELD",
+                                    f"{where}要改的字段名「{field}」不认识"
+                                    f"（可用：{'、'.join(INPUT_FIELD_NAMES)}）", nid))
+            elif field not in keys:
+                # 覆盖是自由的：字段名对、但目标节点自己不读它 → 白填，只警告
+                issues.append(Issue("warn", "IN_FIELD_UNUSED",
+                                    f"{where}改的「{field}」在目标"
+                                    f"「{tnd.get('title', tgt)}」上没有用到"
+                                    f"（它可用：{'、'.join(sorted(keys))}）", nid))
+            slot = (tgt, field)
+            if slot in seen_slot:
+                issues.append(Issue("warn", "IN_SLOT_DUP",
+                                    f"{where}和 #{seen_slot[slot]} 改的是同一个字段"
+                                    f"（同一个节点 + 同一个字段），用户填两个值会互相覆盖", nid))
+            else:
+                seen_slot[slot] = node_no(flow, nid, 0)
+        verify = str(p.get("verify") or "").strip()
+        if verify:
+            err = regex_error(verify)
+            if err:
+                issues.append(Issue("error", "IN_VERIFY",
+                                    f"{where}的整数校验正则「{verify}」不是合法正则"
+                                    f"（{err}）", nid))
+        val = input_value_expr(p)
+        if "{" not in val:
+            issues.append(Issue("warn", "IN_NO_VAR",
+                                f"{where}的值「{val}」里没用上参数：写 {{变量名}} 才会被"
+                                f"用户在 App 里填的值替换", nid))
+
+
 def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True,
                    _depth=0):
     """模型级校验（不需要生成结果）。返回 list[Issue]，按检出顺序。"""
@@ -1018,8 +1692,14 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
         elif t in ("tpl_click", "wait_tpl", "branch"):
             tpls = split_tpls(p.get("template", ""))
             if not tpls:
-                issues.append(Issue("error", "TPL_MISSING",
-                                    f"{no}{title(nd)}未选择模板图", nid))
+                # 字段被【输入】参数覆盖时，这里也要填一个默认模板：参数是运行期替换，
+                # 不带参数单独跑（直达入口 / 手点任务）用的就是这里的值。
+                who = find_input_for(flow, nid, "template")
+                msg = (f"{no}{title(nd)}未选择模板图"
+                       + (f"（#{who[0]}「{who[1]}」这个参数会覆盖它，"
+                          f"但这里仍要填一个默认模板，否则不带参数单独跑会失败）"
+                          if who else ""))
+                issues.append(Issue("error", "TPL_MISSING", msg, nid))
             else:
                 for tpl in tpls:
                     if not os.path.isfile(os.path.join(IMG_DIR, tpl)):
@@ -1078,30 +1758,35 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                 issues.append(Issue("error", "SWITCH_EMPTY",
                                     f"{no}{title(nd)}枝干没有可用的候选", nid))
             for ci, c in enumerate(cands):
-                spec = switch_cand_spec(c["t"])
-                lab = f"候选{ci + 1}「{c['t']}」"
-                if spec is None:
-                    msg = (f"{no}{title(nd)}{lab}还没选识别目标"
-                           f"（拖「＋」球新建的分支需要补上模板或 OCR 文字）"
-                           if c["t"] == PENDING_TPL else
-                           f"{no}{title(nd)}{lab}格式应为 模板名.png 或 OCR:文字")
-                    issues.append(Issue("error", "CAND_FMT", msg, nid))
-                elif spec[0] == "Template" and not os.path.isfile(
-                        os.path.join(IMG_DIR, c["t"])):
+                lab = f"候选{ci + 1}"
+                tgt, tnd = cand_target(flow, c)
+                if not tgt:
                     issues.append(Issue(
-                        "error", "CAND_TPL_MISSING",
-                        f"{no}{title(nd)}{lab}模板不存在: whmx/image/{c['t']}", nid))
-                nxt = c.get("next")
-                if nxt is not None and nxt not in nodes:
+                        "error", "CAND_NO_TARGET",
+                        f"{no}{title(nd)}{lab}还没连到内容起点：候选判什么就看它连到的"
+                        f"分支节点（拖卡片右侧的圆点连过去；不用的候选请删掉）", nid))
+                elif tnd is None:
                     issues.append(Issue("error", "CAND_EXIT_DEAD",
                                         f"{no}{title(nd)}{lab}命中出口指向已删除节点", nid))
-                elif nxt == nid:
+                elif tgt == nid:
                     issues.append(Issue("error", "CAND_EXIT_SELF",
                                         f"{no}{title(nd)}{lab}命中出口不能指向自己", nid))
+                elif tnd.get("type") != "branch":
+                    issues.append(Issue(
+                        "error", "CAND_NOT_BRANCH",
+                        f"{no}{title(nd)}{lab}连到的「{tnd.get('title', tgt)}」不是分支节点："
+                        f"判定条件（模板图/OCR 文字）只能在【分支】节点里配，"
+                        f"请把它连到一个分支", nid))
+                # 目标是分支、但那个分支还没配条件 → 由分支自己的 TPL_MISSING 报，这里不重复
             mn = p.get("miss_next")
             if mn and mn not in nodes:
                 issues.append(Issue("error", "MISS_EXIT_DEAD",
                                     f"{no}{title(nd)}全部未中出口指向已删除节点", nid))
+        if nd.get("cut") and i < len(chain) - 1:
+            issues.append(Issue(
+                "warn", "NODE_CUT",
+                f"{no}{title(nd)}标了「此处断开」：它后面的 {len(chain) - i - 1} 个节点"
+                f"不会执行；要接回来在右侧「连接」里给「下一个」选一个节点", nid))
         if t == "common" and i < len(chain) - 1:
             ref = str(p.get("node", ""))
             if ref.startswith("VF_"):
@@ -1118,6 +1803,10 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
     _check_timeout_declared(flow, issues)
     _check_disabled(flow, issues)
     _check_loops(flow, issues)
+    _check_ocr_regex(flow, issues)
+    _check_inputs(flow, issues)
+    _check_offchain(flow, issues)
+    _check_offchain_exits(flow, issues)
     _check_subflows(flow, issues, _depth)
     if check_namespace:
         for msg in audit_namespace(flow, root):
@@ -1204,7 +1893,17 @@ def node_key(flow, nid):
 
 def jname(flow, nid):
     """链上节点的 pipeline 名。
-    switch 节点展开为 J1..JN 级联容器，故链上前驱的 next 指向首个判定 J1。"""
+    switch 节点展开为 J1..JN 级联容器，故链上前驱的 next 指向首个判定 J1。
+
+    ★【通道/跳转】节点可以带 props.emit_name = **手写管线里的节点名**（如 征集段2）：
+      这时生成名就用它 —— 老流程的参数（interface.json 里 `征集段2.next` 这种覆盖）
+      才对得上。放在这里而不是各调用点，是为了让"后继/命中/未中/参数目标/枝干候选"
+      全都用同一个名字。"""
+    nd0 = (flow.get("nodes") or {}).get(nid) or {}
+    if nd0.get("type") == "pass":
+        nm = str((nd0.get("props") or {}).get("emit_name") or "").strip()
+        if nm:
+            return nm
     base = f"{entry_name(flow)}_{node_key(flow, nid)}"
     if flow["nodes"][nid].get("type") == "switch":
         return f"{base}_J1"
@@ -1303,6 +2002,13 @@ def _ocr_replace(p):
     return pairs or None
 
 
+def split_ocr_texts(raw):
+    """OCR 文字字段 → 期望文本列表（中英文逗号都能分隔，逐项去空白）。
+    ocr_click 的 text 与 branch 的 ocr_text 共用它，「校验」和「生成」因此看的
+    是同一份结果 —— 校验说合法，生成出来就一定合法。"""
+    return [s.strip() for s in str(raw).replace("，", ",").split(",") if s.strip()]
+
+
 def _ocr_expected(p):
     """OCR 期望文本。props 键沿用历史名 text（旧流程文件因此无需迁移），
     读取时也兼容 expected；输出统一用协议规范字段 expected —— MaaFramework 里
@@ -1310,7 +2016,7 @@ def _ocr_expected(p):
     raw = p.get("text")
     if raw is None or not str(raw).strip():
         raw = p.get("expected", "")
-    return [s.strip() for s in str(raw).replace("，", ",").split(",") if s.strip()]
+    return split_ocr_texts(raw)
 
 
 # ---------- 各节点类型的产出体 ----------
@@ -1445,10 +2151,14 @@ def _emit_wait_tpl(out, name, p, nxt):
 
 def _emit_branch(flow, out, nid, name, p, nxt):
     """分叉容器（项目踩坑结论：on_error 只挂在容器节点上才生效）。
-    返回是否需要生成收口节点（miss 未连线时）。"""
+    返回是否需要生成收口节点（miss 未连线时）。
+
+    ★ 命中出口只认【显式连线】：没连就是"命中即结束"，不再自动走链上下一个。
+      那条隐式边在画布上看不见，最容易让人以为"分支默认会继续往下跑"；
+      老流程在 normalize_flow 里已经把当时的隐式边补成了显式连线，所以生成物不变。"""
     exits = exits_of(flow, nid)
     hit, miss = exits["hit"], exits["miss"]
-    hit_ref = [jname(flow, hit)] if hit else nxt      # 未连线 → 自动链中下一个
+    hit_ref = [jname(flow, hit)] if hit else []      # 未连线 → 命中即结束
     miss_ref = [jname(flow, miss)] if miss else [f"{entry_name(flow)}_End"]
     end_needed = not miss
     out[name] = {
@@ -1457,23 +2167,10 @@ def _emit_branch(flow, out, nid, name, p, nxt):
         "next": [name + "_Hit"],
         "on_error": miss_ref,
     }
-    if str(p.get("ocr_text", "")).strip():
-        hd = {
-            "recognition": "OCR",
-            "expected": [s.strip() for s in
-                         str(p["ocr_text"]).replace("，", ",").split(",") if s.strip()],
-            "action": "DoNothing",
-        }
-    else:
-        hd = {
-            "recognition": "TemplateMatch",
-            "template": tpl_out(p["template"]),
-            "threshold": float(p["threshold"]),
-            "action": "DoNothing",
-        }
-    roi = parse_roi(p.get("roi", ""))
-    if roi:
-        hd["roi"] = roi
+    hd = branch_hit_block(flow, nid)
+    if hd is None:
+        raise FlowValidationError(
+            [f"分支节点未配置判定条件（模板图或 OCR 文字）: {name}"])
     if int(p.get("rate_limit", 0) or 0) > 0:
         hd["rate_limit"] = int(p["rate_limit"])
     if hit_ref:
@@ -1485,6 +2182,24 @@ def _emit_branch(flow, out, nid, name, p, nxt):
 def _emit_common(out, name, p):
     d = {"next": [p["node"]]}
     _put_timeout(d, p)
+    out[name] = d
+
+
+def _emit_pass(out, name, p, nxt):
+    """【通道/跳转】：不识别、不动作，只把控制流送到下一个（引擎默认 DirectHit+DoNothing）。
+    写进生成物的就是 {"next": [...]} —— 与手写管线里那种"过路"节点逐字段相同，
+    所以针对它写的 pipeline_override（如 征集段2.next）能原样生效。"""
+    out[name] = {"next": list(nxt)} if nxt else {"next": []}
+
+
+def _emit_input(out, name, p, nxt):
+    """【输入】节点：正常情况下它【离链】（normalize_flow 会把它移出主链），
+    所以根本不会被发射 —— 它是参数声明，不占管线节点。
+    这里保留一条兜底：万一它还在链上（老文件、手改过），就发一个空步直落下一个，
+    至少不会让它把链断开。"""
+    d = {"action": "DoNothing"}
+    if nxt:
+        d["next"] = nxt
     out[name] = d
 
 
@@ -1503,6 +2218,10 @@ def _emit_startapp(out, name, p, nxt):
 def _emit_switch(flow, out, nid, name, p):
     """枝干判定：候选从左到右级联判定，命中→走该候选内容（执行完枝干结束），
     未中→下一个候选；全部未中→ miss 出口（默认流程结束）。
+
+    ★ 候选判什么不在这里配：判定块直接取自候选连到的那个【分支】节点
+      （见 switch_cand_block）—— 模板图/OCR 文字只在分支里配一次，
+      所以「枝干判定」与「分支判定」用的永远是同一套条件。
     name 是 jname(flow, nid)（形如 ..._J1），展开名由它推导 —— 这样带显式 key
     的枝干节点也能得到一致的名字。"""
     E = entry_name(flow)
@@ -1514,15 +2233,11 @@ def _emit_switch(flow, out, nid, name, p):
     for ci, c in enumerate(cands):
         cur = f"{seq}_J{ci + 1}"
         cur_hit = f"{cur}_Hit"
-        spec = switch_cand_spec(c["t"])
-        # 命中→内容起点（未连则结束）；下一个判定作为未中出口（末位→miss_ref）
-        go = [jname(flow, c["next"])] if c.get("next") else [f"{E}_End"]
-        if spec[0] == "OCR":
-            hd = {"recognition": "OCR",
-                  "expected": [spec[1]], "action": "DoNothing", "next": go}
-        else:
-            hd = {"recognition": "TemplateMatch", "template": spec[1],
-                  "action": "DoNothing", "next": go}
+        hd = switch_cand_block(flow, c)
+        if hd is None:
+            raise FlowValidationError([
+                f"枝干节点「{name}」的候选{ci + 1}没有判定条件："
+                f"把它连到一个分支节点，并在那个分支里选模板图或填 OCR 文字"])
         if ci + 1 < len(cands):
             on_err = [f"{seq}_J{ci + 2}"]
         else:
@@ -1626,6 +2341,13 @@ def _emit_one(flow, out, nid, name, nxt, stack=()):
         return _emit_branch(flow, out, nid, name, p, nxt)
     elif t == "common":
         _emit_common(out, name, p)
+    elif t == "pass":
+        # 生成名可以用 emit_name 指定（老流程要保留手写管线的名字）
+        _emit_pass(out, (str(p.get("emit_name") or "").strip() or name), p, nxt)
+    elif t == "input":
+        _emit_input(out, name, p, nxt)
+    elif t == "pick":
+        pass          # 【选择】是参数声明：只进 interface.json，不生成管线节点
     elif t == "startapp":
         _emit_startapp(out, name, p, nxt)
     elif t == "switch":
@@ -1859,6 +2581,26 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
                 f"{name} 引用了不存在的节点 {tgt}"
                 f"（引擎加载时会拒绝整个任务包，不只是这个流程）"))
 
+    # ---------- I2.5：从入口走不到的节点 = 死节点（2026-09-15 的教训） ----------
+    # 重建流程时把链上的 next 整片丢了 → 任务跑完**第一个节点**就"成功结束"
+    # （日志里 task end [ret=true]，不报错不失败，看着像跑完了）。引擎照样 loaded=True
+    # —— 缺边不是合法性问题，所以只有实跑或结构比对才看得出来。这里把它变成警告。
+    seen, stack = set(), [E]
+    while stack:
+        cur = stack.pop()
+        if cur in seen or cur not in out:
+            continue
+        seen.add(cur)
+        stack += _out_edges(out, cur)
+    orphans = sorted(n for n in out
+                     if not n.startswith("$") and n != E and n != dock_n and n not in seen)
+    if orphans:
+        shown = "、".join(orphans[:5]) + ("…" if len(orphans) > 5 else "")
+        issues.append(Issue(
+            "warn", "NODE_UNREACHABLE",
+            f"生成物里有 {len(orphans)} 个节点从入口 {E} 走不到：{shown}"
+            "（不会执行；多半是重建时丢了边或入口接错 —— 症状是「跑完第一个节点就结束」）"))
+
     # ---------- I3：画布/模型表达的边 == 生成结果实际连的边 ----------
     # 循环展开后一个画布节点对应多份生成节点，所以「实际边」要把各份并起来；
     # 相应地循环体末尾的期望边要同时含「回到循环体首节点」和「接回链上后继」。
@@ -2015,6 +2757,9 @@ def flow_path(name):
 
 def save_flow(flow):
     os.makedirs(FLOWS_DIR, exist_ok=True)
+    # 存盘即视为"已按当前语义整理过"：老文件的隐式边已在 normalize_flow 里补成显式连线，
+    # 打上版本号后，下次打开就不会再补 —— 新建分支"没连线"才是真的没连线。
+    flow["schemaVersion"] = SCHEMA_VERSION
     path = flow_path(flow["name"])
     with open(path, "w", encoding="utf-8") as f:
         json.dump(flow, f, ensure_ascii=False, indent=2)
@@ -2050,9 +2795,8 @@ def template_usage(root=None):
             tpls = []
             if t in ("tpl_click", "wait_tpl", "branch"):
                 tpls += split_tpls(props.get("template"))
-            if t == "switch":
-                tpls += [c["t"] for c in parse_switch_cands(props.get("candidates"))
-                         if str(c["t"]).endswith(".png")]
+            # 枝干候选不再自带模板：它用的模板就是它连到的分支的模板，
+            # 上面那条已经把这个分支收进来了，所以这里不用再算一遍。
             for name in tpls:
                 usage.setdefault(name, [])
                 if fname not in usage[name]:
@@ -2367,7 +3111,127 @@ def jsonc_loads(text):
     return json.loads("".join(out))
 
 
-def upsert_flow_task(data, flow_name, log=None):
+RECO_FIELDS = ("template", "expected", "threshold", "roi")
+
+
+def input_targets(nd):
+    """【输入】节点当前注入到的节点 id 列表（就地返回，可增删）。
+    ★ 一个参数可以注入多个节点：右侧小球往每个目标各拉一条线（就像手写的
+      『目标角色』同时覆盖 CDZB2_Hit / 升2_Hit / 查2_Hit 三个）。"""
+    p = (nd or {}).setdefault("props", {})
+    if not isinstance(p.get("targets"), list):
+        p["targets"] = []
+    return p["targets"]
+
+
+def input_override_pairs(flow, nd):
+    """【输入】节点 → [(生成节点名, 字段名), ...]，每个注入目标一条。
+    识别类字段（模板图/OCR文字/阈值/ROI）在【分支】上落在它的 *_Hit —— 分支的识别块
+    在那里；其余字段（如 repeat）落在节点本身。生成名用 jname()，与 build_pipeline 同源。"""
+    p = (nd or {}).get("props") or {}
+    field = input_field(p)
+    out = []
+    for tgt in list(input_targets(nd)):
+        tnd = (flow.get("nodes") or {}).get(tgt)
+        if not isinstance(tnd, dict):
+            continue
+        name = emit_name_of(flow, tgt) or jname(flow, tgt)
+        if tnd.get("type") == "branch" and field in RECO_FIELDS:
+            name += "_Hit"
+        out.append((name, field))
+    # ★ 手写管线上的节点名（老流程：cdzb.json / zhengji.json 那批）。
+    #   它们不在本流程里，但参数要作用在它们身上 —— 原样当节点名用，
+    #   这样"编辑器里看到的参数"和"手机上真正生效的参数"是同一个。
+    for raw in parse_raw_targets(p):
+        nm = target_name_of(flow, raw)
+        if nm and (nm, field) not in out:
+            out.append((nm, field))
+    return out
+
+
+def input_value_expr(p):
+    """参数的「值表达式」：留空按字段自动 —— 模板图 → {变量}.png（就是"对着文字
+    找同名模板"），其余 → {变量}。App 端：整串正好是一个 {变量} 时按 pipeline_type
+    转 int/bool，混在文本里（{角色}.png）只做字符串替换。"""
+    var = str(p.get("var") or "").strip() or str(p.get("option") or "").strip()
+    expr = str(p.get("value") or "").strip()
+    if expr:
+        return expr
+    if input_field(p) == "template":
+        return f"{{{var}}}.png"
+    return f"{{{var}}}"
+
+
+def flow_input_options(flow):
+    """流程里全部【输入】节点 → interface.json 顶层 option 定义。
+
+    ★ 一个参数可以注入多个节点：右侧小球往每个目标各拉一条线，每个目标一条
+      override（手写的『目标角色』就是这样同时覆盖 CDZB2_Hit / 升2_Hit / 查2_Hit）。
+    ★ 同名参数自动【合并】：拆成多个【输入】节点、参数名写成一样也可以，
+      合并时以第一个节点为准取 label/inputs/说明，pipeline_override 逐个并入。
+    形状与 App 端 TaskPack.kt 的解析逐字段对齐：type=input + inputs + pipeline_override。
+    顺序按节点编号 —— 与画布上看到的 #号一致。"""
+    opts = {}
+    items = sorted((node_no(flow, nid, 0), nid, nd)
+                   for nid, nd in (flow.get("nodes") or {}).items()
+                   if isinstance(nd, dict) and nd.get("type") == "input")
+    for _no, nid, nd in items:
+        p = nd.get("props") or {}
+        name = str(p.get("option") or "").strip()
+        pairs = input_override_pairs(flow, nd)
+        if not name or not pairs:
+            continue
+        expr = input_value_expr(p)
+        if name in opts:
+            # 同名参数：把这一处的覆盖并进去（同一个节点上不同字段要并存，所以按节点深合并）
+            for node_name, field in pairs:
+                opts[name]["pipeline_override"].setdefault(node_name, {})[field] =                     case_value(field, expr)
+            continue
+        var = str(p.get("var") or "").strip() or name
+        is_int = str(p.get("kind") or "文本").strip() == "整数"
+        inp = {"name": var,
+               "label": str(p.get("var_label") or "").strip() or var,
+               "default": str(p.get("default") or ""),
+               "pipeline_type": "int" if is_int else "string"}
+        verify = str(p.get("verify") or "").strip()
+        if is_int and verify:
+            inp["verify"] = verify
+            msg = str(p.get("pattern_msg") or "").strip()
+            if msg:
+                inp["pattern_msg"] = msg
+        o = {"type": "input", "label": name, "inputs": [inp],
+             "pipeline_override": {}}
+        for node_name, field in pairs:
+            # 值是节点名列表的字段（next）要写成数组、纯数字写 int —— 与【选择】同一套口径
+            o["pipeline_override"].setdefault(node_name, {})[field] = case_value(field, expr)
+        desc = str(p.get("desc") or "").strip()
+        if desc:
+            o["description"] = desc
+        opts[name] = o
+    # 【选择】节点 → type=select + cases（每个选项覆盖不同字段/节点）。
+    # 不走"同名合并"（select 的 cases 是整份替换语义，合并会写出四不像）。
+    picks = sorted((node_no(flow, nid, 0), nid, nd)
+                   for nid, nd in (flow.get("nodes") or {}).items()
+                   if isinstance(nd, dict) and nd.get("type") == "pick")
+    for _no, nid, nd in picks:
+        p = nd.get("props") or {}
+        name = str(p.get("option") or "").strip()
+        cases = pick_cases(flow, nd)
+        if not name or not cases:
+            continue
+        label = (str(p.get("var_label") or "").strip() or name)
+        o = {"type": "select", "label": name, "cases": cases}
+        o["default_case"] = str(p.get("default") or "").strip() or cases[0]["name"]
+        if label != name:
+            o["label"] = label
+        desc = str(p.get("desc") or "").strip()
+        if desc:
+            o["description"] = desc
+        opts[name] = o
+    return opts
+
+
+def upsert_flow_task(data, flow_name, log=None, options=None):
     """注册可视化流程到清单：
       - 清单里已有同名正式任务 → 转正（entry 切到 VF_ 流程，主队列直接生效），
         并移除之前的独立小工具条目（避免重复）
@@ -2384,23 +3248,43 @@ def upsert_flow_task(data, flow_name, log=None):
             if log:
                 log(f"清单任务【{flow_name}】入口已切换 → {entry}"
                     + (f"（原 {old}）" if old else "") + "，主队列生效")
-    # 转正后移除指向同一流程的独立小工具条目（防重复）
-    tasks[:] = [t for t in tasks
-                if not (t.get("entry") == entry and t.get("group") == ["tools"])]
+    # 转正后移除指向同一流程的**重复**小工具条目（防重复）。
+    # ★ 只有当同一个流程另外还挂着一个正式任务（非 tools 分组）时才该删 —— 否则删掉的
+    #   就是任务本身，它会被重新追加到清单末尾：任务在 App 里跳到最后一行，标签页上手写的
+    #   label / description / default_check 也一起丢。查找器者就是这种（它本来就在【小工具】
+    #   分组里，迁移后 entry 变成 VF_查找器者，同步一次就会被挪到清单末尾）。
+    if any(t.get("entry") == entry and t.get("group") != ["tools"] for t in tasks):
+        tasks[:] = [t for t in tasks
+                    if not (t.get("entry") == entry and t.get("group") == ["tools"])]
     if not any(t.get("entry") == entry for t in tasks):
         tasks.append({"name": flow_name, "label": flow_name, "entry": entry,
                       "group": ["tools"]})
+    # 【输入】节点声明的参数 → 顶层 option + 挂到本任务上（App 的任务编辑栏显示的就是它们）。
+    # 只增改、不删除：手工维护的那些参数（升好感度/装卸装备/刷冬谷币…）不能被自动清掉，
+    # 流程里没有【输入】节点时连任务的 option 列表都不动。
+    if options:
+        book = data.setdefault("option", {})
+        for nm in options:
+            if nm in book and book[nm] != options[nm] and log:
+                log(f"参数【{nm}】已存在，按流程里的【输入】节点覆盖它的定义", "warn")
+            book[nm] = options[nm]
+        for t in tasks:
+            if t.get("entry") == entry:
+                t["option"] = list(options)
+        if log:
+            log("已写入参数: " + "、".join(options))
 
 
-def register_on_phone(flow_name, log):
+def register_on_phone(flow_name, log, options=None):
     """把流程注册进手机端 interface.json（group=tools），重启 App 后出现在【小工具】栏。
-    只改手机上的运行副本，本地 whmx/interface.json 不动；改前手机端备份 .bak。"""
+    只改手机上的运行副本，本地 whmx/interface.json 不动；改前手机端备份 .bak。
+    options = 流程里【输入】节点声明的参数（App 任务编辑栏里的可填项）。"""
     text = adb_text(adb("shell",
                         f"run-as {PKG} sh -c 'cat files/taskpacks/whmx/interface.json'"))
     if not text:
         raise RuntimeError("读取手机 interface.json 失败（任务包是否已安装?）")
     data = jsonc_loads(text)
-    upsert_flow_task(data, flow_name, log)
+    upsert_flow_task(data, flow_name, log, options=options)
     adb("shell",
         f"run-as {PKG} sh -c 'cp files/taskpacks/whmx/interface.json"
         f" files/taskpacks/whmx/interface.json.bak'")
@@ -2612,12 +3496,15 @@ class FlowEditor:
         self._undo = []             # 撤销栈：[(flow 文本, 合并标签, 时间)]（P2-4）
         self._redo = []
         self._clipboard = None      # 复制的节点（P2-5）
+        self.multi = set()          # 右键框选出来的多个节点（批量删除用）
+        self.band = None            # 正在拖的框选矩形（模型坐标 x0,y0,x1,y1）
         self.roi_pick = None        # ROI 拖框状态（P2-6）
         self.tpl_win = None         # 模板管理窗口
         # 画布视图：模型坐标（world）不变，绘制时统一乘 zoom，交互时统一除 zoom。
         # 这样节点永远存在同一处，缩放/平移只是「看的方式」。
         self.zoom = 1.0
         self._pan = None            # 中键拖动平移状态
+        self._pan_left = False      # 左键在空白处拖动 = 平移（见 on_down/on_motion/on_up）
         self._bg_cache = None       # 背景帧 PhotoImage 缓存（按 zoom 失效）
 
         self._build_toolbar()
@@ -2752,29 +3639,91 @@ class FlowEditor:
         ttk.Label(bar, text="  同步后需重启 App 生效",
                   style="Dim.TLabel", background=THEME["bg"]).pack(side="left")
 
+    def _pal_group(self, parent, key, title, tip=""):
+        """左栏的一个可折叠分组：点标题行展开/收起（状态记在内存里）。
+        左栏东西太多，收起来就不用滚了。返回内容容器。"""
+        collapsed = getattr(self, "_pal_collapsed", None)
+        if collapsed is None:
+            collapsed = self._pal_collapsed = {}
+        head = ttk.Frame(parent)
+        head.pack(fill="x", padx=6, pady=(8, 0))
+        lbl = tk.Label(head, anchor="w", justify="left",
+                       bg=THEME["panel"], fg=THEME["text"],
+                       font=FONT_B, cursor="hand2", padx=4, pady=3)
+        lbl.pack(fill="x")
+        body = ttk.Frame(parent)
+
+        def _toggle(_e=None):
+            collapsed[key] = not collapsed.get(key, False)
+            _apply()
+
+        def _apply():
+            if collapsed.get(key, False):
+                body.pack_forget()
+                lbl.config(text=f"  ▸ {title}")
+            else:
+                # ★ 必须 after=head：pack_forget() 之后再 pack() 会排到父容器最后，
+                #   展开后内容就跑到别的分组下面去了（要回到自己标题下面才对）。
+                body.pack(fill="x", pady=(2, 0), after=head)
+                lbl.config(text=f"  ▾ {title}" + (f"　{tip}" if tip else ""))
+        lbl.bind("<Button-1>", _toggle)
+        _apply()
+        return body
+
     def _build_palette(self):
-        left = ttk.Frame(self.root, width=172)
-        left.pack(side="left", fill="y")
-        left.pack_propagate(False)
-        ttk.Label(left, text="  节 点 库", style="Title.TLabel").pack(
-            anchor="w", padx=8, pady=(10, 4))
-        ttk.Label(left, text="  点击添加到流程末尾", style="Dim.TLabel").pack(
-            anchor="w", padx=8, pady=(0, 6))
+        col = ttk.Frame(self.root, width=190)
+        col.pack(side="left", fill="y")
+        col.pack_propagate(False)
+        # 左栏套一层画布做滚动：几段加起来比窗口高，以前最下面的按钮会被窗口底边
+        # 裁掉而且滚不到。现在滚动 + 分组折叠两件都有：想全看就折起来，想找就滚。
+        pc = tk.Canvas(col, bg=THEME["panel"], highlightthickness=0, width=190)
+        vsb = ttk.Scrollbar(col, orient="vertical", command=pc.yview)
+        pc.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        pc.pack(side="left", fill="both", expand=True)
+        self._palette_canvas = pc
+        left = ttk.Frame(pc)
+        win = pc.create_window((0, 0), window=left, anchor="nw")
+
+        def _pal_w(e):
+            try:
+                pc.itemconfigure(win, width=max(1, e.width))
+            except tk.TclError:
+                pass
+
+        def _pal_scroll(e):
+            try:
+                pc.configure(scrollregion=pc.bbox("all"))
+            except tk.TclError:
+                pass
+
+        def _pal_wheel(e):
+            pc.yview_scroll(int(-e.delta / 120), "units")
+        left.bind("<Configure>", _pal_scroll)
+        pc.bind("<Configure>", _pal_w)
+        pc.bind("<Enter>", lambda e: pc.bind_all("<MouseWheel>", _pal_wheel))
+        pc.bind("<Leave>", lambda e: pc.unbind_all("<MouseWheel>"))
+
+        # ── 分组 1：节点库 ──────────────────────────────────────────
+        g = self._pal_group(left, "nodes", "节 点 库", "点击添加")
         for t in TYPE_ORDER:
             spec = NODE_TYPES[t]
-            b = tk.Button(left, text=f" {spec['icon']}  {spec['label']}",
+            b = tk.Button(g, text=f" {spec['icon']}  {spec['label']}",
                           command=lambda tt=t: self.add_node(tt),
                           bg=THEME["panel"], fg=spec["light"],
                           activebackground=THEME["card_hi"],
                           activeforeground=spec["light"],
-                          relief="flat", bd=0, anchor="w", padx=14, pady=6,
+                          relief="flat", bd=0, anchor="w", padx=12, pady=5,
                           font=FONT, cursor="hand2", highlightthickness=0)
             b.pack(fill="x", padx=8, pady=1)
             b.bind("<Enter>", lambda e, bb=b: bb.config(bg=THEME["card_hi"]))
             b.bind("<Leave>", lambda e, bb=b: bb.config(bg=THEME["panel"]))
-        self._flat_btn(left, "✥  整理布局", self.tidy_layout,
-                       font=FONT_SM).pack(fill="x", padx=8, pady=(12, 0))
-        zrow = ttk.Frame(left)
+
+        # ── 分组 2：视图与布局 ──────────────────────────────────────
+        g = self._pal_group(left, "view", "视图与布局")
+        self._flat_btn(g, "✥  整理布局", self.tidy_layout,
+                       font=FONT_SM).pack(fill="x", padx=8, pady=(2, 0))
+        zrow = ttk.Frame(g)
         zrow.pack(fill="x", padx=8, pady=(4, 0))
         self._flat_btn(zrow, "－", lambda: self.zoom_out(), padx=7,
                        font=FONT_SM).pack(side="left")
@@ -2782,23 +3731,28 @@ class FlowEditor:
                        font=FONT_SM).pack(side="left", padx=3)
         self._flat_btn(zrow, "＋", lambda: self.zoom_in(), padx=7,
                        font=FONT_SM).pack(side="left")
+        self._flat_btn(g, "⤢  适配窗口", lambda: self.zoom_fit(),
+                       font=FONT_SM).pack(fill="x", padx=8, pady=1)
         self._flat_btn(left, "⤢  适配窗口", lambda: self.zoom_fit(),
                        font=FONT_SM).pack(fill="x", padx=8, pady=1)
 
-        ttk.Separator(left).pack(fill="x", pady=12, padx=8)
-        ttk.Label(left, text="  背景帧 · 对照坐标", style="Title.TLabel").pack(
-            anchor="w", padx=8, pady=(0, 4))
-        self._flat_btn(left, "⟳  抓帧 (F5)", self.on_capture).pack(fill="x", padx=8, pady=1)
-        self._flat_btn(left, "🩺  运行回放…", self.on_replay_open).pack(fill="x", padx=8, pady=1)
-        self._flat_btn(left, "✛  框选模板…", self.on_pick_template).pack(fill="x", padx=8, pady=1)
-        self._flat_btn(left, "📂  打开帧图…", self.on_open_frame).pack(fill="x", padx=8, pady=1)
-        self._flat_btn(left, "🗂  模板管理…", self.on_template_manager).pack(
+        # ── 分组 3：帧画面与工具 ────────────────────────────────────
+        g = self._pal_group(left, "frame", "帧画面 · 工具")
+        self._flat_btn(g, "⟳  抓帧 (F5)", self.on_capture).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(g, "🔍  帧画面窗口…", lambda: self._open_frame_window()).pack(
             fill="x", padx=8, pady=1)
-        ttk.Checkbutton(left, text="显示背景帧", variable=self.show_bg,
-                        command=self.redraw).pack(anchor="w", padx=12, pady=3)
-        self.frame_lbl = ttk.Label(left, text="", style="Dim.TLabel", justify="left")
+        self._flat_btn(g, "🩺  运行回放…", self.on_replay_open).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(g, "✛  框选模板…", self.on_pick_template).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(g, "📂  打开帧图…", self.on_open_frame).pack(fill="x", padx=8, pady=1)
+        self._flat_btn(g, "🗂  模板管理…", self.on_template_manager).pack(
+            fill="x", padx=8, pady=1)
+        self._make_toggle(g, self.show_bg, "画布上显示背景帧").pack(
+            anchor="w", padx=10, pady=3)
+        self.show_bg.trace_add("write", lambda *_: self.redraw())
+        self.frame_lbl = ttk.Label(g, text="", style="Dim.TLabel", justify="left")
         self.frame_lbl.pack(anchor="w", padx=12, pady=2)
         self._update_frame_label()
+        ttk.Frame(left).pack(fill="x", pady=6)
 
     def _build_canvas(self):
         # 画布外套一层容器，好在下沿挂横向滚动条：流程 40 个节点时主链列在
@@ -2816,7 +3770,11 @@ class FlowEditor:
         self.canvas.bind("<ButtonRelease-1>", self.on_up)
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind("<Delete>", self.on_delete_key)
-        # 中键拖动平移 / Ctrl+滚轮缩放（见 _on_mousewheel）
+        # 平移：空白处按住左键拖、或中键拖；缩放：Ctrl+滚轮（见 _on_mousewheel）
+        # 右键拖框：快速框选多个节点（框完按 Delete 删除，Esc 取消）
+        self.canvas.bind("<ButtonPress-3>", self.on_band_start)
+        self.canvas.bind("<B3-Motion>", self.on_band_move)
+        self.canvas.bind("<ButtonRelease-3>", self.on_band_end)
         self.canvas.bind("<Button-2>", self.on_pan_start)
         self.canvas.bind("<B2-Motion>", self.on_pan_move)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_end)
@@ -2951,7 +3909,7 @@ class FlowEditor:
     def _build_statusbar(self):
         self.status_var = tk.StringVar(
             value="就绪 · F5 抓帧 ｜ 拖动节点排序 ｜ 拖分支端口连线 ｜ Ctrl+Z 撤回 / Ctrl+Y 重做 ｜ "
-                  "Ctrl+滚轮缩放 ｜ 中键拖动平移 ｜ Delete 删除 ｜ Ctrl+S 保存")
+                  "Ctrl+滚轮缩放 ｜ 空白处拖动平移 ｜ Delete 删除 ｜ Ctrl+S 保存")
         tk.Label(self.root, textvariable=self.status_var, bg=THEME["bg"],
                  fg=THEME["text_dim"], anchor="w", padx=10, pady=3,
                  font=FONT_SM).pack(fill="x", side="bottom")
@@ -2980,6 +3938,10 @@ class FlowEditor:
         self.flow = new_flow("测试流程")
         self.name_var.set(self.flow["name"])
         self.sel = None
+        # ★ 新建出来的流程还没有对应文件，必须把「当前打开的文件」清掉：
+        #   否则第一次保存时 on_save 会以为这是「改名」，把上次打开的那个流程文件删掉
+        #   （2026-09-15 事故：打开 博物研学 → 新建 → 改名 刷活动关 保存 ⇒ 博物研学.flow.json 被删）
+        self._loaded_path = None
         self.build_prop_panel()
         self.redraw()
         self.log("已新建空白流程")
@@ -3016,6 +3978,7 @@ class FlowEditor:
             self.canvas.yview_moveto(0)
             self.canvas.xview_moveto(0)
             self.log(f"已打开 {os.path.basename(path)}（{len(self.flow['chain'])} 个节点）")
+            self._auto_layout_if_overlapping()
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
@@ -3058,10 +4021,41 @@ class FlowEditor:
         p = dict(spec["defaults"])
         if props:
             p.update(props)
+        if ntype == "input":
+            # 【输入】是"参数声明"，不进主链：放到主链右侧的参数区，不参与链序、
+            # 不生成管线节点；它注入到哪些节点由右侧小球拉线决定（拖线时才建立关系）。
+            x, y = pos if pos else self._param_col_pos()
+            node = {"type": ntype, "x": self._snap(x), "y": self._snap(y),
+                    "title": spec["label"], "props": p, "num": self._next_num()}
+            self.flow["nodes"][nid] = node
+            self.sel = nid
+            self.build_prop_panel()
+            self.redraw()
+            self._scroll_to(node["y"])
+            self.log("已新建【输入】节点（它不占流程顺序）：填好参数名，"
+                     "再把卡片右侧的「注入」小球拖到要注入的节点上")
+            return nid
+        if ntype == "pick":
+            # 【选择】也是参数声明：不占流程顺序，选项在属性面板里逐条填
+            x, y = pos if pos else self._param_col_pos()
+            node = {"type": ntype, "x": self._snap(x), "y": self._snap(y),
+                    "title": spec["label"], "props": p, "num": self._next_num()}
+            self.flow["nodes"][nid] = node
+            self.sel = nid
+            self.build_prop_panel()
+            self.redraw()
+            self._scroll_to(node["y"])
+            self.log("已新建【选择】节点（它不占流程顺序）：填好参数名，"
+                     "再在下面逐条加选项（名称 / 目标节点 / 字段 / 值）")
+            return nid
         # ★ 新建节点挂在【当前选中节点】的出口下：链上插到它后面，
         #   而不是像以前那样一律甩到链尾（链尾决定了 next，会让新节点接到别的节点后面）。
-        #   没有选中任何节点时保持老行为（追加到链尾）。
-        anchor = self.sel if (self.sel and self.sel in self.flow["nodes"]) else None
+        anchor = self.sel if (self.sel and self.sel in self.flow["nodes"]
+                              and self.sel in self.flow["chain"]) else None
+        # 选中的节点本身还没接进流程时，没有"插在它后面"这个位置 → 新节点也先不接
+        offchain_sel = bool(self.sel and self.sel in self.flow["nodes"]
+                            and anchor is None)
+        standalone = False        # 没选中任何节点 → 建出来先不接进流程（见下）
         if pos:
             x, y = pos
         elif anchor:
@@ -3069,12 +4063,12 @@ class FlowEditor:
             ah = self._sw_h(a) if a["type"] == "switch" else CARD_H
             x, y = a["x"], a["y"] + ah + 26
         else:
-            last = self.flow["chain"][-1] if self.flow["chain"] else None
-            if last:
-                nd = self.flow["nodes"][last]
-                x, y = nd["x"], nd["y"] + CARD_H + 26
-            else:
-                x, y = TIDY_X, GRID
+            # ★ 没选中任何节点 → 新节点【先不接进流程】：放到右侧"未接入"区，
+            #   不接任何节点、不参与生成。以前是"接到链尾节点后面"，等于点一下节点库
+            #   就悄悄改了已有流程的走向（那条边还是看不见的链上顺序）。
+            #   要接进去：选中它，在右侧「连接」里把「下一个」选成一个节点即可。
+            x, y = self._spot_in_view(card_h({"type": ntype, "props": p}))
+            standalone = True
         x, y = self._snap(x), self._snap(y)
         node = {"type": ntype, "x": x, "y": y, "title": spec["label"], "props": p,
                 "num": self._next_num()}
@@ -3082,24 +4076,39 @@ class FlowEditor:
             node["hit_next"] = hit_next
             node["miss_next"] = miss_next
         self.flow["nodes"][nid] = node
-        if anchor:
-            self.flow["chain"].insert(self.flow["chain"].index(anchor) + 1, nid)
-        else:
-            self.flow["chain"].append(nid)
+        if not standalone:
+            if anchor:
+                self._chain_insert(self.flow["chain"].index(anchor) + 1, nid)
+                # 边：锚点的下一个变成新节点；新节点接上锚点原来的下一个（原样往后挪一位）
+                a_nd = self.flow["nodes"][anchor]
+                node["next"] = a_nd.get("next")
+                a_nd["next"] = nid
+                a_nd.pop("cut", None)
+            else:
+                self._chain_insert(len(self.flow["chain"]), nid)
+                node["next"] = None
         # ★ 让位：把链上【本节点之后】的节点整体下移一行。
         #   否则新节点看着在 A 下面，链序却排在"A 后面的后面"（例如 A 与下一个节点
         #   是并排同一行时），一拖动就被按位置重排成"挂到别的节点下"。
         if anchor:
             gap = (self._sw_h(node) if ntype == "switch" else CARD_H) + 26
-            idx = self.flow["chain"].index(nid)
+            anchor_y = self.flow["nodes"][anchor]["y"]   # 别用上面的局部变量 a：
+            idx = self.flow["chain"].index(nid)          # 显式给了 pos 时它没被赋值
             for other in self.flow["chain"][idx + 1:]:
                 od = self.flow["nodes"][other]
-                if od["y"] >= a["y"]:           # 推开"在锚点这一行及以下"的
+                if od["y"] >= anchor_y:         # 推开"在锚点这一行及以下"的
                     od["y"] = self._snap(od["y"] + gap)
         self.sel = nid
         self.build_prop_panel()
         self.redraw()
         self._scroll_to(y)
+        if standalone:
+            why = ("选中的节点自己还没接进流程" if offchain_sel else "此刻没有选中任何节点")
+            self.log(f"已新建「{spec['label']}」：{why}，所以它【没有接进流程】"
+                     f"（放在最右侧的未接入区，不连任何节点、不参与生成）。"
+                     f"要接进去：选中它，在右侧「连接」把「下一个」选成一个节点"
+                     f"（或选『无：到此结束』排到链尾）", "warn")
+            return nid
         if anchor:
             nd_a = self.flow["nodes"][anchor]
             t_a = nd_a["type"]
@@ -3108,16 +4117,14 @@ class FlowEditor:
             # ★ 关键：像分支/枝干/循环这类节点，出口不是"链上下一个"而是靠端口/候选控制的。
             #   只把它插到链上，生成结果里可能根本没有从 A 到 B 的边（甚至 B 不可达）。
             #   所以这里顺手把 A【空着的出口】真的接到新节点上 —— 这才是"强制被 A 连接"。
-            if t_a == "branch" and not nd_a.get("hit_next"):
-                # ✓命中未连线时，默认行为本来就是"走链上下一个"，显式连上完全等价、且看得见
-                nd_a["hit_next"] = nid
-                linked = "✓命中出口"
-            elif t_a == "switch":
-                # 枝干没有直落出口：追加一个候选指向新节点（等价于把「＋」球拖到它上面），
-                # 识别目标留待你在候选列表里选模板/填 OCR
+            #   例外：【分支】不再自动接 —— 它的 ✓/✗ 出口必须由你拖球显式连；自动接上的
+            #   那条边在画布上看着像"链上顺序"，其实是个决定行为的隐式连线（已经踩过坑）。
+            if t_a == "switch":
+                # 枝干没有直落出口：追加一个候选指向新节点（等价于把「＋」球拖到它上面）。
+                # 候选判什么 = 它连到的那个节点判什么（分支里配模板图/OCR 文字）
                 cands = nd_a.setdefault("props", {}).setdefault("candidates", [])
-                cands.append({"t": PENDING_TPL, "timeout": 3000, "next": nid})
-                linked = f"第 {len(cands)} 个候选(待选识别目标)"
+                cands.append({"timeout": 3000, "next": nid})
+                linked = f"第 {len(cands)} 个候选"
             elif t_a == "loop" and not (nd_a.get("props") or {}).get("body_end"):
                 nd_a.setdefault("props", {})["body_end"] = nid
                 linked = "循环体末尾"
@@ -3127,10 +4134,11 @@ class FlowEditor:
                 why = None
                 if t_a == "common":
                     why = "公共收口节点进入后不返回本流程"
+                elif t_a == "branch":
+                    why = ("它是【分支】：命中/未中都要拖卡片右侧的 ✓/✗ 圆点显式连线"
+                           "（不连 = 命中/未中即结束）")
                 elif _suppress_reason(self.flow, anchor) == "switch-content-leaf":
                     why = "它是某条枝干的分支内容叶，跑完即止"
-                elif t_a == "branch" and nd_a.get("hit_next")                         and nd_a.get("hit_next") != nid                         and nd_a.get("miss_next") != nid:
-                    why = "它的 ✓/✗ 出口都已经接到别的节点了"
                 if why:
                     self.log(f"⚠ 新节点插在「{title_a}」之后，但{why} —— 画布上需要手动连线",
                              "warn")
@@ -3139,35 +4147,119 @@ class FlowEditor:
         return nid
 
     def delete_selected(self):
-        nid = self.sel
-        if not nid:
+        """删除选中的节点：批量（右键框选出来的）优先，否则删当前单选的那个。"""
+        ids = set(self.multi) if self.multi else ({self.sel} if self.sel else set())
+        ids = {i for i in ids if i in self.flow.get("nodes", {})}
+        if not ids:
             return
-        if not messagebox.askyesno("删除节点", "确定删除该节点？"):
-            return
+        if len(ids) == 1:
+            nid = next(iter(ids))
+            if not messagebox.askyesno(
+                    "删除节点", "确定删除该节点？" + self._node_ref_label(nid)):
+                return
+        else:
+            if not messagebox.askyesno(
+                    "删除节点", f"确定删除框选的这 {len(ids)} 个节点？"):
+                return
         self._snapshot()
-        self.flow["nodes"].pop(nid, None)
-        if nid in self.flow["chain"]:
-            self.flow["chain"].remove(nid)
+        # ★ 名字要在删之前取：删完 _node_ref_label 就查不到了（会打出一串空名字）
+        names = "、".join(self._node_ref_label(i)
+                         for i in sorted(ids, key=lambda x: node_no(self.flow, x, 0)))
+        self._delete_nodes(ids)
+        self.sel = None
+        self.multi = set()
+        self.build_prop_panel()
+        self.redraw()
+        self.log(f"已删除 {len(ids)} 个节点：{names}"
+                 f"（指向它们的出口/候选/注入已自动清空；Ctrl+Z 可撤销）", "warn")
+
+    def _delete_nodes(self, ids):
+        """把一批节点真的从流程里去掉：出链、并把指向它们的引用全部清空。
+
+        引用清空很重要：留下死 id 的话，校验会报"指向已删除节点"，生成物里还会是
+        悬空引用（引擎会拒绝加载整个任务包）。"""
+        ids = set(ids)
+        for nid in ids:
+            self.flow["nodes"].pop(nid, None)
+        ch = self.flow["chain"]
+        self.flow["chain"] = [n for n in ch if n not in ids]
         for other in self.flow["nodes"].values():
-            if other.get("hit_next") == nid:
+            if other.get("next") in ids:
+                other["next"] = None          # 边（v4）：不能留指向已删节点的悬空边
+            if other.get("hit_next") in ids:
                 other["hit_next"] = None
-            if other.get("miss_next") == nid:
+            if other.get("miss_next") in ids:
                 other["miss_next"] = None
             if other.get("type") == "switch":
                 op = other.get("props", {})
-                if op.get("miss_next") == nid:
+                if op.get("miss_next") in ids:
                     op["miss_next"] = None
                 for c in op.get("candidates", []):
-                    if isinstance(c, dict) and c.get("next") == nid:
+                    if isinstance(c, dict) and c.get("next") in ids:
                         c["next"] = None
             if other.get("type") == "loop":
                 lop = other.get("props", {})
-                if lop.get("body_end") == nid:
+                if lop.get("body_end") in ids:
                     lop["body_end"] = None
-        self.sel = None
-        self.build_prop_panel()
+            if other.get("type") == "input":
+                # 被删的节点若是某个参数的注入目标，顺手摘掉，别留个死 id
+                tg = input_targets(other)
+                for nid in ids:
+                    while nid in tg:
+                        tg.remove(nid)
+
+    # ---------- 右键拖框：批量选择 ----------
+
+    def on_band_start(self, e):
+        """右键按下：开始拖框。框完（松开）就把框到的节点置为多选。"""
+        cx = self._c2w(self.canvas.canvasx(e.x), self.canvas.canvasy(e.y))
+        self.band = (cx[0], cx[1], cx[0], cx[1])
         self.redraw()
-        self.log("已删除节点")
+        self.status("拖框圈住要处理的节点，松开即选中（选中后按 Delete 删除 / Esc 取消）")
+        return "break"
+
+    def on_band_move(self, e):
+        if self.band is None:
+            return "break"
+        x, y = self._c2w(self.canvas.canvasx(e.x), self.canvas.canvasy(e.y))
+        self.band = (self.band[0], self.band[1], x, y)
+        self._band_pick()          # 边拖边高亮框到的节点
+        self.redraw()
+        return "break"
+
+    def on_band_end(self, _e):
+        if self.band is None:
+            return "break"
+        self.band = None
+        n = len(self.multi)
+        self.redraw()
+        if n:
+            self.log(f"已框选 {n} 个节点：" +
+                     "、".join(self._node_ref_label(i)
+                               for i in sorted(self.multi, key=lambda x: node_no(self.flow, x, 0))) +
+                     "（按 Delete 删除，Esc 取消选择）", "warn")
+            self.status(f"已框选 {n} 个节点 —— 按 Delete 删除")
+        else:
+            self.status("框选未选中任何节点")
+        return "break"
+
+    def _band_pick(self):
+        """把框选矩形里的节点置为多选（与卡片矩形有交集就算选中）。"""
+        if not self.band:
+            self.multi = set()
+            return
+        x0, y0, x1, y1 = self.band
+        bx0, bx1 = min(x0, x1), max(x0, x1)
+        by0, by1 = min(y0, y1), max(y0, y1)
+        picked = set()
+        for nid, nd in self.flow["nodes"].items():
+            if not isinstance(nd, dict):
+                continue
+            nx1 = nd["x"] + CARD_W
+            ny1 = nd["y"] + card_h(nd)
+            if nd["x"] < bx1 and nx1 > bx0 and nd["y"] < by1 and ny1 > by0:
+                picked.add(nid)
+        self.multi = picked
 
     def on_delete_key(self, _e):
         self.delete_selected()
@@ -3181,9 +4273,13 @@ class FlowEditor:
         j = i + d
         if 0 <= j < len(ch):
             self._snapshot()
+            # ★ 链序只决定【显示顺序】：上下移动一律不碰任何边（nd["next"]）。
+            #   以前"移动节点"会顺手改连接，用户看到的就是"我只挪了个位置，
+            #   上面那条连接却断了"。要改连接请用右侧「连接」里的上一个/下一个。
             ch[i], ch[j] = ch[j], ch[i]
             self.build_prop_panel()
             self.redraw()
+            self.log("已在链序里上/下挪了一位（显示顺序，连接不变）")
 
     def align_node(self):
         nid = self.sel
@@ -3193,28 +4289,111 @@ class FlowEditor:
         self.flow["nodes"][nid]["x"] = self._side_col_x()
         self.redraw()
         self._focus_node(nid)      # 挪到侧列后自动滚过去，别让节点"消失"在视野外
-        self.log("已挪到侧列（画布已自动滚到该节点；Ctrl+滚轮缩放 / 中键拖动平移）")
+        self.log("已挪到侧列（画布已自动滚到该节点；Ctrl+滚轮缩放 / 空白处或中键拖动平移）")
+
+    def _auto_layout_if_overlapping(self):
+        """打开流程后：若发现卡片互相重叠就自动排开。
+        老流程（早期导入进来的那些）所有节点常常是同一个坐标，一打开就叠成一坨，
+        看着像"没有节点"。这里按「整理布局」的规则排成主链一列（间距按卡片高度留，
+        枝干卡更高也算进去了），排完可拖动自行调整；保存后下次打开就是排好的。"""
+        bad = overlapping_nodes(self.flow)
+        if not bad:
+            return
+        self.log(f"⚠ 检测到 {len(bad)} 个节点位置重叠（旧流程缺坐标就会这样），"
+                 f"已自动排开：主链一列、按卡片高度留间距；可拖动自行调整", "warn")
+        self.tidy_layout()
+
+    def _loop_target(self, nid, idx):
+        """回环目标：本节点的出口（下一个 / 命中 / 未中 / 候选）里，链序位置明显更靠上
+        （不是紧挨着上一个）的那一个 —— 指回上方就是"回环"。没有 → None。
+
+        典型是重试：【分支】未中 → 【滑动】→ 回到【分支】。链序里滑动排在最底下，
+        所以"未中"那条边要横跨整块画布（博物研学实测 1250px）。
+
+        ★ 只认【纯】回环节点（全部出口都指回上方，如【滑动】只有一个"下一个"）。
+          带向前出口的（分支那种：命中往下走、未中往上回）**不能挪**：分支的 ✓/✗ 端口
+          在卡片右侧，挪到主列右边之后它的向前出口要绕过整张卡片才能回到主列
+          （派遣公司事务实测：挪了 #30/#33 两个分支，总长 4141 → 17749px）。"""
+        ex = exits_of(self.flow, nid) or {}
+        cands = [ex.get("linear"), ex.get("hit"), ex.get("miss")]
+        cands += [c.get("next") for c in (ex.get("candidates") or [])]
+        outs = [t for t in cands if t]
+        up = [t for t in outs if t in idx and idx[t] < idx[nid] - 1]
+        fwd = [t for t in outs if not (t in idx and idx[t] < idx[nid])]
+        if not up or fwd:
+            return None
+        return min(up, key=lambda t: idx[t])
 
     def tidy_layout(self):
-        """整理布局：把主链排成靠左的一列。
+        """整理布局：主链一列 + 回环列（目标旁边）+ 参数列（【输入】贴着它的目标）。
         - x 固定在最左边（TIDY_X），不再排到帧右侧 —— 那里超出可视宽，点了就像"节点全跑了"
         - 纵向间距按每张卡片的【真实高度】留（枝干卡比普通卡高一截，
           以前按固定 CARD_H 留间距会让下一张压在它身上）"
+        - ★ 回环节点（出口指回链序上方的）挪到目标【右侧那一列】贴着它，而不是沉在
+          主列最底下 —— 否则"未中→滑动→回到分支"这条边要跨整块画布（实测 1200~1600px）
+        - ★ 离链【输入】节点按"第一个目标"的 y 对齐放参数列：注入线因此成了一条短横线
+          （以前全堆在参数列顶部，注入线要跨 1300~1600px）
         - 排完把视图拉回左上角"""
+        import math as _math
         self._snapshot()
+        ch = self.flow["chain"]
+        idx = {nid: i for i, nid in enumerate(ch)}
+        # 1) 主列：链序自上而下
         y = GRID
-        for nid in self.flow["chain"]:
+        for nid in ch:
             nd = self.flow["nodes"][nid]
             h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
             nd["x"] = TIDY_X
             nd["y"] = self._snap(y)
             # 纵向步长向上取整到网格的整数倍，保证每张卡片都落在网格线上
-            import math as _math
             y += _math.ceil((h + 26) / GRID) * GRID
+        step = _math.ceil((CARD_H + 26) / GRID) * GRID
+        # 2) 回环节点：目标右侧那一列，y 贴着目标（同目标多个就往下错开）
+        loops = [(nid, self._loop_target(nid, idx)) for nid in ch]
+        loops = [(nid, t) for nid, t in loops if t is not None]
+        if loops:
+            lx = self._loop_col_x()
+            taken = []
+            for nid, tgt in sorted(loops, key=lambda p: idx[p[1]]):
+                ly = self.flow["nodes"][tgt]["y"]
+                while any(abs(ly - t) < step for t in taken):
+                    ly += step
+                taken.append(ly)
+                nd = self.flow["nodes"][nid]
+                nd["x"] = lx
+                nd["y"] = self._snap(ly)
+        # 3) 离链【输入】节点：对齐它的第一个目标的 y
+        px = self._param_col_x()
+        taken = []
+        free_y = GRID
+        for nid, nd in self.flow["nodes"].items():
+            if nd.get("type") not in ("input", "pick") or nid in ch:
+                continue
+            tgts = [t for t in input_targets(nd) if t in self.flow["nodes"]]
+            ty = [self.flow["nodes"][t]["y"] for t in tgts]
+            want = min(ty) if ty else free_y
+            while any(abs(want - t) < step for t in taken):
+                want += step
+            taken.append(want)
+            free_y = max(free_y, want + step)
+            nd["x"] = px
+            nd["y"] = self._snap(want)
+        # 4) 未接入流程的节点：再往右一列
+        dx = self._draft_col_x()
+        dy = GRID
+        for nid, nd in self.flow["nodes"].items():
+            if nid in ch or nd.get("type") in ("input", "pick"):
+                continue
+            nd["x"] = dx
+            nd["y"] = self._snap(dy)
+            import math as _math
+            dy += _math.ceil((CARD_H + 26) / GRID) * GRID
         self.redraw()
         self.canvas.xview_moveto(0)
         self.canvas.yview_moveto(0)
-        self.log(f"已整理布局：主链排成靠左一列（x={TIDY_X}），纵向不再重叠")
+        self.log(f"已整理布局：主链排成靠左一列（x={TIDY_X}）"
+                 + ("，回环节点贴到目标右侧" if loops else "")
+                 + "，【输入】按目标对齐排在参数列，纵向不再重叠")
 
     def _chain_col_x(self):
         fw = self.bg_disp[2] if self.bg_disp else 750
@@ -3224,6 +4403,73 @@ class FlowEditor:
         """侧列 x。缩放到最小也放不下时，侧列其实「在右边」——所以 align 之后
         必须自动滚过去（见 align_node），不能让人以为节点没了。"""
         return self._snap(self._chain_col_x() + CARD_W + 100)
+
+    def _visible_rect(self):
+        """当前可见视口在【模型坐标】下的矩形 (x0, y0, x1, y1)"""
+        z = self.zoom or 1.0
+        w = max(1, self.canvas.winfo_width())
+        h = max(1, self.canvas.winfo_height())
+        x0, y0 = self._c2w(self.canvas.canvasx(0), self.canvas.canvasy(0))
+        x1, y1 = self._c2w(self.canvas.canvasx(w), self.canvas.canvasy(h))
+        return x0, y0, x1, y1
+
+    def _card_hits(self, x, y, h):
+        """把卡片放在 (x, y)（高 h）会不会压住已有卡片"""
+        for nd in self.flow["nodes"].values():
+            if (x < nd["x"] + CARD_W and nd["x"] < x + CARD_W
+                    and y < nd["y"] + card_h(nd) and nd["y"] < y + h):
+                return True
+        return False
+
+    def _spot_in_view(self, h=CARD_H):
+        """可见视口右上角的一个空位（模型坐标）。
+        新节点要"出现在眼前"——以前是放到整个画布最右侧（内容之外），得滚半天才找得到。"""
+        _x0, y0, x1, _y1 = self._visible_rect()
+        x = self._snap(x1 - CARD_W - GRID)
+        y = self._snap(y0 + GRID)
+        for _ in range(30):
+            if not self._card_hits(x, y, h):
+                break
+            y = self._snap(y + h + GRID)
+        return x, y
+
+    def _chain_max_x(self):
+        """主列里最靠右的 x —— 各类「侧区」列的基准（参数列 / 回环列 / 草稿列）。
+        不含离链节点、也不含回环节点：它俩本来就住在侧区里，
+        算进来会互相推着往右跑（回环列一算完就落进自己的基准里，参数列被推出去 300+px）。"""
+        ch = self.flow["chain"]
+        idx = {nid: i for i, nid in enumerate(ch)}
+        xs = [nd["x"] for nid, nd in self.flow["nodes"].items()
+              if nid in idx and self._loop_target(nid, idx) is None]
+        return max(xs) if xs else float(TIDY_X)
+
+    def _param_col_x(self):
+        """离链【输入】节点的 x：回环列（有的话）右侧的"参数区"一列"""
+        base = self._loop_col_x() if self._has_loop_nodes() else self._chain_max_x()
+        return self._snap(base + CARD_W + 120)
+
+    def _has_loop_nodes(self):
+        """链上有没有"回环节点"（出口指回链序上方的，见 _loop_target）"""
+        ch = self.flow["chain"]
+        idx = {nid: i for i, nid in enumerate(ch)}
+        return any(self._loop_target(nid, idx) is not None for nid in ch)
+
+    def _loop_col_x(self):
+        """回环节点（滑动重试那种）那一列：紧挨主列右侧 —— 贴着它的目标，回环线才短"""
+        return self._snap(self._chain_max_x() + CARD_W + 60)
+
+    def _param_col_pos(self):
+        """参数区里的下一个空位（排在已有【输入】节点下面）"""
+        x = self._param_col_x()
+        ys = [nd["y"] for nd in self.flow["nodes"].values()
+              if nd.get("type") in ("input", "pick") and abs(nd["x"] - x) < CARD_W]
+        y = (max(ys) + CARD_H + 26) if ys else GRID
+        return x, self._snap(y)
+
+    def _draft_col_x(self):
+        """未接入流程的节点（点节点库时没选中任何节点 → 建出来先不接）的 x：
+        「整理布局」把它们收到参数区右边那一列（新建时是放在可见视口右上角）"""
+        return self._snap(self._param_col_x() + CARD_W + 120)
 
     def _scroll_to(self, y):
         sr = self.canvas.cget("scrollregion").split()
@@ -3240,7 +4486,7 @@ class FlowEditor:
         else:
             self.canvas.yview_scroll(int(-e.delta / 120), "units")
 
-    # ---------- 平移：中键拖动（scan_mark/scan_dragto，鼠标按住哪就跟着走） ----------
+    # ---------- 平移：空白处左键拖 / 中键拖（scan_mark/scan_dragto，按住哪就跟着走） ----------
 
     def on_pan_start(self, e):
         try:
@@ -3273,7 +4519,8 @@ class FlowEditor:
             self.status("抓帧失败")
             return
         self.load_frame(path)
-        self.log(f"已抓帧 {path}")
+        self._open_frame_window()          # 抓帧 → 直接在独立窗口里显示，方便取点
+        self.log(f"已抓帧 {path}（已在「帧画面」窗口里打开，可直接取点）")
 
     def on_pick_template(self):
         """唤起模板框选工具（带负样本校验）；保存到 whmx/image 后模板下拉即可选到"""
@@ -3300,10 +4547,13 @@ class FlowEditor:
         img = Image.open(path).convert("RGB")
         self._frame_file = path
         self.frame_wh = img.size
+        self._frame_img = img                     # 原图：帧窗口用这份（画布上用压暗的）
+        self._fw_marks = []                       # 新帧 → 旧标记清掉
         dark = Image.new("RGB", img.size, (24, 26, 34))
         self.bg_pil = Image.blend(dark, img, 0.62)
         self._update_frame_label()
         self.redraw()
+        self._refresh_frame_window()
         self.log(f"背景帧 {os.path.basename(path)}  {img.size[0]}x{img.size[1]}")
 
     def _update_frame_label(self):
@@ -3320,15 +4570,23 @@ class FlowEditor:
             return
         c = self.canvas
         c.delete("all")
+        self._rects_cache = None      # 卡片位置可能刚变过，走线用的矩形缓存重建
         self._apply_zoom_fonts()
         ox, oy = 44, 44
-        # 网格
+        # 网格与滚动区：内容之外至少留 CARD_MARGIN（5 格），并且不小于当前视口 ——
+        # 这样"空的地方"也能滚过去放节点。以前只留 3 格左右，画布看着就小。
+        z0 = self.zoom or 1.0
         max_x, max_y = 1400, 1600
+        try:
+            max_x = max(max_x, self.canvas.winfo_width() / z0)
+            max_y = max(max_y, self.canvas.winfo_height() / z0)
+        except tk.TclError:
+            pass
         if self.bg_pil is not None and self.show_bg.get():
             max_y = max(max_y, oy + FRAME_DISP_H + 80)
         for nd in self.flow["nodes"].values():
-            max_x = max(max_x, nd["x"] + CARD_W + 160)
-            max_y = max(max_y, nd["y"] + CARD_H + 140)
+            max_x = max(max_x, nd["x"] + CARD_W + CARD_MARGIN)
+            max_y = max(max_y, nd["y"] + card_h(nd) + CARD_MARGIN)
         step = GRID
         gx = step
         while gx < max_x:
@@ -3368,20 +4626,71 @@ class FlowEditor:
             a_bottom = a["y"] + (self._sw_h(a) if a["type"] == "switch" else CARD_H)
             x1, y1 = a["x"] + CARD_W / 2, a_bottom
             x2, y2 = b["x"] + CARD_W / 2, b["y"]
-            if linear_successor(self.flow, cur) == nxt_id:
-                mid = (y1 + y2) / 2
+            if a.get("type") == "branch":
+                # 【分支】没有"直落"出口：命中/未中都要靠拖 ✓/✗ 球连线。
+                # 所以链上那条箭头在这里是一条【不存在的边】—— 画成截止标记，
+                # 画布所见必须等于生成结果。
+                max_x = max(max_x, self._draw_cut_off(
+                    a["x"] + CARD_W / 2, a_bottom + 30, y2,
+                    "branch-no-fallthrough", cur))
+            elif linear_successor(self.flow, cur) == nxt_id:
                 ecol, ew = self._edge_style(THEME["arrow"], cur, nxt_id)
-                c.create_line(x1, y1, x1, mid, x2, mid, x2, y2 - 2, smooth=True,
-                              width=ew, arrow=tk.LAST, fill=ecol,
+                # 接入点挑最近的边（源在侧边时就从侧边进，不用绕到顶上再折回来），
+                # 走线绕开卡片（否则会被卡片盖住，看不出箭头方向）。
+                side, (ax, ay) = self._anchor(nxt_id, x1, y1)
+                c.create_line(*self._flat(self._route(x1, y1, side, ax, ay,
+                                                      self_ids=(cur, nxt_id))),
+                              smooth=False, width=ew, arrow=tk.LAST, fill=ecol,
                               arrowshape=ARROW_SHAPE, splinesteps=24)
             else:
-                cut_y = a_bottom + (30 if a["type"] == "switch" else 0)
-                max_x = max(max_x, self._draw_cut_off(
-                    a["x"] + CARD_W / 2, cut_y, y2,
-                    _suppress_reason(self.flow, cur), cur))
-        # 分支/枝干出口连线
+                # ★ v4：边是显式的 nd["next"]，链序只是显示顺序 —— 所以"链序后面还有
+                #   节点、但这个节点没有下一个"是【正常状态】（它到此结束），不用打标记。
+                #   只有真正"被抑制"的出口（枝干无直落、分支内容叶、收口节点、老文件的
+                #   断开标记）才画 ⛔ 说明。以前一律画，画布上就凭空多出一个
+                #   "⛔ 此处不向下继续"，看着像"这两个节点还连着"。
+                reason = _suppress_reason(self.flow, cur)
+                if reason is not None:
+                    cut_y = a_bottom + (30 if a["type"] == "switch" else 0)
+                    max_x = max(max_x, self._draw_cut_off(
+                        a["x"] + CARD_W / 2, cut_y, y2, reason, cur))
+        # ★ 显式 next 的边必须【全部】画出来。v4 起边是 nd["next"]，链序只决定显示顺序，
+        #   所以"下一个"指回链序上方的情形（滑动重试那种回环）在链序里配不到下一项 ——
+        #   以前这种边一条都不画，画布上就是断头路（生成结果里它明明是连着的）。
+        ch_next = {ch[i]: ch[i + 1] for i in range(len(ch) - 1)}
         for nid in ch:
+            nd = self.flow["nodes"].get(nid) or {}
+            if nd.get("type") in ("branch", "switch"):
+                continue              # 它们的出口是 ✓/✗ 球与候选球，另有画法
+            tgt = nd.get("next")
+            if not tgt or tgt not in self.flow["nodes"]:
+                continue
+            if tgt == ch_next.get(nid):
+                continue              # 链序紧跟着的那个：上面那段已经画了
+            if _suppress_reason(self.flow, nid) is not None:
+                continue              # 被抑制的出口：上面画的是 ⛔ 标记
+            a = nd
+            x1 = a["x"] + CARD_W / 2
+            y1 = a["y"] + (self._sw_h(a) if a["type"] == "switch" else CARD_H)
+            ecol, ew = self._edge_style(THEME["arrow"], nid, tgt)
+            side, (ax, ay) = self._anchor(tgt, x1, y1)
+            c.create_line(*self._flat(self._route(x1, y1, side, ax, ay,
+                                                  self_ids=(nid, tgt))),
+                          smooth=False, width=ew, arrow=tk.LAST, fill=ecol,
+                          arrowshape=ARROW_SHAPE, splinesteps=24)
+            max_x = max(max_x, x1)
+        # 分支/枝干出口连线。
+        # ★ 离链的分支/枝干【也要画】：出口是已经写进流程文件的设置，只在链上才画的话，
+        #   把 ✓ 球拖到目标上（日志说"已连接"、字段也真的写进去了）画布上却什么都看不到，
+        #   会以为根本没连上、反复重连。离链的用灰虚线画 —— 一眼看出"这条边现在不生效"
+        #   （该节点自己还挂着 ⛔ 未接入流程 徽标，说的是同一件事）。
+        exit_nodes = [n for n in ch if n in self.flow["nodes"]]
+        exit_nodes += [n for n in self.flow["nodes"] if n not in ch
+                       and (self.flow["nodes"][n] or {}).get("type") in ("branch",
+                                                                          "switch")]
+        for nid in exit_nodes:
             nd = self.flow["nodes"][nid]
+            off = nid not in ch                   # 离链：边不生效 → 灰虚线
+            dkw = {"dash": (6, 4)} if off else {}
             exits = exits_of(self.flow, nid)
             if nd["type"] == "branch":
                 for port, target, color in (("hit_next", exits["hit"], THEME["ok"]),
@@ -3390,23 +4699,25 @@ class FlowEditor:
                     if target and target in self.flow["nodes"]:
                         t = self.flow["nodes"][target]
                         ex, ey = t["x"] + CARD_W / 2, t["y"]
-                        ecol, ew = self._edge_style(color, nid, target)
-                        if abs(ex - sx) < 8:
-                            c.create_line(sx, sy, ex, ey - 2, width=ew, fill=ecol,
-                                          arrow=tk.LAST, smooth=True,
-                                          arrowshape=ARROW_SHAPE, splinesteps=24)
-                        else:
-                            mx = max(sx, ex) + 52
-                            c.create_line(sx, sy, mx, sy, mx, ey, ex, ey - 2, smooth=True,
-                                          width=ew, fill=ecol, arrow=tk.LAST,
-                                          arrowshape=ARROW_SHAPE, splinesteps=24)
+                        ecol, ew = ((THEME["text_dim"], 2) if off
+                                    else self._edge_style(color, nid, target))
+                        # 进入目标卡片的那条边挑最近的（见 _anchor），走线绕开卡片
+                        # （见 _route）：否则线会从卡片底下穿过，只看得见一截线头
+                        # 和一个箭头，方向没法认。
+                        side, (ax, ay) = self._anchor(target, sx, sy)
+                        c.create_line(*self._flat(self._route(sx, sy, side, ax, ay,
+                                                              self_ids=(nid, target))),
+                                      width=ew, fill=ecol, arrow=tk.LAST,
+                                      arrowshape=ARROW_SHAPE, splinesteps=24, **dkw)
+                        # 球旁边标出"它连到哪个节点"（编号）：同名节点多的时候，
+                        # 光看线根本认不出连的是哪一个（而且线可能跑出可视区）。
+                        c.create_text(sx + 12, sy - 13 if port == "hit_next" else sy + 15,
+                                      anchor="w", font=self.f_sm,
+                                      fill=THEME["text_dim"] if off else color,
+                                      text=f"#{node_no(self.flow, target)}")
                     else:
-                        if port == "hit_next":
-                            i = ch.index(nid)
-                            auto = ch[i + 1] if i + 1 < len(ch) else None
-                            txt = "自动→下一个" if auto else "→结束"
-                        else:
-                            txt = "→结束"
+                        # 没连线就是"到此结束"：分支出口只认显式连线，没有"自动走下一个"
+                        txt = "未连线：命中即结束" if port == "hit_next" else "未连线：未中即结束"
                         c.create_line(sx, sy, sx + 26, sy, fill=color, width=2)
                         tw = 12 * len(txt) + 14
                         _round_rect(c, sx + 28, sy - 11, sx + 28 + tw, sy + 11, 5,
@@ -3423,15 +4734,19 @@ class FlowEditor:
                     if tgt and tgt in self.flow["nodes"]:
                         t = self.flow["nodes"][tgt]
                         ex, ey = t["x"] + CARD_W / 2, t["y"]
-                        # 从球先向下、再横向、最后扎进目标卡片顶部。
-                        # 以前是「先向右绕 52px 再拐下来」，几条线会互相交叉成麻花，
-                        # 分不清哪个球连的是哪个节点。
-                        mid = sy + max(20.0, (ey - sy) * 0.45)
-                        ecol, ew = self._edge_style(col, nid, tgt)
-                        c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2,
-                                      smooth=True, width=ew, fill=ecol, arrow=tk.LAST,
-                                      arrowshape=ARROW_SHAPE, splinesteps=24)
-                        c.create_text(sx + 7, mid - 9, anchor="w", fill=col,
+                        # 从球走到目标卡片顶部；走线绕开卡片（见 _route）。
+                        # 以前是「先向下、再横向、最后扎进顶部」的固定形状：几条线容易
+                        # 交叉成麻花，横向段还会从别的卡片底下穿过。
+                        ecol, ew = ((THEME["text_dim"], 2) if off
+                                    else self._edge_style(col, nid, tgt))
+                        side, (ax, ay) = self._anchor(tgt, sx, sy)
+                        pts = self._route(sx, sy, side, ax, ay, self_ids=(nid, tgt))
+                        c.create_line(*self._flat(pts), width=ew, fill=ecol,
+                                      arrow=tk.LAST, arrowshape=ARROW_SHAPE,
+                                      splinesteps=24, **dkw)
+                        lx, ly = pts[1] if len(pts) > 1 else (sx, sy)
+                        c.create_text(lx + 7, ly - 9, anchor="w",
+                                      fill=THEME["text_dim"] if off else col,
                                       font=self.f_sm, text=str(ci + 1))
                     else:
                         c.create_line(sx, sy, sx, sy + 22, fill=col, width=2)
@@ -3445,11 +4760,13 @@ class FlowEditor:
                 if mn and mn in self.flow["nodes"]:
                     t = self.flow["nodes"][mn]
                     ex, ey = t["x"] + CARD_W / 2, t["y"]
-                    mid = sy + max(20.0, (ey - sy) * 0.45)
-                    ecol, ew = self._edge_style(THEME["err"], nid, mn)
-                    c.create_line(sx, sy, sx, mid, ex, mid, ex, ey - 2, smooth=True,
+                    ecol, ew = ((THEME["text_dim"], 2) if off
+                                else self._edge_style(THEME["err"], nid, mn))
+                    side, (ax, ay) = self._anchor(mn, sx, sy)
+                    c.create_line(*self._flat(self._route(sx, sy, side, ax, ay,
+                                                          self_ids=(nid, mn))),
                                   width=ew, fill=ecol, arrow=tk.LAST,
-                                  arrowshape=ARROW_SHAPE, splinesteps=24)
+                                  arrowshape=ARROW_SHAPE, splinesteps=24, **dkw)
                 else:
                     c.create_line(sx, sy, sx + 26, sy, fill=THEME["err"], width=2)
                     _round_rect(c, sx + 28, sy - 11, sx + 60, sy + 11, 5,
@@ -3461,9 +4778,64 @@ class FlowEditor:
                 # 循环体括线 + 回边：循环体末尾 → 循环节点（虚线），
                 # 并给括线标出次数。与生成结果一致：展开后前 times-1 份的尾部回边。
                 self._draw_loop_marks(nid)
-        for nid in ch:
+        # 【输入】注入线 / 【选择】选项目标线：右侧小球 → 目标节点左侧。虚线 + 专属色 ——
+        # 它们只表示"这个参数作用在哪个节点上"，与流程顺序无关，所以画法与流程连线区分开。
+        def _resolve_target(token):
+            """目标写法 → 画布节点 id：画布 id / #编号 / 生成名（含【通道/跳转】的运行时名）
+            / 节点标题（老流程里参数常直接写手写管线的节点名，而画布节点的标题就是它）。"""
+            tk_ = str(token or "").strip()
+            if not tk_:
+                return None
+            nodes = self.flow["nodes"]
+            if tk_ in nodes:
+                return tk_
+            for nid, nd2 in nodes.items():
+                if nd2.get("type") in ("input", "pick"):
+                    continue
+                if jname(self.flow, nid) == tk_ or str(nd2.get("title") or "") == tk_:
+                    return nid
+            return None
+
+        for nd_id, nd in self.flow["nodes"].items():
+            if nd.get("type") not in ("input", "pick"):
+                continue
+            sx, sy = self._port_pos(nd, "inject")
+            tgt_ids = []
+            if nd.get("type") == "input":
+                tgt_ids += list(input_targets(nd))
+                for raw in parse_raw_targets(nd.get("props") or {}):
+                    tgt_ids.append(_resolve_target(raw))
+            else:
+                for row in (nd.get("props") or {}).get("cases") or []:
+                    tgt_ids.append(_resolve_target((row or {}).get("node")))
+            for tgt in [t for t in dict.fromkeys(tgt_ids) if t]:
+                t = self.flow["nodes"].get(tgt)
+                if not isinstance(t, dict):
+                    continue
+                ex, ey = t["x"], t["y"] + card_h(t) / 2
+                # 接入点同样挑最近的一条边、走线同样躲开卡片
+                side, (ax, ay) = self._anchor(tgt, sx, sy)
+                pts = self._route(sx, sy, side, ax, ay, self_ids=(nd_id, tgt))
+                c.create_line(*self._flat(pts), width=2, dash=(6, 4),
+                              fill=INJECT_COLOR, arrow=tk.LAST,
+                              arrowshape=ARROW_SHAPE, splinesteps=24)
+                c.create_text(ex - 14, ey - 12, anchor="e", font=self.f_sm,
+                              fill=INJECT_COLOR,
+                              text=f"#{node_no(self.flow, tgt)}")
+            max_x = max(max_x, sx + 80)
+        # 链上节点按链序画，离链的【输入】节点随后画 —— 它们也要看得见
+        order = [n for n in ch if n in self.flow["nodes"]]
+        order += [n for n in self.flow["nodes"] if n not in ch]
+        for nid in order:
             self._draw_node(nid)
         self._draw_branch_labels()
+        if self.band is not None:
+            # 右键拖框的矩形（画在最上层；用点阵填充假装半透明）
+            bx0, by0, bx1, by1 = self.band
+            c.create_rectangle(min(bx0, bx1), min(by0, by1),
+                               max(bx0, bx1), max(by0, by1),
+                               outline=THEME["sel"], width=1, dash=(6, 4),
+                               fill=THEME["sel"], stipple="gray12")
         # 叠加层（ROI / 点击点 / 滑动线）放在最后画：它是「拿帧对照参数」的依据，
         # 被节点卡片盖住就失去意义了
         self._draw_overlays()
@@ -3503,6 +4875,7 @@ class FlowEditor:
         h = self._sw_h(nd) if nd["type"] == "switch" else CARD_H
         x1, y1 = x + CARD_W, y + h
         selected = (nid == self.sel)
+        in_multi = nid in self.multi
         err_now = any(i.level == "error" for i in self._issues_by_node.get(nid, ()))
         disabled = (nd.get("props") or {}).get("enabled") is False
         tags = ("node", f"node:{nid}")
@@ -3530,9 +4903,8 @@ class FlowEditor:
             cands = parse_switch_cands(nd.get("props", {}).get("candidates"))
             for ci, cnd in enumerate(cands):
                 cy = y + 40 + 22 * ci + 12
-                t = cnd["t"]
-                disp = ("OCR:" + t[4:]) if t.lower().startswith("ocr:") else t
-                line = f"{ci + 1}. {disp}"
+                # 候选没有自己的识别目标了：这行显示它从连到的分支推导出的判定条件
+                line = f"{ci + 1}. {cand_cond_short(self.flow, cnd)}"
                 if len(line) > 18:          # 卡片内按宽度截断，超时移到最右
                     line = line[:17] + "…"
                 c.create_text(x + 16, cy, anchor="w", font=self.f_sm,
@@ -3569,8 +4941,11 @@ class FlowEditor:
             c.create_text(nx, ny - 15, font=self.f_sm, fill="#b9c6e8",
                           text="＋", tags=tags)
         else:
-            c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
-                          font=self.f_sm, text=spec["summary"](nd["props"])[:12], tags=tags)
+            # 摘要不再硬截断（以前 [:12] 会把 "起 (1233,364)→(…" 直接切掉半个坐标）；
+            # 太长就按卡片宽度自动换行（width= 是 Tk 的换行宽度）
+            c.create_text(x + 20, y + 30, anchor="nw", fill=THEME["text_dim"],
+                          font=self.f_sm, width=CARD_W - 34,
+                          text=spec["summary"](nd["props"]), tags=tags)
             if nd["props"].get("template"):
                 got = self._get_tpl_photo(nd["props"]["template"])
                 if got:
@@ -3584,6 +4959,36 @@ class FlowEditor:
         if selected:
             _round_rect(c, x - 3, y - 3, x1 + 3, y1 + 3, 14, outline=THEME["sel"],
                         width=1, fill="")
+        elif in_multi:
+            # 右键框选出来的（还没删）：虚线黄框，与"单选"区分开
+            _round_rect(c, x - 3, y - 3, x1 + 3, y1 + 3, 14, outline=THEME["sel"],
+                        width=1, fill="", dash=(5, 3))
+        if nid not in self.flow["chain"] and nd["type"] not in ("input", "pick"):
+            # 没接进流程：既不生成也不执行 —— 画个显眼标记，别让人以为它在跑
+            _round_rect(c, x + 8, y1 + 6, x + 8 + 214, y1 + 30, 5,
+                        fill="#2e1c1e", outline=THEME["err"])
+            c.create_text(x + 15, y1 + 18, anchor="w", fill=THEME["err"],
+                          font=self.f_sm, text="⛔ 未接入流程（不执行）", tags=tags)
+        if self._has_next_ball(nid):
+            # 「下一个」小球（下沿正中）：拖到目标节点 = 接上/改接下一个；拖到空白 = 到此结束。
+            # 以前只有【分支】的 ✓/✗ 能拖，「下一个」只能去右侧「连接」下拉里选 ——
+            # 一个个画线的时候，拖球比翻下拉快得多。
+            hx, hy = self._port_pos(nd, "next")
+            c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
+                          fill="#1b1f2a", outline="")
+            c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=THEME["arrow"],
+                          outline="#ffffff", width=1,
+                          tags=("port", f"port:{nid}:next"))
+        if nd["type"] == "input":
+            # 「注入」小球：拖到目标节点 = 把这个参数注入过去（拖到已注入的 = 取消）
+            hx, hy = self._port_pos(nd, "inject")
+            c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
+                          fill="#241c2e", outline="")
+            c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=INJECT_COLOR,
+                          outline="#ffffff", width=1,
+                          tags=("port", f"port:{nid}:inject"))
+            c.create_text(hx - 10, hy - 16, anchor="e", font=self.f_sm,
+                          fill=INJECT_COLOR, text="注入", tags=tags)
         if nd["type"] == "branch":
             for port, color in (("hit_next", THEME["ok"]), ("miss_next", THEME["err"])):
                 hx, hy = self._port_pos(nd, port)
@@ -3611,8 +5016,224 @@ class FlowEditor:
             c.create_text(x + 20, y + 32, anchor="nw", fill=THEME["text_dim"],
                           font=self.f_sm, text=info, tags=tags)
 
+    # ---------- 连线走线：绕开卡片 ----------
+
+    EDGE_CLEAR = 14          # 线与卡片边缘之间留的余量
+
+    def _flat(self, pts):
+        """[(x,y), ...] → [x,y,x,y,...]（Tk create_line 要的扁平坐标）"""
+        out = []
+        for px, py in pts:
+            out += [px, py]
+        return out
+
+    def _card_rects(self, skip=()):
+        """所有卡片的矩形（模型坐标）：[(nid, x0, y0, x1, y1)]。
+
+        缓存一次、redraw 开头重建（拖拽时每帧都要问几百次"这里被卡片挡了吗"，
+        每次重算一遍所有卡片会明显卡手）。skip 参数保留兼容，判断时用 body_only。"""
+        r = getattr(self, "_rects_cache", None)
+        if r is None:
+            r = []
+            for nid, nd in self.flow["nodes"].items():
+                if not isinstance(nd, dict):
+                    continue
+                r.append((nid, nd["x"], nd["y"], nd["x"] + CARD_W,
+                          nd["y"] + card_h(nd)))
+            self._rects_cache = r
+        return r
+
+    def _seg_blocked(self, x1, y1, x2, y2, body_only=()):
+        """这条线段会不会压到卡片（本方法只用于轴对齐的走线，所以用包围盒判就够）。
+
+        body_only 里的卡片（源节点、目标节点自己）只判"真的从身体里穿过去" ——
+        贴边、从边上出发都是允许的；其它卡片则要留出 EDGE_CLEAR 的余量。
+        ★ 判据必须是"把卡片【扩大】余量后与线段求交"：以前写反了（缩小卡片），
+          于是"离卡片右边缘 14px"的竖线被判成不挡 —— 可它其实还在卡片里面
+          （卡片宽 240px），画出来就是一条从整列卡片身上穿过去的线。"""
+        C = getattr(self, "_clear_now", None) or self.EDGE_CLEAR
+        lo_x, hi_x = min(x1, x2), max(x1, x2)
+        lo_y, hi_y = min(y1, y2), max(y1, y2)
+        for nid, cx0, cy0, cx1, cy1 in self._card_rects():
+            m = 0.0 if nid in body_only else C
+            if (lo_x < cx1 + m and hi_x > cx0 - m
+                    and lo_y < cy1 + m and hi_y > cy0 - m):
+                return True
+        return False
+
+    # ---------- 连线接入点：四条边里挑最近的一条 ----------
+
+    def _ball_sides(self, nid):
+        """这个节点的卡片上"带连接球"的那几条边。
+
+        ★ 这些边不参与接入点的挑选：那条边留给球自己的连线用，否则别的线会贴着球
+          穿过去（分支的 ✓/✗ 球在右边、枝干的候选球在下沿、循环和输入的球在右边、
+          普通节点的「下一个」球在下沿正中）。"""
+        nd = self.flow["nodes"].get(nid) or {}
+        t = nd.get("type")
+        sides = set()
+        if t in ("branch", "loop"):
+            sides.add("right")
+        if t == "switch":
+            sides.add("bottom")
+        if t == "input":
+            sides.add("right")
+        if self._has_next_ball(nid):
+            sides.add("bottom")        # 下沿正中的「下一个」球
+        return sides
+
+    def _has_next_ball(self, nid):
+        """这个节点该不该画下沿的「下一个」小球。
+
+        只有【真的有"下一个"】的类型才画：【输入】是参数声明（靠注入线）、
+        【枝干判定】的出口是候选球/✗球、【分支】走 ✓/✗、【公共节点(收口)】进入即终止
+        —— 这几种语义上都没有"下一个"，画个球会让人以为拖了就能接上（拖了也不生成那条边）。"""
+        nd = self.flow["nodes"].get(nid) or {}
+        if nd.get("type") in ("input", "pick", "switch", "branch", "common"):
+            return False
+        return nid not in _switch_content_leaves(self.flow)
+
+    def _anchor(self, nid, sx, sy):
+        """目标卡片上离源最近的那个接入点 —— 左右上下四条边各取一个候选点，选最近的。
+
+        返回 (side, (x, y))。带球的那条边不参与（见 _ball_sides）。
+        ★ 以前不管源在哪边，一律从目标卡片【顶部正中】进：源在卡片正侧面时，
+          线要先绕到顶上再折回来，既长又容易被卡片挡住看不出方向。"""
+        nd = self.flow["nodes"][nid]
+        x, y = nd["x"], nd["y"]
+        w, hgt = CARD_W, card_h(nd)
+        pad = 14.0        # 别顶到角上，留一点余量
+        cx = min(max(sx, x + pad), x + w - pad)
+        cy = min(max(sy, y + pad), y + hgt - pad)
+        cand = {"top": (cx, y), "bottom": (cx, y + hgt),
+                "left": (x, cy), "right": (x + w, cy)}
+        for s in self._ball_sides(nid):
+            cand.pop(s, None)
+        side = min(cand, key=lambda s: (cand[s][0] - sx) ** 2 + (cand[s][1] - sy) ** 2)
+        return side, cand[side]
+
+    def _route(self, sx, sy, side, ex, ey, self_ids=()):
+        """从 (sx,sy) 走到目标卡片 side 那条边上的接入点 (ex,ey)（side=top/bottom/left/right）。
+
+        做法：把整张画布按 side 旋转/翻转到"接入点朝上"的标准姿势，用同一套走线规则
+        算完再转回来 —— 四条边共用一套逻辑，不必各写一遍。
+        ★ 以前固定接顶部：源在卡片侧边时线要先绕上去再折回来，又长又容易被卡片盖住。"""
+        def fwd(px, py):
+            if side == "top":
+                return px, py
+            if side == "bottom":
+                return px, -py
+            if side == "left":
+                return py, px
+            return py, -px            # right
+
+        def inv(px, py):
+            if side == "top":
+                return px, py
+            if side == "bottom":
+                return px, -py
+            if side == "left":
+                return py, px
+            return -py, px            # right（(x,y)→(y,-x) 的逆）
+
+        crects = []
+        for nid, x0, y0, x1, y1 in self._card_rects():
+            a, b = fwd(x0, y0), fwd(x1, y1)
+            crects.append((nid, min(a[0], b[0]), min(a[1], b[1]),
+                           max(a[0], b[0]), max(a[1], b[1])))
+        csx, csy = fwd(sx, sy)
+        cax, cay = fwd(ex, ey)
+        saved = getattr(self, "_rects_cache", None)
+        saved_c = getattr(self, "_clear_now", None)
+        self._rects_cache = crects          # 走线期间只在标准姿势下做遮挡判断
+        pts = None
+        try:
+            # 先按标准余量找；布局挤得很紧（卡片间只有十几像素）时，
+            # 换更小的余量再试 —— 宁可贴得近一点，也别无路可走只能直穿卡片。
+            for clear in (self.EDGE_CLEAR, 8.0, 4.0, 1.0):
+                self._clear_now = clear
+                pts = self._route_top(csx, csy, cax, cay, self_ids)
+                if pts is not None:
+                    break
+        finally:
+            self._rects_cache = saved
+            self._clear_now = saved_c
+        if pts is None:
+            # 兜底：真无路可走（正常情况下到不了这里），宁可压一下也不能不画
+            ymid = min(cay - 2, (csy + cay) / 2)
+            pts = [(csx, csy), (csx, ymid), (cax, ymid), (cax, cay - 2)]
+        return [inv(px, py) for px, py in pts]
+
+    def _route_top(self, sx, sy, ex, ey, self_ids=()):
+        """标准姿势下的走线：从 (sx,sy) 走到卡片【顶面】(ex,ey)（ex 是接入点的 x）。
+          ① 同一列、中间空 → 一条竖线；
+          ② 竖 → 横 → 竖（横向道必须落在目标顶面之上，否则扎进顶部那一竖会穿过卡片）；
+          ③ 绕行：先离开源（上下退 / 横向退都试），走卡片列外侧的竖道，
+             再挑一条横向道从目标上方扎进顶部；
+          ④ 兜底（宁可压一下也不能不画）。
+        ★ 以前固定走"中间那条横线"：横向段会从卡片底下穿过，卡片一盖就只剩一截线头
+          和一个箭头，看不出箭头往哪指。"""
+        C = self.EDGE_CLEAR
+        end = (ex, ey - 2)
+        body = tuple(self_ids)      # 源/目标：只判"穿透身体"，允许贴边和从边上出发
+
+        def ok(pts):
+            return all(not self._seg_blocked(ax, ay, bx, by, body_only=body)
+                       for (ax, ay), (bx, by) in zip(pts, pts[1:]))
+
+        # ① 同一列、中间没东西：直接竖着连
+        if abs(sx - ex) < 8 and not self._seg_blocked(sx, sy, ex, ey - 2,
+                                                      body_only=body):
+            return [(sx, sy), end]
+        # ② 竖 → 横 → 竖：横向道先按【源所在的那条】试（最省：只有一横一竖，
+        #    以前压根不试它 —— 源在右侧、目标在左下时会被判"绕行"，实测同一条边
+        #    1668px vs 最优 764px），不行再从中间往上找，且必须高于目标顶面（留余量）
+        seen = set()
+        for y in ([sy] + [(min(sy, ey) + max(sy, ey)) / 2]
+                  + [ey - C * k for k in range(1, 24)]):
+            if y > ey - C or y in seen:
+                continue
+            seen.add(y)
+            pts = [(sx, sy), (sx, y), (ex, y), end]
+            if ok(pts):
+                return pts
+        # ③ 绕行：外侧竖道 + 一条横向道
+        xs = [nd["x"] for nd in self.flow["nodes"].values() if isinstance(nd, dict)]
+        if xs:
+            # 候选竖道：每一列的左右两侧 + 整体最外侧；按"离源节点最近"排序 ——
+            # 先用近的（绕得少、也不会跑到可视区外面去）
+            col_xs = sorted({float(x) for x in xs})
+            lanes_x = [min(col_xs) - C * 3, max(col_xs) + CARD_W + C * 3]
+            lanes_x += [x - C * 3 for x in col_xs]
+            lanes_x += [x + CARD_W + C * 3 for x in col_xs]
+            lanes_x = sorted(set(lanes_x), key=lambda x: abs(x - sx))
+            lanes_y = [ey - C * k for k in (1, 2, 3, 5, 8)]
+            # ③a 先从源上下退出去（源在卡片中间、上下都被挡时用横向退，见 ③b）
+            for xl in lanes_x:
+                for k in (1, 2, 4, 8):
+                    for sgn in (1, -1):
+                        for y_in in lanes_y:
+                            pts = [(sx, sy), (sx, sy + sgn * C * k), (xl, sy + sgn * C * k),
+                                   (xl, y_in), (ex, y_in), end]
+                            if ok(pts):
+                                return pts
+            # ③b 横向退到外侧竖道（源就在卡片边缘：上下都是卡片，只能先横着出来）
+            for xl in lanes_x:
+                for y_in in lanes_y:
+                    pts = [(sx, sy), (xl, sy), (xl, y_in), (ex, y_in), end]
+                    if ok(pts):
+                        return pts
+        # 找不到干净走法（由 _route 换更小的余量再试，最后才兜底）
+        return None
+
     def _port_pos(self, nd, port):
+        if nd["type"] == "input":
+            # 【输入】的「注入」小球在卡片右侧中间
+            return nd["x"] + CARD_W, nd["y"] + CARD_H * 0.5
         if nd["type"] == "loop":
+            if port == "next":
+                # 「下一个」球在下沿正中（与链上箭头的起点同一个位置）
+                return nd["x"] + CARD_W * 0.5, nd["y"] + CARD_H
             return nd["x"] + CARD_W, nd["y"] + CARD_H * 0.5
         if nd["type"] == "switch":
             # 枝干的球排在下沿：候选球（绿，带序号）+ 全部未中球（红）+ 新增球（＋）
@@ -3626,13 +5247,15 @@ class FlowEditor:
                 return nd["x"] + 22 + step * (n + 1), by
             i = int(port[4:])   # "cand0" → 0
             return nd["x"] + 22 + step * i, by
+        if port == "next":
+            # 「下一个」球在下沿正中 —— 就是链上直落箭头的起点，拖它 = 接/改下一个
+            return nd["x"] + CARD_W * 0.5, nd["y"] + CARD_H
         y = nd["y"] + (CARD_H * 0.32 if port == "hit_next" else CARD_H * 0.68)
         return nd["x"] + CARD_W, y
 
     def _sw_h(self, nd):
-        """switch 卡片高度（标题 + 候选行 + 底部的球那一行）"""
-        n = len(parse_switch_cands(nd.get("props", {}).get("candidates")))
-        return 64 + 22 * max(n, 1) + 22
+        """switch 卡片高度（标题 + 候选行 + 底部的球那一行）；与 card_h() 同源"""
+        return card_h(nd)
 
     def _draw_cut_off(self, cx, y_from, y_to, reason, owner=None):
         """画「此处不向下继续」的显眼标记：红色虚线短桩 + 截止横杠 + ⛔ 徽标。
@@ -3642,12 +5265,19 @@ class FlowEditor:
         gap = max(14.0, y_to - y_from)
         stub = min(14.0, gap * 0.45)
         tip = y_from + 2 + stub
+        # ★ 别伸进下一张卡片里：卡片挨得近时（步长 92、卡高 60 → 间隙只剩 32px），
+        #   截止横杠和 ⛔ 徽标（高 22px）会压到下一张卡片的顶边上 —— 画布上就成了
+        #   "连线与节点重合"。这里把标记整体收进两个节点之间的空隙里。
+        tip = min(tip, y_to - 12.0)
+        tip = max(tip, y_from - 12.0)
         hot = self.sel is not None and self.sel == owner
         ec = THEME["sel"] if hot else THEME["err"]
         c.create_line(cx, y_from + 2, cx, tip, fill=ec, width=3 if hot else 2,
                       dash=(5, 3))
         c.create_line(cx - 8, tip, cx + 8, tip, fill=ec, width=2)
         txt = {"switch-no-fallthrough": "⛔ 枝干无直落出口（走 ✓ 出口）",
+               "branch-no-fallthrough": "⛔ 分支无直落出口（走 ✓/✗ 出口）",
+               "node-cut": "⛔ 此处已断开（不接下一个）",
                "switch-content-leaf": "⛔ 分支内容到此结束，不接下一节点",
                "common-terminal": "⛔ 收口节点，进入后不返回本流程",
                }.get(reason, "⛔ 此处不向下继续")
@@ -3838,13 +5468,37 @@ class FlowEditor:
             else:
                 on_pick(None)
 
+        def pick_at(e):
+            """点一行就【立刻生效】。
+
+            ★ 单选：就取点中的那一行（按 y 坐标取，不看"释放时选中项生效没有"——
+              以前绑在 <ButtonRelease-1> 上读 curselection()，未生效时会走"按输入框
+              里的半截名字提交"再被恢复成原值，看起来就是点了没反应）。
+            ★ 多选（分支的模板图）：点一行 = 勾选/取消，然后把【当前勾选集】整体写回
+              节点。以前只挂"回车/失焦"提交，而弹窗是无边框窗口（不抢焦点）——
+              回车和失焦都不会来，点外面又只是关掉不提交，于是"点了白点"。"""
+            i = lb.nearest(e.y)
+            if i is None or i < 0 or i >= len(items):
+                return
+            if multi:
+                def flush():
+                    try:
+                        sel = [lb.get(k) for k in lb.curselection()]
+                    except tk.TclError:
+                        return
+                    on_pick(",".join(sel))
+                lb.after(1, flush)      # 等 Listbox 自己把这一下勾选切换完
+                return
+            item = items[i]
+            self._close_tpl_pop()       # 关掉弹窗（之后再读 lb 就晚了）
+            on_pick(item)
+        lb.bind("<Button-1>", pick_at)
         if multi:
             lb.bind("<Return>", submit)
-            top.bind("<FocusOut>", submit)          # 点弹窗外部（焦点移走）提交
+            lb.bind("<Double-Button-1>", lambda e: submit())
             lb.bind("<Escape>", lambda e: self._close_tpl_pop())
-        else:
-            lb.bind("<ButtonRelease-1>", submit)
-            lb.bind("<Double-Button-1>", submit)
+            self.log("模板候选：点一行即写进节点，可连点几行凑多个候选"
+                     "（任一命中即算命中）；Esc 收起列表")
         top.bind("<Destroy>", lambda _e: setattr(self, "_tpl_pop", None)
                  if self._tpl_pop is top else None)
         top.lift()
@@ -3878,6 +5532,7 @@ class FlowEditor:
                 parts = split_tpls(val)
                 ok = bool(parts) and all(p in self.templates for p in parts)
                 if ok:
+                    var.set(val)          # ★ 输入框跟着定稿值走（失焦会把显示恢复成旧值）
                     if cur != val:
                         props["template"] = val
                         self.redraw()
@@ -3892,21 +5547,30 @@ class FlowEditor:
                     var.set(cur)
             return
         if picked == "" and multi:
-            if cur:
+            if cur or var.get():
                 props["template"] = ""
+                var.set("")
                 self.redraw()
             return
         if picked:
             parts = split_tpls(picked)
             ok = all(p in self.templates for p in parts)
-            if ok and cur != picked:
-                props["template"] = picked
-                self.redraw()
-            elif not ok:
+            if ok:
+                var.set(picked)       # ★ 同上：显示与节点保持一致
+                if cur != picked:
+                    props["template"] = picked
+                    self.redraw()
+            else:
                 var.set(cur)
 
     def _get_tpl_photo(self, name):
-        """模板缩略图（节点卡片显示用）；按 mtime 缓存"""
+        """模板缩略图（节点卡片显示用）；按 (模板文件 mtime, 当前画布缩放) 缓存。
+
+        ★ 必须按缩放重新生成图片：整个画布最后会 c.scale("all", 0, 0, z, z) 统一放大，
+          而 Tk 的 canvas.scale 只缩放坐标、【不会缩放图片】。以前固定按 88×42 生成，
+          放大画布时卡片框跟着变大、图却没变 —— 框的右边和下面就空出一块。
+        返回 (mtime, photo, 模型宽, 模型高)：模型尺寸 = 像素尺寸 / zoom，
+        这样跟着整体缩放之后，框正好贴住图。"""
         path = os.path.join(IMG_DIR, name)
         if not os.path.isfile(path):
             return None
@@ -3914,19 +5578,25 @@ class FlowEditor:
             mtime = os.path.getmtime(path)
         except OSError:
             return None
-        cached = self._tpl_img_cache.get(name)
+        z = self.zoom or 1.0
+        key = (name, round(z, 3))
+        cached = self._tpl_img_cache.get(key)
         if cached and cached[0] == mtime:
             return cached
         try:
             im = Image.open(path).convert("RGB")
             w, h = im.size
-            scale = min(42 / h, 88 / w)
-            dw, dh = max(1, int(w * scale)), max(1, int(h * scale))
+            scale = min(42 / h, 88 / w)          # 基准显示尺寸（模型坐标）
+            dw = max(1, int(round(w * scale * z)))
+            dh = max(1, int(round(h * scale * z)))
             photo = ImageTk.PhotoImage(im.resize((dw, dh), Image.NEAREST))
         except Exception:
             return None
-        self._tpl_img_cache[name] = (mtime, photo, dw, dh)
-        return self._tpl_img_cache[name]
+        # 换缩放就别留旧的了（一张图 × 每个缩放级别都缓存会越攒越多）
+        for k in [k for k in self._tpl_img_cache if k[1] != key[1]]:
+            self._tpl_img_cache.pop(k, None)
+        self._tpl_img_cache[key] = (mtime, photo, dw / z, dh / z)
+        return self._tpl_img_cache[key]
 
     # ---------- 画布视图：坐标变换 / 缩放 / 平移 ----------
 
@@ -4013,7 +5683,7 @@ class FlowEditor:
         self.canvas.yview_moveto(0)
         if want < ZOOM_MIN:
             self.log(f"⚠ 内容高 {int(h)}px，缩到下限 {int(ZOOM_MIN * 100)}% 仍超出窗口"
-                     f"（可中键拖动平移，或用「✥ 整理布局」把节点排紧）", "warn")
+                     f"（可在空白处拖动平移，或用「✥ 整理布局」把节点排紧）", "warn")
         else:
             self.status(f"已适配窗口（{int(self.zoom * 100)}%）")
 
@@ -4070,20 +5740,34 @@ class FlowEditor:
             self.redraw()
             return
         if self.pick_target:
+            key = self.pick_target             # 先记住：下面会清空它
             pt = self._canvas_to_frame(cx, cy)
             self.pick_target = None          # 本次点击后一律退出取点模式
             if pt is not None:
-                self._apply_pick(pt)
+                self._apply_pick(pt, key)
                 return
             self.status("已取消取点（点击帧画面外即取消）")
             # 落到下面的正常选中/拖动逻辑，避免取点模式卡死节点编辑
         hit = self._hit_test(cx, cy)
         if hit is None:
-            if self.sel:
+            if self.sel or self.multi:
                 self.sel = None
+                self.multi = set()
                 self.build_prop_panel()
                 self.redraw()
+            # ★ 空白处按住左键拖动 = 平移画布。以前只有中键能平移 —— 很多鼠标没有中键，
+            #   触控板上更按不出来；空白处拖动本来没有别的语义，正好给它。
+            #   （点一下不放=取消选中，行为和以前一样；拖动才平移。）
+            self._pan_left = True
+            try:
+                self.canvas.scan_mark(e.x, e.y)
+                self.canvas.config(cursor="fleur")
+            except tk.TclError:
+                pass
             return
+        if self.multi:                  # 左键点节点 = 回到单选
+            self.multi = set()
+            self.redraw()
         if hit[0] == "port":
             self.wire = {"from": hit[1], "port": hit[2], "mx": cx, "my": cy}
             self.status(f"拖到目标节点设置 {hit[2]} 出口；拖到空白处=断开")
@@ -4096,13 +5780,17 @@ class FlowEditor:
         # 拖动前存档；若只是点选没真的移动，内容不变，_snapshot 会自动跳过
         self._snapshot(f"drag:{nid}")
         ch = self.flow["chain"]
-        i = ch.index(nid)
-        self.drag = {"id": nid, "dx": cx - nd["x"], "dy": cy - nd["y"],
-                     "prev": ch[i - 1] if i > 0 else None,
-                     "next": ch[i + 1] if i + 1 < len(ch) else None}
+        # 拖动不改链序，所以不用记链上邻居（i 只是用来判断在不在链上）
+        self.drag = {"id": nid, "dx": cx - nd["x"], "dy": cy - nd["y"]}
         self.redraw()
 
     def on_motion(self, e):
+        if self._pan_left:              # 空白处左键拖动 = 平移画布
+            try:
+                self.canvas.scan_dragto(e.x, e.y, gain=1)
+            except tk.TclError:
+                pass
+            return
         cx, cy = self._c2w(self.canvas.canvasx(e.x), self.canvas.canvasy(e.y))
         if self.roi_pick is not None and self.roi_pick.get("x0") is not None:
             self.roi_pick["x1"], self.roi_pick["y1"] = cx, cy
@@ -4117,23 +5805,100 @@ class FlowEditor:
         nd = self.flow["nodes"][self.drag["id"]]
         nd["x"] = self._snap(cx - self.drag["dx"])
         nd["y"] = self._snap(cy - self.drag["dy"])
-        self._reorder_on_drag(self.drag["id"])
+        # ★ 拖动只挪卡片，【不动链序】。以前拖动时会按纵向位置实时重排主链，
+        #   等于"把节点拖到别人上面"就悄悄改了谁接到谁 —— 连接不该被拖动改掉。
+        #   要改顺序：右侧「连接」里的上一个/下一个，或工具栏的 ↑ 上移 / ↓ 下移。
         self.redraw()
 
-    def _reorder_on_drag(self, drag_id):
-        """拖动中按纵向位置实时重排主链（排序即拖动）"""
+    def _ensure_in_chain(self, tgt_id, src_id=None):
+        """确保节点在链上：不在就插在 src 后面（src 不在链上则排链尾）。
+        返回 True 表示这次是新接进去的。"""
         ch = self.flow["chain"]
-        others = sorted(self.flow["nodes"][n]["y"] + CARD_H / 2 for n in ch if n != drag_id)
-        dy = self.flow["nodes"][drag_id]["y"] + CARD_H / 2
-        idx = bisect.bisect_left(others, dy)
-        cur = ch.index(drag_id)
-        if cur != idx:
-            ch.remove(drag_id)
-            ch.insert(min(idx, len(ch)), drag_id)
+        if tgt_id in ch:
+            return False
+        i = ch.index(src_id) if src_id in ch else len(ch) - 1
+        self._chain_insert(i + 1, tgt_id)
+        return True
+
+    def _clear_cut(self, *nids):
+        """清掉这些节点上的「此处断开」标记。
+        cut 的含义就是"我不接下一个"：一旦有节点被显式排到它后面，这个标记就不再成立。"""
+        for nid in nids:
+            nd = self.flow["nodes"].get(nid)
+            if isinstance(nd, dict):
+                nd.pop("cut", None)
+
+    def _cut_hint(self, nid):
+        """目标节点带着「此处断开」时的提醒文案（没有就返回空串）。
+
+        连一条"指到它"的线不改变它自己的出边状态，所以那种标记仍然有效 —— 流程走到
+        它就不再往下，而用户常常没意识到，以为"连上了就会往下跑"。"""
+        nd = self.flow["nodes"].get(nid) or {}
+        if not nd.get("cut"):
+            return ""
+        return (f"（注意：{self._node_ref_label(nid)}标着「此处断开」，"
+                f"流程走到它就不再往下 —— 要让它继续，选中它、在「连接」里给它的"
+                f"「下一个」选一个节点，或直接把卡片下沿的小球拖到目标节点）")
+
+    def _next_hint(self, nid):
+        """目标节点自己还挂着"下一个"时的提示文案（没有就返回空串）。
+
+        拖出口线只决定"谁指到它"，不会去动它自己的下一个 —— 而它的下一个可能是
+        从旧文件的链序迁移来的、用户根本没画过的那条。不说一句的话，画布上就会
+        冒出一条他没连过的线（"我拉红球给 12，12 怎么还连着 11"）。"""
+        nd = self.flow["nodes"].get(nid) or {}
+        nxt = nd.get("next")
+        if not nxt or nxt not in self.flow["nodes"]:
+            return ""
+        return (f"（提示：{self._node_ref_label(nid)}自己的「下一个」是"
+                f"{self._node_ref_label(nxt)} —— 连接只决定'谁指到它'，不碰它自己的"
+                f"下一个；不需要那条线就选中它，把「下一个」改成「(无：到此结束)」，"
+                f"或把卡片下沿的小球拖到空白处）")
+
+    def _chain_insert(self, i, nid, heal=True):
+        """把 nid 插到链上第 i 位，返回实际插入位置。
+
+        heal=True：顺手清掉"因此有了新下一个"的那个节点的「此处断开」——
+        有节点被显式排到它后面，说明它接着往下走，标记不再成立。
+        （"原地不动"的操作要传 heal=False：那时链序什么都没变，
+          别顺手把别人身上的「此处断开」也解掉 —— 那等于替你连了一条没画过的线。）"""
+        ch = self.flow["chain"]
+        i = max(0, min(i, len(ch)))
+        ch.insert(i, nid)
+        if heal:
+            if i > 0:
+                self._clear_cut(ch[i - 1])
+            if i + 1 < len(ch):
+                self._clear_cut(nid)      # 不是链尾 = 真的有后继了
+        return i
+
+    def _link_exit(self, src_id, tgt_id):
+        """连一条出口边：保证【两端都在主链上】，且目标紧跟源节点后面。
+
+        ★ 只把"目标"塞进链是不够的（以前就是这么干的）。源节点自己还在链外时，
+          目标被塞到链尾，于是画布上出现的是"链尾那个节点 → 目标"的直落箭头
+          （例如 #11 → #12），看着像连错了对象；而真正想连的 "#10 → #12" 因为
+          #10 不在链上根本不画（出口连线只画链上节点），结果就是
+          "日志说已连接、画布上一条线都没有"。
+        这里先把源节点接到链尾（正在给它连出口 = 它要参与流程），再把目标插到它后面，
+        两端相邻、出口连线也画得出来。返回 (源是否新接入, 目标是否新接入)。
+        ★ 只用于"出口指向某节点"的场景；【输入】的注入线不要用（输入节点设计上就离链）。"""
+        ch = self.flow["chain"]
+        src_added = tgt_added = False
+        if src_id not in ch:
+            self._chain_insert(len(ch), src_id)
+            self._clear_cut(src_id)     # 我这条出口现在明确接 X，不再"到此结束"
+            src_added = True
+        if tgt_id not in ch:
+            # 注意：不清目标自己的「此处断开」—— 那是它的【出边】状态，
+            # 连一条"指到它"的线没改变它自己的出边。确实要清就用「连接」里的下一个。
+            self._chain_insert(ch.index(src_id) + 1, tgt_id)
+            tgt_added = True
+        return src_added, tgt_added
 
     def _set_wire(self, src, port, tgt):
         """连线写回：branch 直接写节点字段；switch 写候选 next / 全部未中 miss_next；
-        loop 写循环体末尾 body_end"""
+        loop 写循环体末尾 body_end（「下一个」仍写在 next 上）"""
         if src.get("type") == "switch":
             props = src["props"]
             if port == "miss":
@@ -4144,12 +5909,19 @@ class FlowEditor:
                 if i < len(cands):
                     cands[i]["next"] = tgt
                     props["candidates"] = cands
-        elif src.get("type") == "loop":
+        elif src.get("type") == "loop" and port == "body_end":
             src.setdefault("props", {})["body_end"] = tgt
         else:
             src[port] = tgt
 
     def on_up(self, _e):
+        if self._pan_left:              # 空白处左键拖动结束（平移，不改任何流程数据）
+            self._pan_left = False
+            try:
+                self.canvas.config(cursor="")
+            except tk.TclError:
+                pass
+            return
         if self.roi_pick is not None:
             self._finish_roi_pick()
             self.redraw()
@@ -4165,23 +5937,80 @@ class FlowEditor:
                 self.redraw()
                 if hit and hit[0] == "node" and hit[1] != src_id:
                     self._snapshot("cand")
+                    # 与其它出口一样：两端都要在主链上（见 _link_exit）—— 候选指向一个
+                    # "不参与生成"的节点，生成物里就是指向不存在节点的 next。
+                    src_add, tgt_add = self._link_exit(src_id, hit[1])
                     cands = src["props"].setdefault("candidates", [])
-                    cands.append({"t": PENDING_TPL, "timeout": 3000, "next": hit[1]})
+                    cands.append({"timeout": 3000, "next": hit[1]})
                     tgt = self.flow["nodes"][hit[1]]
                     self.build_prop_panel()
                     self.redraw()
+                    if src_add:
+                        self.log(f"（本节点「{src.get('title', src_id)}」还没接进流程，"
+                                 f"已先接到链尾 —— 否则这条候选连线在画布上画不出来）",
+                                 "warn")
+                    if tgt_add:
+                        self.log(f"（「{tgt.get('title', hit[1])}」原本还没接进流程，"
+                                 f"已顺手插在本节点后面）", "warn")
                     self.log(f"✓ 已新建分支 {len(cands)} → "
                              f"「{tgt.get('title', hit[1])}」。"
-                             f"这个分支还没选识别目标：在上面的候选列表里选中它，"
-                             f"用「模板」下拉或「OCR 文字」填上即可（校验会提示到填好为止）",
+                             f"判定条件取自这个节点：在里面选模板图或填 OCR 文字即可"
+                             f"（校验会提示到填好为止）",
                              "ok")
                 else:
                     self.status("把卡片下沿的「＋」球拖到目标节点，即可新建一条分支")
                 return
+            if port == "inject" and src.get("type") == "input":
+                # 「注入」小球：拖到目标节点 → 参数注入过去；拖到已注入的节点 → 取消。
+                # ★ 这条线只表示参数注入，不代表流程顺序（生成时它变成 interface.json 里
+                #   的一条 pipeline_override，与链序无关）。
+                self.wire = None
+                self.redraw()
+                if hit and hit[0] == "node" and hit[1] != src_id:
+                    self._snapshot("inject")
+                    if self._ensure_in_chain(hit[1], src_id):
+                        self.log(f"（「{self.flow['nodes'][hit[1]].get('title', hit[1])}」"
+                                 f"原本还没接进流程，已顺手接上）", "warn")
+                    tg = input_targets(src)
+                    tname = self.flow["nodes"][hit[1]].get("title", hit[1])
+                    opt = (str((src.get("props") or {}).get("option") or "").strip()
+                           or "(还没填参数名)")
+                    if hit[1] in tg:
+                        tg.remove(hit[1])
+                        self.log(f"已取消注入：「{opt}」不再注入到「{tname}」")
+                    else:
+                        tg.append(hit[1])
+                        self.log(f"✓ 「{opt}」已注入到「{tname}」"
+                                 f"（这条线只表示参数注入，不代表流程顺序）", "ok")
+                    self.build_prop_panel()
+                    self.redraw()
+                else:
+                    self.status("把「注入」小球拖到目标节点上（拖到已注入的节点=取消）")
+                return
             if hit and hit[0] == "node" and hit[1] != self.wire["from"]:
                 self._snapshot()
-                self._set_wire(src, port, hit[1])
-                self.log(f"已连接 {port} → {self.flow['nodes'][hit[1]].get('title', hit[1])}")
+                tgt_id = hit[1]
+                tname = self.flow["nodes"][tgt_id].get("title", tgt_id)
+                # 两端都要落在主链上：目标是"不参与生成"的节点 → 生成物里是悬空引用，
+                # 引擎拒绝加载整个任务包；源节点不在链上 → 这条出口边画不出来。
+                src_add, tgt_add = self._link_exit(src_id, tgt_id)
+                if src_add:
+                    self.log(f"（「{self.flow['nodes'][src_id].get('title', src_id)}」"
+                             f"自己还没接进流程，已先接到链尾 —— 否则这条连线"
+                             f"在画布上画不出来）", "warn")
+                if tgt_add:
+                    self.log(f"（「{tname}」原本还没接进流程，已顺手插在源节点后面）", "warn")
+                if port == "next":
+                    self._clear_cut(src_id)   # 明确接了下一个，「此处断开」不再成立
+                    self._set_wire(src, port, tgt_id)
+                    self.log(f"已连接「下一个」→ #{node_no(self.flow, tgt_id)}「{tname}」"
+                             + self._cut_hint(tgt_id) + self._next_hint(tgt_id), "ok")
+                else:
+                    self._set_wire(src, port, tgt_id)
+                    self.log(f"已连接 {port_label(port)} → "
+                             f"#{node_no(self.flow, tgt_id)}「{tname}」"
+                             + self._cut_hint(tgt_id)
+                             + self._next_hint(tgt_id), "ok")
             else:
                 if src.get("type") == "switch":
                     was = (src["props"].get("miss_next") if port == "miss"
@@ -4190,9 +6019,18 @@ class FlowEditor:
                            if port.startswith("cand") else None)
                 else:
                     was = src.get(port)
-                if was:
+                if port == "next":
+                    # 拖到空白 = 到此结束（v4：next=None 就是"没有下一个"）
+                    src_now = self._node_ref_label(src_id)
+                    if was:
+                        self._snapshot()
+                        self.log(f"已断开「下一个」：{src_now}到此结束"
+                                 f"（要再接上：把卡片下沿的小球拖到目标节点）", "warn")
+                    else:
+                        self.log(f"{src_now}本来就没有「下一个」（到此结束）")
+                elif was:
                     self._snapshot()
-                    self.log(f"已断开 {port}")
+                    self.log(f"已断开 {port_label(port)}")
                 self._set_wire(src, port, None)
             self.wire = None
             self.build_prop_panel()
@@ -4200,24 +6038,14 @@ class FlowEditor:
             self.status("就绪")
             return
         if self.drag:
-            d = self.drag
+            # 拖动只挪卡片位置：链序不变 → 连接关系不变（排序请用「连接」下拉或 ↑↓ 按钮）
             self.drag = None
-            ch = self.flow["chain"]
-            if d["id"] in ch:
-                i = ch.index(d["id"])
-                prev = ch[i - 1] if i > 0 else None
-                nxt = ch[i + 1] if i + 1 < len(ch) else None
-                if (prev, nxt) != (d.get("prev"), d.get("next")):
-                    # 拖动会按上下位置重排链序 —— 说清楚"谁接到了谁下面"，
-                    # 不然新连好的节点会在拖完之后悄悄换到别的节点后面。
-                    nm = lambda x: ("无" if x is None else
-                                    f"#{ch.index(x)+1} {self.flow['nodes'][x].get('title', x)}")
-                    self.log(f"⚠ 拖动后链序变了：「{self.flow['nodes'][d['id']].get('title', '?')}」"
-                             f"的上一节点 {nm(d.get('prev'))} → {nm(prev)}，"
-                             f"下一节点 {nm(d.get('next'))} → {nm(nxt)}。"
-                             f"想改回可在右侧「连接」里直接选。", "warn")
             self.build_prop_panel()   # 刷新面板里的 #序号
             self.redraw()
+            # 拖完若有卡片压在别人身上，提醒一下（自动挪会跟"我就要放这里"打架）
+            bad = overlapping_nodes(self.flow)
+            if len(bad) > 1:
+                self.status(f"⚠ 有 {len(bad)} 个节点重叠 —— 点「✥ 整理布局」可一键排开")
 
     # ---------- 属性面板 ----------
 
@@ -4257,6 +6085,8 @@ class FlowEditor:
         row = 1
         all_fields = list(spec["fields"]) + list(COMMON_NODE_FIELDS)
         hidden = FIELD_HIDDEN_IF.get(nd["type"], lambda _p: set())(nd.get("props") or {})
+        overridden = FIELD_OVERRIDDEN_IF.get(nd["type"],
+                                             lambda _p: set())(nd.get("props") or {})
         for _gkey, glabel, gfields in _group_fields(all_fields):
             visible = [f for f in gfields if f[0] not in hidden]
             if not visible:
@@ -4266,8 +6096,8 @@ class FlowEditor:
             row += 1
             for f in visible:
                 key, label, kind, extra = _field_spec(f)
-                if kind == "switch_list":
-                    # 候选编辑器较宽：标签放到上方，编辑器占整行
+                if kind in ("switch_list", "cases_list"):
+                    # 候选/选项编辑器较宽：标签放到上方，编辑器占整行
                     lab = ttk.Label(self.props_inner, text=label, style="Dim.TLabel")
                     lab.grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
                     self._bind_tip(lab, FIELD_TIPS.get(key))
@@ -4278,12 +6108,17 @@ class FlowEditor:
                     self.prop_widgets[key] = var
                     row += 1
                     continue
-                lab = ttk.Label(self.props_inner, text=label, style="Dim.TLabel")
+                dead = key in overridden
+                lab = ttk.Label(self.props_inner,
+                                text=label + ("（被 OCR 文本覆盖）" if dead else ""),
+                                style="Dim.TLabel")
                 lab.grid(row=row, column=0, sticky="w", pady=2)
                 self._bind_tip(lab, FIELD_TIPS.get(key))
                 var = self._make_var(nd["props"], key, kind)
-                self._make_widget(var, kind, key, extra).grid(
-                    row=row, column=1, sticky="we", padx=(8, 0), pady=2)
+                w = self._make_widget(var, kind, key, extra)
+                w.grid(row=row, column=1, sticky="we", padx=(8, 0), pady=2)
+                if dead:
+                    self._gray_out(w)
                 self.prop_widgets[key] = var
                 row += 1
         hint = _hide_hint(nd["type"], nd.get("props") or {})
@@ -4330,6 +6165,61 @@ class FlowEditor:
         widget.bind("<Leave>", hide, add="+")
         widget.bind("<Destroy>", hide, add="+")
 
+    def _node_ref_label(self, nid):
+        """节点 id → 下拉里显示的「#编号 标题」"""
+        if not nid or nid not in (self.flow.get("nodes") or {}):
+            return ""
+        return f"#{node_no(self.flow, nid)} {self.flow['nodes'][nid].get('title', nid)}"
+
+    def _node_ref_id(self, label):
+        """下拉里的「#编号 标题」→ 节点 id。
+
+        ★ 编号是节点的【固定编号 num】，不是它在链上的位置 —— 两者早就不是一回事了
+          （编号一旦分配就不再变，链序可以随时改）。以前「连接」和分支出口的下拉
+          拿编号当链上下标用：选「#10」实际接到链上第 10 个位置的节点，只要链序
+          和编号顺序不一致就会连错人。统一走这里按编号反查。"""
+        m = re.search(r"#(\d+)", str(label or ""))
+        if not m:
+            return ""
+        want = int(m.group(1))
+        for n in self.flow.get("nodes", {}):
+            if node_no(self.flow, n) == want:
+                return n
+        return ""
+
+    def _make_toggle(self, parent, var, text="", font=None, pad=(4, 2)):
+        """勾选类字段统一渲染成「✓ 绿=开 / ✗ 灰=关」的文字开关。
+
+        为什么不用 ttk.Checkbutton：clam 主题把"已勾选"的指示器画成一个像 ✗ 的图形，
+        看着像"关闭"，实际上却是开着的 —— 语义正好读反。这里把状态写成文字 + 颜色，
+        没有歧义（点一下就在 ✓/✗ 之间切换）。"""
+        btn = tk.Checkbutton(parent, indicatoron=False, variable=var, anchor="w",
+                             justify="left", bg=THEME["panel"], fg=THEME["text"],
+                             activebackground=THEME["panel"],
+                             activeforeground=THEME["text"],
+                             selectcolor=THEME["panel"], relief="flat", bd=0,
+                             highlightthickness=0, cursor="hand2",
+                             font=font or FONT_SM, padx=pad[0], pady=pad[1])
+
+        def sync(*_):
+            try:
+                on = bool(var.get())
+                mark, col = ("✓", THEME["ok"]) if on else ("✗", THEME["text_dim"])
+                btn.config(text=(mark + "  " + text) if text else mark, fg=col)
+            except tk.TclError:
+                pass                      # 控件已销毁（面板重建）时的回调
+        btn.config(command=sync)
+        sync()
+        return btn
+
+    def _gray_out(self, widget):
+        """互斥覆盖：控件保留在面板上但置灰 —— 让人看得见"它在这、只是现在不生效"，
+        而不是整行消失（消失看着就像功能没了）。清空覆盖它的那一项即自动恢复。"""
+        try:
+            widget.configure(state="disabled")
+        except tk.TclError:
+            pass
+
     def _make_var(self, props, key, kind):
         v = props.get(key)
         if kind == "bool":
@@ -4337,8 +6227,12 @@ class FlowEditor:
         elif kind == "bool_opt":
             # 引擎默认 enabled=true，故未设置时勾选框应为「已勾选」
             var = tk.BooleanVar(value=True if v is None else bool(v))
-        elif kind == "switch_list":
+        elif kind in ("switch_list", "inject_list", "cases_list"):
+            # 列表型：StringVar 只放个数量，用来触发面板重绘（真值由控件/拖线维护）
             var = tk.StringVar(value=str(len(v)) if isinstance(v, list) else "0")
+        elif kind == "node":
+            # 「作用到哪个节点」：存的是节点 id，控件里显示成 "#编号 标题"
+            var = tk.StringVar(value=self._node_ref_label(v))
         else:
             var = tk.StringVar(value="" if v is None else str(v))
         tid = var.trace_add("write", lambda *_: self._prop_changed(key, var, kind))
@@ -4348,6 +6242,25 @@ class FlowEditor:
     def _make_widget(self, var, kind, key, extra=None):
         if kind == "switch_list":
             return self._make_switch_list(var)
+        if kind == "cases_list":
+            return self._make_cases_list(var)
+        if kind == "inject_list":
+            # 【输入】节点的注入目标：只读展示 + 提示（增删靠画布上右侧的注入小球）
+            box = ttk.Frame(self.props_inner)
+            nd = (self.flow.get("nodes") or {}).get(self.sel) or {}
+            tgts = list(input_targets(nd))
+            if tgts:
+                names = "、".join(self._node_ref_label(t) or t for t in tgts)
+                txt = f"已注入：{names}"
+            else:
+                txt = "还没连到节点 —— 把卡片右侧的「注入」小球拖到目标节点上"
+            ttk.Label(box, text=txt, style="Dim.TLabel", wraplength=250,
+                      justify="left").pack(anchor="w")
+            ttk.Label(box, text="（这条线只表示参数注入，不代表流程顺序；"
+                                "再把小球拖到已注入的节点上即取消）",
+                      style="Dim.TLabel", wraplength=250,
+                      justify="left").pack(anchor="w")
+            return box
         if kind in ("tpl", "tpl_multi"):
             self.templates = list_templates()   # 实时刷新（框选工具新保存的模板立即可选）
             multi = (kind == "tpl_multi")
@@ -4355,8 +6268,18 @@ class FlowEditor:
             cmb = ttk.Combobox(self.props_inner, textvariable=var,
                                values=self.templates, width=width, font=FONT_SM)
 
-            def _submit(var=var, picked=None):
-                # picked: 弹窗提交的多选串（None=用当前输入框值）
+            def _refresh_tpls(_e=None):
+                # 点开下拉前重读一次模板目录：面板是选中节点时建的，之后用框选工具
+                # 新做的模板不在 values 里，下拉里就找不到（"选不了模板"多因于此）。
+                # 注意不能 return "break" —— 那会吃掉这次点击、下拉就不弹了。
+                self.templates = list_templates()
+                cmb.configure(values=self.templates)
+
+            def _submit(picked=None, var=var):
+                # ★ 第一个参数必须是 picked：弹窗回调是按 on_pick(选中的模板串) 调的。
+                #   以前写成 (var=var, picked=None)，那串模板名会被塞进 var、
+                #   picked 仍是 None → 走"按输入框文字提交"→ 对字符串调 .get()
+                #   抛 AttributeError（被 Tk 吞掉）→ 点了候选什么都没发生。
                 val = picked if picked is not None else str(var.get()).strip()
                 self._commit_tpl(var, val, multi)
 
@@ -4388,11 +6311,15 @@ class FlowEditor:
                         lambda picked, var=var: (var.set(picked),
                                                  self._commit_tpl(var, picked, False)))
 
-            def _on_focus_out(var=var):
+            def _on_focus_out(_e=None, var=var):
+                # ★ 第一个参数必须能接住事件：bind 会把 Event 当位置参数传进来，
+                #   写成 (var=var) 的话 var 会被 Event 顶掉，后面 var.get()/set() 全部
+                #   抛 AttributeError，失焦提交（输入名字后点别处）就永远不生效。
                 self.root.after(170, self._close_tpl_pop)   # 等列表点击事件先到
                 self._commit_tpl(var, None, multi)
 
             cmb.bind("<KeyRelease>", _on_key)
+            cmb.bind("<Button-1>", _refresh_tpls)
             cmb.bind("<<ComboboxSelected>>",
                      lambda e, var=var: self._commit_tpl(var, var.get(), multi))
             cmb.bind("<FocusOut>", _on_focus_out)
@@ -4401,10 +6328,14 @@ class FlowEditor:
             return ttk.Combobox(self.props_inner, textvariable=var,
                                 values=common_node_names(), width=22,
                                 state="readonly", font=FONT_SM)
-        if kind == "bool":
-            return ttk.Checkbutton(self.props_inner, variable=var, text="")
-        if kind == "bool_opt":
-            return ttk.Checkbutton(self.props_inner, variable=var, text="")
+        if kind == "node":
+            # 「作用到哪个节点」：本流程全部节点（#编号 标题）
+            return ttk.Combobox(self.props_inner, textvariable=var,
+                                values=[self._node_ref_label(n)
+                                        for n in self.flow.get("chain", [])],
+                                width=22, state="readonly", font=FONT_SM)
+        if kind in ("bool", "bool_opt"):
+            return self._make_toggle(self.props_inner, var)
         if kind == "float":
             return ttk.Spinbox(self.props_inner, textvariable=var,
                                from_=0.3, to=0.99, increment=0.05, width=10,
@@ -4438,6 +6369,112 @@ class FlowEditor:
             return fr
         return ttk.Entry(self.props_inner, textvariable=var, width=22, font=FONT_SM)
 
+    def _make_cases_list(self, var):
+        """【选择】的选项编辑：列表 + 一行四个格子（选项名 / 目标节点 / 字段 / 值）+ 增删改。
+
+        目标节点可以写三种：画布上的节点 id、`#编号`（按固定编号反查）、
+        或者**手写管线里的节点名**（`征集段2`、`ZJ_JiaHao2` —— 老流程的参数就作用在
+        那些节点上，编辑器流程里没有它们）。"""
+        wrap = ttk.Frame(self.props_inner)
+        lb = tk.Listbox(wrap, height=7, width=44, font=FONT_SM, bg=THEME["field"],
+                        fg=THEME["text"], selectbackground=THEME["accent"],
+                        selectforeground=THEME["text"], relief="flat",
+                        highlightthickness=1, highlightbackground=THEME["card_line"])
+        lb.pack(fill="x", padx=(8, 0))
+
+        def _rows():
+            return self.flow["nodes"][self.sel]["props"].setdefault("cases", [])
+
+        def refresh(_e=None):
+            rows = _rows()
+            lb.delete(0, "end")
+            for i, r in enumerate(rows):
+                lb.insert("end", f"{i + 1}. {case_brief(self.flow, r)}")
+            var.set(str(len(rows)))     # 触发面板重绘钩子（摘要/校验跟着更新）
+
+        grid = ttk.Frame(wrap)
+        grid.pack(fill="x", padx=(8, 0), pady=(6, 0))
+        entries = {}
+        for col, (key, lab, width) in enumerate((("name", "选项名", 6),
+                                                 ("node", "目标节点", 14),
+                                                 ("field", "字段", 16),
+                                                 ("value", "值", 14))):
+            ttk.Label(grid, text=lab, style="Dim.TLabel").grid(row=0, column=col,
+                                                               sticky="w", padx=(0, 4))
+            if key == "field":
+                e = ttk.Combobox(grid, width=width, font=FONT_SM,
+                                 values=list(PICK_FIELDS))
+            else:
+                e = ttk.Entry(grid, width=width, font=FONT_SM)
+            e.grid(row=1, column=col, sticky="we", padx=(0, 4))
+            entries[key] = e
+
+        def _sel_row():
+            sel = lb.curselection()
+            return _rows()[sel[0]] if sel else None
+
+        def _fill(_e=None):
+            r = _sel_row()
+            if r is None:
+                return
+            for key, e in entries.items():
+                e.delete(0, "end")
+                val = r.get(key, "")
+                if key == "field":
+                    val = pick_field_display(input_field({"field": val}))
+                e.insert(0, "" if val is None else str(val))
+
+        def _apply(_e=None):
+            """把四个格子写回选中的那一行（不新增）"""
+            r = _sel_row()
+            if r is None:
+                return
+            self._snapshot("case")
+            r["name"] = entries["name"].get().strip()
+            r["node"] = entries["node"].get().strip()
+            r["field"] = input_field({"field": entries["field"].get()})
+            r["value"] = entries["value"].get().strip()
+            refresh()
+
+        for e in entries.values():
+            e.bind("<FocusOut>", _apply)
+            e.bind("<Return>", _apply)
+
+        btns = ttk.Frame(wrap)
+        btns.pack(fill="x", padx=(8, 0), pady=(6, 0))
+
+        def _add():
+            self._snapshot("case")
+            rows = _rows()
+            # 选项名默认接着编（已有 1..N 就下一个数字），省得每行手敲
+            used = {str(r.get("name") or "").strip() for r in rows}
+            n = len(rows) + 1
+            while str(n) in used:
+                n += 1
+            rows.append({"name": str(n), "node": "", "field": "next", "value": ""})
+            refresh()
+            lb.selection_clear(0, "end")
+            lb.selection_set("end")
+            _fill()
+
+        def _del():
+            sel = lb.curselection()
+            if not sel:
+                return
+            self._snapshot("case")
+            del _rows()[sel[0]]
+            refresh()
+
+        self._flat_btn(btns, "＋ 加选项", _add).pack(side="left")
+        self._flat_btn(btns, "－ 删选中", _del).pack(side="left", padx=(6, 0))
+        tip = ttk.Label(wrap, style="Dim.TLabel", wraplength=250, justify="left",
+                        text="目标节点：画布节点 id / #编号 / 手写管线的节点名（如 征集段2）。"
+                             "字段里选「下一个出口」时，值填节点名（多个用逗号）。")
+        tip.pack(anchor="w", padx=8, pady=(4, 0))
+        lb.bind("<<ListboxSelect>>", _fill)
+        refresh()
+        return wrap
+
     def _make_switch_list(self, var):
         """枝干候选编辑：列表 + 文本/时长输入 + 增删改；候选的命中出口用画布连线"""
         wrap = ttk.Frame(self.props_inner)
@@ -4454,149 +6491,86 @@ class FlowEditor:
             cands = _cands()
             lb.delete(0, "end")
             for i, c in enumerate(cands):
-                t = str(c.get("t", ""))
-                if t == PENDING_TPL:
-                    disp = "(待填：拖「＋」球建的分支，请选模板或填 OCR)"
-                else:
-                    disp = "OCR:" + t[4:] if t.lower().startswith("ocr:") else t
                 merge = " · 回并主线" if c.get("mergeBack") else ""
-                lb.insert("end", f"{i + 1}. {disp} · {c.get('timeout', 3000)}ms{merge}")
+                lb.insert("end", f"{i + 1}. {cand_brief(self.flow, c)}"
+                                 f" · {c.get('timeout', 3000)}ms{merge}")
             var.set(str(len(cands)))   # 触发面板重绘钩子
 
         row = ttk.Frame(wrap)
         row.pack(fill="x", padx=(8, 0), pady=(6, 0))
-        # 识别目标二选一：模板（下拉 + 弹窗选择）/ OCR 文字（手输）
-        # —— 对应协议里的 '模板名.png' 与 'OCR:文字' 两种写法，不用用户自己拼前缀
-        mode = tk.StringVar(value="tpl")
-        mrow = ttk.Frame(wrap)
-        mrow.pack(fill="x", padx=(8, 0), pady=(4, 0))
-        ttk.Radiobutton(mrow, text="模板", value="tpl", variable=mode,
-                        command=lambda: _mode_changed()).pack(side="left")
-        ttk.Radiobutton(mrow, text="OCR 文字", value="ocr", variable=mode,
-                        command=lambda: _mode_changed()).pack(side="left", padx=(8, 0))
-        e_t = ttk.Combobox(row, font=FONT_SM, width=20, values=self.templates)
-        e_t.pack(side="left")
-
-        def _pick_tpl(_e=None):
-            items = _tpl_candidates(self.templates, e_t.get())
-            if not items:
-                self.log("任务包 whmx/image 里没有模板图（先用框选工具做一张）", "warn")
-                return
-            self._show_tpl_pop(e_t, items, lambda picked: (e_t.set(picked),
-                                                           _preview()))
-        self._flat_btn(row, "▾ 选", _pick_tpl, padx=6, font=FONT_SM).pack(
-            side="left", padx=3)
+        # ★ 这里不再有「模板 / OCR 文字」二选一：候选判什么，取决于它连到的那个
+        #   【分支】节点 —— 模板图/OCR 文字只在分支里配一次。枝干只负责顺序与路由，
+        #   两处都配等于同一个条件写两遍，容易写歪（也就有了"枝干判定里为什么要选识别方式"的困惑）。
+        ttk.Label(row, text="判定超时ms", style="Dim.TLabel").pack(side="left")
         e_d = ttk.Entry(row, width=6, font=FONT_SM)
         e_d.insert(0, "3000")
         e_d.pack(side="left", padx=4)
         e_m = tk.BooleanVar(value=False)
-        ttk.Checkbutton(wrap, text="命中后回并主线（不勾=内容跑完即结束）",
-                        variable=e_m).pack(anchor="w", padx=(8, 0), pady=(2, 0))
-        prev = ttk.Label(wrap, background=THEME["card"])
-        prev.pack(anchor="w", padx=(8, 0), pady=(2, 0))
-
-        def _preview():
-            """把选中的模板缩略图显示出来，避免选错（框选出来的原尺寸图很小）"""
-            name = e_t.get().strip()
-            if mode.get() != "tpl" or not name:
-                prev.config(image="", text="")
-                return
-            got = self._get_tpl_photo(name)
-            if got:
-                _, photo, _, _ = got
-                prev.config(image=photo, text="")
-                prev.image = photo
-            else:
-                prev.config(image="", text="模板不存在")
-
-        def _mode_changed():
-            if mode.get() == "ocr":
-                e_t.config(values=())
-                prev.config(image="", text="")
-            else:
-                self.templates = list_templates()
-                e_t.config(values=self.templates)
-                _preview()
+        self._make_toggle(wrap, e_m, "命中后回并主线（不勾=内容跑完即结束）").pack(
+            anchor="w", padx=(8, 0), pady=(2, 0))
+        # 只读回显：这条候选究竟会用什么条件判定（从它连到的分支推导）
+        cur = ttk.Label(wrap, style="Dim.TLabel", wraplength=230, justify="left")
+        cur.pack(anchor="w", padx=8, pady=(4, 0))
 
         def _fill_sel(_e=None):
             sel = lb.curselection()
             if not sel:
+                cur.config(text="")
                 return
             c = _cands()[sel[0]]
-            t = str(c.get("t", ""))
-            if t.lower().startswith("ocr:"):
-                mode.set("ocr")
-                e_t.config(values=())
-                e_t.set(t[4:].strip())
-            else:
-                mode.set("tpl")
-                e_t.config(values=self.templates)
-                e_t.set(t)
             e_d.delete(0, "end")
             e_d.insert(0, str(c.get("timeout", 3000)))
             e_m.set(bool(c.get("mergeBack")))
-            _preview()
+            cur.config(text="判定条件取自：" + cand_brief(self.flow, c))
 
         def _read_form():
-            raw = str(e_t.get()).strip()
-            if not raw:
-                return None
-            t = ("OCR:" + raw) if mode.get() == "ocr" else raw
             try:
                 timeout = max(500, int(e_d.get() or 3000))
             except ValueError:
                 timeout = 3000
-            item = {"t": t, "timeout": timeout}
+            item = {"timeout": timeout}
             if e_m.get():
                 item["mergeBack"] = True
             return item
 
         def on_add():
-            item = _read_form()
-            if item is None:
-                self.log("请先选模板（或切到 OCR 文字并填文字）", "warn")
-                return
             self._snapshot("cand")
-            _cands().append(item)
-            e_t.set("")
+            _cands().append(_read_form())
             e_d.delete(0, "end")
             e_d.insert(0, "3000")
             e_m.set(False)
-            _preview()
+            cur.config(text="")
             refresh()
+            self.log("已加一个候选：拖它右侧的圆点连到分支节点，"
+                     "判定条件（模板图/OCR 文字）在那个分支里配")
 
         def on_update():
             sel = lb.curselection()
             if not sel:
-                return
-            item = _read_form()
-            if item is None:
-                self.log("请先选模板（或切到 OCR 文字并填文字）", "warn")
+                self.log("先在上面的候选列表里选中一条", "warn")
                 return
             old = _cands()[sel[0]]
-            self._snapshot("cand")
-            # 保留画布上拖出来的命中出口（next），否则「更新」会把连线清掉
+            item = _read_form()
+            # 保留画布上拖出来的连线（next），否则「更新」会把连线清掉
             if old.get("next"):
                 item["next"] = old["next"]
+            self._snapshot("cand")
             _cands()[sel[0]] = item
             refresh()
+            cur.config(text="判定条件取自：" + cand_brief(self.flow, item))
 
         def on_del():
             sel = lb.curselection()
             if not sel:
+                self.log("先在上面的候选列表里选中一条", "warn")
                 return
             self._snapshot("cand")
             del _cands()[sel[0]]
+            cur.config(text="")
             refresh()
 
         lb.bind("<<ListboxSelect>>", _fill_sel)
         lb.bind("<Double-Button-1>", _fill_sel)
-        # 模板字段：点一下或输入就弹候选列表；选中后显示缩略图
-        e_t.bind("<Button-1>", lambda e: (_pick_tpl(), "break")[1] if mode.get() == "tpl" else None)
-        e_t.bind("<KeyRelease>", lambda e: _pick_tpl() if (
-            mode.get() == "tpl" and e.keysym not in
-            ("Down", "Up", "Left", "Right", "Tab", "Return", "Escape")) else None)
-        e_t.bind("<<ComboboxSelected>>", lambda e: _preview())
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", padx=(8, 0), pady=(4, 0))
         for text, cmd in (("+ 添加", on_add), ("更新", on_update), ("删除", on_del)):
@@ -4604,8 +6578,10 @@ class FlowEditor:
                        style="Toolbutton").pack(side="left", padx=(0, 6))
         ttk.Label(
             wrap,
-            text="候选出口：拖卡片右侧 ✓1/✓2… 圆点到内容起点；顺序就是判定顺序。",
-            style="Dim.TLabel", wraplength=230).pack(anchor="w", padx=8, pady=(6, 0))
+            text="顺序就是判定顺序：先试 1，命中就走 1 连到的节点；全不中走红球 ✗ 出口。\n"
+                 "候选判什么 = 它连到的【分支】判什么（模板图/OCR 文字在分支里配）。",
+            style="Dim.TLabel", wraplength=230, justify="left").pack(
+            anchor="w", padx=8, pady=(6, 0))
         refresh()
         return wrap
 
@@ -4618,6 +6594,11 @@ class FlowEditor:
         try:
             if kind == "bool":
                 nd["props"][key] = bool(var.get())
+            elif kind == "node":
+                # 下拉显示的是 "#编号 标题"，存回节点 id
+                got = self._node_ref_id(var.get())
+                if got:
+                    nd["props"][key] = got
             elif kind == "float":
                 nd["props"][key] = float(var.get())
             elif kind in ("tpl", "tpl_multi"):
@@ -4656,8 +6637,9 @@ class FlowEditor:
                     nd["props"][key] = v
                 else:
                     nd["props"].pop(key, None)
-            elif kind == "switch_list":
-                pass    # 列表型 props 由候选编辑控件直接维护，StringVar 仅用于触发重绘
+            elif kind in ("switch_list", "inject_list", "cases_list"):
+                # 列表型 props 由专用控件/画布拖线直接维护，StringVar 仅用于触发重绘
+                pass
             else:
                 nd["props"][key] = var.get()
         except (ValueError, tk.TclError):
@@ -4668,63 +6650,144 @@ class FlowEditor:
 
     def _branch_target_label(self, nid, target, is_hit):
         ch = self.flow["chain"]
+        nodes = self.flow["nodes"]
         if target is None:
-            return "(自动→下一个)" if is_hit else "(流程结束)"
-        if target not in ch:
-            return f"#{target}"
-        return f"#{node_no(self.flow, target)} {self.flow['nodes'][target].get('title', target)}"
+            return "（未连线：命中即结束）" if is_hit else "（未连线：未中即结束）"
+        if target not in nodes:
+            return "（指向的节点已删除）"
+        label = f"#{node_no(self.flow, target)} {nodes[target].get('title', target)}"
+        # ★ 未接入流程的节点：用与下拉候选【同一个写法】，否则当前值跟候选列表对不上，
+        #   下拉里会显示成一串内部 id（"#n0017b54"），看着像没连上。
+        return label if target in ch else label + "（未接入）"
+
+    def _set_next(self, nid, tgt):
+        """把 nid 的"下一个"设成 tgt（None = 到此结束）。只动这一条边。
+
+        ★ v4 的语义：nd["next"] 就是那条边本身，链序不再参与。
+          目标必须在主链上：不在链上的节点不生成，这条边就成了指向不存在节点的引用
+          （本机引擎实测：整个任务包 loaded=False），所以顺手把它接进链。
+        返回 True 表示目标这次是新接进链的。"""
+        nodes = self.flow.get("nodes", {})
+        nd = nodes.get(nid)
+        if not isinstance(nd, dict):
+            return False
+        if tgt and (tgt not in nodes or tgt == nid):
+            tgt = None
+        nd["next"] = tgt or None
+        nd.pop("cut", None)
+        if tgt and tgt not in self.flow["chain"]:
+            self._ensure_in_chain(tgt, nid)
+            self._clear_cut(tgt)
+            return True
+        return False
 
     def _sync_conn_ui(self):
-        """同步「上一个 / 下一个」下拉：它们就是链序邻居，改它 = 把本节点移到那个邻居旁边。"""
+        """同步「上一个 / 下一个」下拉：它们就是【节点上那两条边】。
+
+        「下一个」= 本节点的 nd["next"]；「上一个」= "谁的下一个写着我"（反向查）。
+        ★ v4 起改它【只改这一条边】：不挪节点、不改链序、不牵动别的连接 ——
+          不会再有"我只改了一个地方，别处却自动连上/断开"的情况。"""
         nid = self.sel
         ch = self.flow.get("chain", [])
-        if not nid or nid not in ch:
+        nodes = self.flow.get("nodes", {})
+        if not nid or nid not in nodes:
             for cb in (getattr(self, "prev_combo", None),
                        getattr(self, "next_combo", None)):
                 if cb is not None:
                     cb.config(values=[], state="disabled")
                     cb.set("")
             return
-        options = [f"#{node_no(self.flow, n)} {self.flow['nodes'][n].get('title', n)}"
-                   for n in ch]
-        i = ch.index(nid)
-        self.prev_combo.config(values=["(无：排在第一个)"] + options, state="readonly")
-        self.prev_combo.set(self._branch_target_label(nid, ch[i - 1], False)
-                            if i > 0 else "(无：排在第一个)")
-        self.next_combo.config(values=["(无：到此结束)"] + options, state="readonly")
-        self.next_combo.set(self._branch_target_label(nid, ch[i + 1], False)
-                            if i + 1 < len(ch) else "(无：到此结束)")
+        options = [self._node_ref_label(n) for n in ch if n != nid]
+        options += [self._node_ref_label(n) + "（未接入）" for n in nodes
+                    if n not in ch and n != nid
+                    and (nodes[n] or {}).get("type") not in ("input", "pick")]
+        nd = nodes[nid]
+        no_next = "(无：到此结束)"
+        nxt = nd.get("next")
+        self.next_combo.config(values=[no_next] + options, state="readonly")
+        self.next_combo.set(self._node_ref_label(nxt) if nxt in nodes else no_next)
+        prev = next((n for n in nodes
+                     if n != nid and (nodes[n] or {}).get("next") == nid), None)
+        no_prev = "(无：没有节点接在我前面)"
+        self.prev_combo.config(values=[no_prev] + options, state="readonly")
+        self.prev_combo.set(self._node_ref_label(prev) if prev else no_prev)
 
     def on_conn_combo(self, which):
-        """改「上一个 / 下一个」= 把本节点在链上挪到那个邻居旁边（不改变其他节点的相对顺序）"""
+        """改「上一个 / 下一个」= 只改这一条边。
+
+        ★ v4：边存在节点上（nd["next"]），链序只决定显示顺序。所以改一条边绝不会
+          牵动别的连接，也不会再冒出你没画过的线。
+          「下一个 = X」= 我的下一个改成 X（选「(无：到此结束)」就是没有下一个）；
+          「上一个 = X」= X 的下一个改成"本节点"（于是它排在我前面）；
+          「（不接入流程：断开）」= 把本节点移出主链（还被别的边指着时会被拒绝）。
+        """
         nid = self.sel
         ch = self.flow["chain"]
-        if not nid or nid not in ch:
+        nodes = self.flow.get("nodes", {})
+        if not nid or nid not in nodes:
             return
         combo = self.prev_combo if which == "prev" else self.next_combo
-        m = re.match(r"#(\d+)", combo.get())
-        tgt = ch[int(m.group(1)) - 1] if (m and 1 <= int(m.group(1)) <= len(ch)) else None
+        text = combo.get()
+        if text.startswith(("（不接入", "(不接入")):
+            if nid in ch:
+                # 指着它的东西：别的节点的"下一个"、以及分支/枝干的出口。
+                # 有的话不能移出主链 —— 出口指着谁，谁就在流程里。否则生成物里
+                # 会出现指向不存在节点的引用，引擎会拒绝【整个任务包】。
+                refs = [n for n in nodes
+                        if n != nid and (nodes[n] or {}).get("next") == nid]
+                refs += [n for n in ch if nid in exit_targets_of(self.flow, n)]
+                if refs:
+                    where = "、".join(self._node_ref_label(n)
+                                      for n in sorted(set(refs)))
+                    self.log(f"{self._node_ref_label(nid)}还被 {where} 指着"
+                             f"（下一个 / 出口），不能移出流程 —— 指着谁，谁就在流程里；"
+                             f"不然生成物会指向不存在的节点，引擎会拒绝加载整个任务包。"
+                             f"要移出的话，先把那些边改成别的节点或「到此结束」。", "err")
+                    self._sync_conn_ui()
+                    return
+                self._snapshot(f"conn:{nid}:detach")
+                ch.remove(nid)
+                for n in nodes:      # 兜底：别留指向它的悬空边
+                    if (nodes[n] or {}).get("next") == nid:
+                        nodes[n]["next"] = None
+                self.build_prop_panel()
+                self.redraw()
+                self.log(f"已把{self._node_ref_label(nid)}移出主链"
+                         f"（不参与生成，卡片留在原地）", "warn")
+            return
+        tgt = self._node_ref_id(text) or None
         if tgt == nid:
             tgt = None
-        self._snapshot(f"conn:{nid}:{which}")
-        ch.remove(nid)
-        if tgt is None or tgt not in ch:
-            if which == "prev":
-                ch.insert(0, nid)          # 作为第一个
-            else:
-                ch.append(nid)             # 到此结束
+        if which == "next":
+            self._snapshot(f"conn:{nid}:next")
+            pulled = self._set_next(nid, tgt)
+            if nid not in ch:
+                # 我在编辑它，说明它要用 → 接进链（不接进链的节点不生成）
+                self._ensure_in_chain(nid, None)
+                self.log(f"（{self._node_ref_label(nid)}原本还没接进流程，已接入）", "warn")
+            self.build_prop_panel()
+            self.redraw()
+            msg = (f"已改：{self._node_ref_label(nid)}的下一个 → "
+                   + (self._node_ref_label(tgt) if tgt else "（无：到此结束）"))
+            if pulled:
+                msg += f"；{self._node_ref_label(tgt)}原本还没接进流程，已一并接入"
+            self.log(msg, "ok")
         else:
-            j = ch.index(tgt)
-            ch.insert(j if which == "prev" else j + 1, nid)
-        self.build_prop_panel()
-        self.redraw()
-        if tgt:
-            where = f"接在「{self.flow['nodes'][tgt].get('title', tgt)}」"                     f"{'之前' if which == 'next' else '之后'}"
-        else:
-            where = "排到链首（作为第一个）" if which == "prev" else "移到链尾（到此结束）"
-        self.log(f"已改接：「{self.flow['nodes'][nid].get('title', '?')}」{where}"
-                 f"（链序已变；如需按新顺序排布点「✥ 整理布局」）")
-
+            if tgt is None:
+                self.log("「上一个」得选一个节点；要把自己移出流程请选"
+                         "「（不接入流程：断开）」", "warn")
+                self._sync_conn_ui()
+                return
+            self._snapshot(f"conn:{nid}:prev")
+            self._set_next(tgt, nid)
+            if tgt not in ch:
+                self._ensure_in_chain(tgt, None)
+            if nid not in ch:
+                self._ensure_in_chain(nid, tgt)
+            self.build_prop_panel()
+            self.redraw()
+            self.log(f"已改：{self._node_ref_label(tgt)}的下一个 → "
+                     f"{self._node_ref_label(nid)}（它排在我前面）", "ok")
     def _sync_branch_ui(self):
         nid = self.sel
         def _disable_combos():
@@ -4741,6 +6804,18 @@ class FlowEditor:
         ch = self.flow["chain"]
         options = [f"#{node_no(self.flow, n)} {self.flow['nodes'][n].get('title', n)}"
                    for n in ch]
+        if nd["type"] != "loop":
+            # ★ 出口（✓/✗、全部未中）指向的是具体节点，未接入流程的同样要能在这里选到
+            #   （选了就顺手接进链，见 on_branch_combo）—— 与「连接」下拉同一条规则。
+            #   不列【输入】（设计上离链）；【循环】也不列：它的「循环体末尾」是链上的
+            #   位置标记，不是"指向哪个节点"，离链节点在那里没有意义。
+            options += [f"#{node_no(self.flow, n)} "
+                        f"{self.flow['nodes'][n].get('title', n)}（未接入）"
+                        for n in sorted(
+                            (x for x in self.flow["nodes"]
+                             if x not in ch and x != nid
+                             and (self.flow["nodes"][x] or {}).get("type") not in ("input", "pick")),
+                            key=lambda x: node_no(self.flow, x, 0))]
         if nd["type"] == "loop":
             # 循环复用「✗」那一行的下拉来选择循环体末尾（也可在画布上拖端口）
             self.hit_combo.config(values=[], state="disabled")
@@ -4767,19 +6842,22 @@ class FlowEditor:
             self.branch_hint.config(
                 text=f"候选 {n_cand} 个。★ 球上的数字 = 判定顺序：先试 1，命中就走 1 "
                      f"那条线连到的节点；不中再试 2；全不中走红球(✗)。"
-                     f"下沿的球：彩色带序号=各候选分支（线与球同色），"
-                     f"蓝「＋」球=拖到目标节点即新建一条分支（会再冒一个新球）。")
+                     f"每个候选判什么，取决于它连到的那个【分支】——"
+                     f"模板图/OCR 文字在分支里配，这里不选识别方式。")
             return
         if nd["type"] != "branch":
             _disable_combos()
-            self.branch_hint.config(text="该节点类型没有分支出口（只有「分支(模板在?)」/「枝干判定(多路)」节点有出口）。")
+            self.branch_hint.config(text="该节点类型没有分支出口（只有「分支」/「枝干判定(多路)」节点有出口）。")
             return
-        self.hit_combo.config(values=["(自动→下一个)"] + options, state="readonly")
+        self.hit_combo.config(values=["（不指定：命中即结束）"] + options,
+                               state="readonly")
         self.miss_combo.config(values=["(流程结束)"] + options, state="readonly")
         self.hit_combo.set(self._branch_target_label(nid, nd.get("hit_next"), True))
         self.miss_combo.set(self._branch_target_label(nid, nd.get("miss_next"), False))
-        self.branch_hint.config(text="拖动分支卡片右侧 ✓/✗ 圆点到目标节点即可连线；"
-                                     "拖到空白处断开。✗ 跳回前面的节点 = 循环。")
+        self.branch_hint.config(text="★ 分支默认谁也不连：✓命中/✗未中都要拖卡片右侧的圆点"
+                                     "显式连线，不连就是「命中/未中即结束」，"
+                                     "不会自动走链上下一个。拖到空白处断开；"
+                                     "✗ 跳回前面的节点 = 循环。")
 
     def on_branch_combo(self, port):
         nid = self.sel
@@ -4789,15 +6867,33 @@ class FlowEditor:
         if nd["type"] not in ("branch", "switch", "loop"):
             return
         combo = self.hit_combo if port == "hit_next" else self.miss_combo
-        text = combo.get()
-        m = re.match(r"#(\d+)", text)
-        if m and 1 <= int(m.group(1)) <= len(self.flow["chain"]):
-            target = self.flow["chain"][int(m.group(1)) - 1]
+        target = self._node_ref_id(combo.get()) or None
+        if target:
             if target == nid:
                 self.log("分支出口不能指向自己", "warn")
                 self._sync_branch_ui()
                 return
             self._snapshot(f"branch:{nid}:{port}")
+            # ★ 两端都要接进链（见 _link_exit）：出口指向"不参与生成"的节点，生成物里
+            #   就是一条指向不存在节点的 next，引擎会拒绝加载【整个任务包】；
+            #   而本节点自己不在链上时，这条出口边在画布上根本画不出来。
+            src_add, tgt_add = self._link_exit(nid, target)
+            if src_add:
+                self.log(f"（本节点{self._node_ref_label(nid)}还没接进流程，"
+                         f"已先接到链尾 —— 否则这条出口连线在画布上画不出来）", "warn")
+            if tgt_add:
+                self.log(f"（{self._node_ref_label(target)}原本还没接进流程，"
+                         f"已顺手插在本节点后面）", "warn")
+            if self.flow["nodes"][target].get("cut"):
+                self.log(f"（注意：{self._node_ref_label(target)}标着「此处断开」，"
+                         f"流程走到它就不再往下 —— 要让它继续，选中它、在「连接」里"
+                         f"给它的「下一个」选一个节点）", "warn")
+            if self.flow["nodes"][target].get("next"):
+                self.log(f"（提示：{self._node_ref_label(target)}自己的「下一个」仍是"
+                         f"{self._node_ref_label(self.flow['nodes'][target]['next'])}"
+                         f"—— 连接只决定「谁指到它」，不碰它自己的下一个；"
+                         f"不需要那条就选中它，把「下一个」改成「(无：到此结束)」）",
+                         "warn")
             if nd["type"] == "loop":
                 nd.setdefault("props", {})["body_end"] = target
             elif nd["type"] == "switch" and port == "miss_next":
@@ -4819,37 +6915,276 @@ class FlowEditor:
     def _start_pick(self, key):
         if not self.sel:
             return
-        if self.bg_disp is None:
-            self.status("取点需要先有背景帧：先抓帧（F5）或打开帧图")
-            self.log("⚠ 取点失败：画布上没有背景帧。先点「⟳ 抓帧 (F5)」再取点。", "warn")
+        if self.bg_pil is None:
+            # 只要求"有帧"，不要求"帧显示在画布上" —— 帧窗口里取点跟画布背景无关
+            self.status("取点需要先有帧：先抓帧（F5）或打开帧图")
+            self.log("⚠ 取点失败：还没有帧画面。先点「⟳ 抓帧 (F5)」再取点。", "warn")
             return
         self.pick_target = key
-        mode = {"x": "点击取点击坐标", "x1": "点击取滑动起点", "x2": "点击取滑动终点"}[key]
-        self.status(f"取点模式：{mode}（在左侧帧画面上点击，Esc 取消）")
+        self._open_frame_window()          # ★ 在独立帧窗口里点，节点卡片不会挡
+        self.status(f"取点模式：{PICK_LABELS[key]}"
+                    f"（在「帧画面」窗口里点一下即可，Esc 取消）")
         self.root.bind("<Escape>", self.on_escape)
 
     def _cancel_pick(self, _e):
         self.pick_target = None
         self.status("已取消取点")
 
-    def _apply_pick(self, pt):
-        key = self.pick_target
+    def _apply_pick(self, pt, key=None):
+        """把取到的坐标写进当前选中节点的对应字段。
+
+        ★ key 必须由调用方显式传进来：on_down 取完点先把 self.pick_target 清成了 None
+          再调用这里，以前这里又去读 self.pick_target（已是 None）→ pairs[None] 直接
+          KeyError，异常被 Tkinter 吞掉 → 表现就是"点了取点没反应"。"""
+        key = key or self.pick_target
+        if key not in PICK_LABELS or not self.sel:
+            return
         x, y = pt
         props = self.flow["nodes"][self.sel]["props"]
         pairs = {"x": ("x", "y"), "x1": ("x1", "y1"), "x2": ("x2", "y2")}
         self._snapshot(f"pick:{self.sel}")
         ka, kb = pairs[key]
         props[ka], props[kb] = x, y
-        self.pick_target = None
-        self.status(f"已取坐标 ({x},{y})")
+        # ③ 滑动要取两个点：取完起点自动接着取终点（少点一次按钮；Esc 退出）
+        nxt = {"x1": "x2"}.get(key)
+        if nxt in pairs:
+            self.pick_target = nxt
+            self.status(f"已取 {PICK_LABELS[key]} ({x},{y})；接着取 "
+                        f"{PICK_LABELS[nxt]}（在帧窗口再点一下，Esc 取消）")
+        else:
+            self.pick_target = None
+            self.status(f"已取 {PICK_LABELS[key]} ({x},{y})")
         self.build_prop_panel()
         self.redraw()
+        self._refresh_frame_window()
 
-    # ---------- 运行回放（P1-8） ----------
-    # 数据来源全部是手机上已经存在的引擎日志（只读），不改安卓端、不加新协议。
-    # 触发运行用 am start --es entry：App 每次 runTask 都会重新加载任务包，
-    # 所以新增/更新的 pipeline 会被带上，不需要 force-stop（也就不会清掉虚拟屏）。
+    # ---------- 帧画面窗口：取点专用（节点卡片不会挡在帧上面） ----------
+    # 以前取点要在画布上点，而画布上节点卡片是盖在帧上面的 —— 想看准一个点很难，
+    # 现在单独开一个窗口显示原尺寸帧，点一下就取到坐标。
 
+    def _open_frame_window(self):
+        win = getattr(self, "frame_win", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            self._refresh_frame_window()
+            return win
+        win = tk.Toplevel(self.root)
+        self.frame_win = win
+        win.title("帧画面 · 取点（点一下即取坐标）")
+        win.configure(bg=THEME["panel"])
+        win.geometry("+%d+%d" % (self.root.winfo_rootx() + 120,
+                                 self.root.winfo_rooty() + 80))
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=8, pady=(8, 4))
+        self._flat_btn(bar, "适配窗口", lambda: self._fw_set_scale(None),
+                       padx=6, font=FONT_SM).pack(side="left")
+        self._flat_btn(bar, "100%", lambda: self._fw_set_scale(1.0),
+                       padx=6, font=FONT_SM).pack(side="left", padx=4)
+        self._flat_btn(bar, "200%", lambda: self._fw_set_scale(2.0),
+                       padx=6, font=FONT_SM).pack(side="left")
+        self.fw_pos = ttk.Label(bar, text="", style="Dim.TLabel")
+        self.fw_pos.pack(side="left", padx=14)
+        self.fw_hint = ttk.Label(bar, text="", style="Dim.TLabel")
+        self.fw_hint.pack(side="right")
+        wrap = ttk.Frame(win)
+        wrap.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.fw_canvas = tk.Canvas(wrap, bg="#0e1017", highlightthickness=0)
+        self.fw_xsb = ttk.Scrollbar(wrap, orient="horizontal")
+        self.fw_ysb = ttk.Scrollbar(wrap, orient="vertical")
+        self.fw_canvas.configure(xscrollcommand=self.fw_xsb.set,
+                                 yscrollcommand=self.fw_ysb.set)
+        self.fw_xsb.config(command=self.fw_canvas.xview)
+        self.fw_ysb.config(command=self.fw_canvas.yview)
+        self.fw_ysb.pack(side="right", fill="y")
+        self.fw_xsb.pack(side="bottom", fill="x")
+        self.fw_canvas.pack(side="left", fill="both", expand=True)
+        self.fw_canvas.bind("<Button-1>", self._fw_press)
+        self.fw_canvas.bind("<B1-Motion>", self._fw_drag)
+        self.fw_canvas.bind("<ButtonRelease-1>", self._fw_release)
+        self.fw_canvas.bind("<Motion>", self._fw_motion)
+        self._fw_box = None
+        self.fw_canvas.bind("<MouseWheel>",
+                            lambda e: self.fw_canvas.yview_scroll(
+                                int(-e.delta / 120), "units"))
+        win.bind("<Escape>", self._cancel_pick)
+        win.bind("<Configure>", lambda e: self._fw_on_resize())
+        self.fw_canvas.bind("<Button-3>",
+                            lambda e: self.fw_canvas.scan_mark(e.x, e.y))
+        self.fw_canvas.bind("<B3-Motion>",
+                            lambda e: self.fw_canvas.scan_dragto(e.x, e.y, gain=1))
+        self._fw_last_size = (0, 0)
+        self._refresh_frame_window()
+        return win
+
+    def _fw_set_scale(self, sc):
+        self.fw_scale = sc
+        self._fw_last_size = (0, 0)
+        self._refresh_frame_window()
+
+    def _fw_on_resize(self):
+        """窗口大小变了：适配模式下要重新缩放（否则留一片黑）"""
+        if getattr(self, "fw_scale", None) is not None:
+            return
+        c = getattr(self, "fw_canvas", None)
+        if c is None or not c.winfo_exists():
+            return
+        size = (c.winfo_width(), c.winfo_height())
+        if size == getattr(self, "_fw_last_size", None):
+            return
+        self._fw_last_size = size
+        self._refresh_frame_window()
+
+    def _refresh_frame_window(self):
+        if getattr(self, "frame_win", None) is None or not self.frame_win.winfo_exists():
+            return
+        c = self.fw_canvas
+        c.delete("all")
+        img = getattr(self, "_frame_img", None)
+        if img is None:
+            c.create_text(14, 14, anchor="nw", fill=THEME["text_dim"], font=FONT,
+                          text="还没有帧画面：点左侧「⟳ 抓帧 (F5)」或「📂 打开帧图」")
+            if hasattr(self, "fw_hint"):
+                self.fw_hint.config(text="")
+            return
+        W, H = img.size
+        c.update_idletasks()
+        if getattr(self, "fw_scale", None) is None:
+            vw, vh = max(200, c.winfo_width()), max(200, c.winfo_height())
+            sc = min(vw / W, vh / H, 1.0)
+        else:
+            sc = float(self.fw_scale)
+        self.fw_sc = max(0.05, sc)
+        disp = img.resize((max(1, int(W * self.fw_sc)), max(1, int(H * self.fw_sc))),
+                          Image.LANCZOS)
+        self.fw_photo = ImageTk.PhotoImage(disp)
+        c.create_image(0, 0, image=self.fw_photo, anchor="nw")
+        c.configure(scrollregion=(0, 0, disp.size[0], disp.size[1]))
+        for (mx, my) in getattr(self, "_fw_marks", []):
+            px, py = mx * self.fw_sc, my * self.fw_sc
+            c.create_line(px - 9, py, px + 9, py, fill="#ffd75e", width=2)
+            c.create_line(px, py - 9, px, py + 9, fill="#ffd75e", width=2)
+            c.create_text(px + 12, py - 12, anchor="sw", fill="#ffd75e",
+                          font=FONT_SM, text=f"{mx},{my}")
+        tips = self._fw_draw_overlay(c)
+        if hasattr(self, "fw_hint"):
+            mode = (f"取点中：点一下即取「{PICK_LABELS[self.pick_target]}」"
+                    if self.pick_target else
+                    ("框选中：拖出一个矩形即可（Esc 取消）"
+                     if self.roi_pick else
+                     "先在右侧点「✛ 取点 / ✛ 框选」再回到这里点"))
+            self.fw_hint.config(
+                text=f"帧 {W}x{H} · 显示 {int(self.fw_sc * 100)}% · {mode}"
+                     + ("　|　" + "；".join(tips) if tips else ""))
+
+    def _fw_to_frame(self, e):
+        """窗口里的点击 → 帧原图坐标"""
+        sc = getattr(self, "fw_sc", 1.0) or 1.0
+        return int(self.fw_canvas.canvasx(e.x) / sc), int(self.fw_canvas.canvasy(e.y) / sc)
+
+    def _fw_motion(self, e):
+        if hasattr(self, "fw_pos") and getattr(self, "_frame_img", None) is not None:
+            x, y = self._fw_to_frame(e)
+            self.fw_pos.config(text=f"({x}, {y})")
+
+    def _fw_press(self, e):
+        """窗口里按下：框选模式 → 起框；取点模式 → 直接取这一点。"""
+        if getattr(self, "_frame_img", None) is None:
+            return
+        W, H = self._frame_img.size
+        x, y = self._fw_to_frame(e)
+        if not (0 <= x < W and 0 <= y < H):
+            return
+        if self.roi_pick:                     # 框选 ROI：起框
+            self._fw_box = [x, y, x, y]
+            self._fw_paint_box()
+            return
+        key = self.pick_target
+        if key:
+            self._fw_marks = getattr(self, "_fw_marks", [])
+            self._fw_marks.append((x, y))
+            self._apply_pick((x, y), key)
+            self.log(f"✓ 已取 {PICK_LABELS[key]} ({x},{y})", "ok")
+        else:
+            self.status(f"帧坐标 ({x},{y}) —— 先在右侧属性面板点「✛ 取点」再点这里")
+        if hasattr(self, "fw_pos"):
+            self.fw_pos.config(text=f"({x},{y})")
+
+    def _fw_drag(self, e):
+        if self._fw_box is not None:
+            x, y = self._fw_to_frame(e)
+            self._fw_box[2], self._fw_box[3] = x, y
+            self._fw_paint_box()
+
+    def _fw_release(self, e):
+        box = self._fw_box
+        self._fw_box = None
+        if box is None:
+            return
+        rp = self.roi_pick
+        self.roi_pick = None
+        if not rp:
+            self._refresh_frame_window()
+            return
+        if abs(box[2] - box[0]) < 4 or abs(box[3] - box[1]) < 4:
+            self.log("⚠ 框太小，未写入", "warn")
+            self._refresh_frame_window()
+            return
+        if self._write_roi(rp["key"], box[0], box[1], box[2], box[3]):
+            self._refresh_frame_window()
+
+    def _fw_paint_box(self):
+        """把正在拖的框画出来（窗口像素）"""
+        c = getattr(self, "fw_canvas", None)
+        if c is None or self._fw_box is None:
+            return
+        c.delete("fwbox")
+        sc = getattr(self, "fw_sc", 1.0) or 1.0
+        x0, y0, x1, y1 = (v * sc for v in self._fw_box)
+        c.create_rectangle(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1),
+                           outline="#7fd0ff", width=2, dash=(4, 3), tags="fwbox")
+
+    def _fw_draw_overlay(self, c):
+        """把当前选中节点已填的坐标/框叠在帧上 —— 取完一眼看出对不对。
+        返回说明文字（拼到窗口那行提示里）。"""
+        nid = self.sel
+        nd = (self.flow.get("nodes") or {}).get(nid) if nid else None
+        if not isinstance(nd, dict):
+            return []
+        p = nd.get("props") or {}
+        sc = getattr(self, "fw_sc", 1.0) or 1.0
+        tips = []
+
+        def num(k):
+            try:
+                return int(float(p.get(k)))
+            except (TypeError, ValueError):
+                return None
+
+        roi = parse_roi(p.get("roi", ""))
+        if roi:
+            x, y, w, h = roi
+            c.create_rectangle(x * sc, y * sc, (x + w) * sc, (y + h) * sc,
+                               outline="#7fd0ff", width=2, dash=(4, 3))
+            tips.append(f"ROI {x},{y},{w},{h}")
+        t = nd.get("type")
+        if t == "swipe":
+            x1, y1, x2, y2 = num("x1"), num("y1"), num("x2"), num("y2")
+            if None not in (x1, y1, x2, y2):
+                c.create_line(x1 * sc, y1 * sc, x2 * sc, y2 * sc, fill="#ffd75e",
+                              width=2, arrow=tk.LAST)
+                for (px, py) in ((x1, y1), (x2, y2)):
+                    c.create_oval(px * sc - 5, py * sc - 5, px * sc + 5, py * sc + 5,
+                                  outline="#ffd75e", width=2)
+                tips.append(f"滑动 ({x1},{y1})→({x2},{y2})")
+        elif t == "tap":
+            x, y = num("x"), num("y")
+            if None not in (x, y):
+                c.create_line(x * sc - 11, y * sc, x * sc + 11, y * sc,
+                              fill="#ffd75e", width=2)
+                c.create_line(x * sc, y * sc - 11, x * sc, y * sc + 11,
+                              fill="#ffd75e", width=2)
+                tips.append(f"点击 ({x},{y})")
+        return tips
     def on_replay_open(self):
         if getattr(self, "replay_win", None) and self.replay_win.winfo_exists():
             self.replay_win.lift()
@@ -5275,26 +7610,33 @@ class FlowEditor:
                 if isinstance(c, dict):
                     c.pop("next", None)
         anchor = self.sel if self.sel in self.flow["chain"] else None
+        placed_in_chain = bool(anchor)
         if anchor:
             base = self.flow["nodes"][anchor]
             nd["x"] = base["x"] + 40
             nd["y"] = base["y"] + (self._sw_h(base) if base["type"] == "switch"
                                    else CARD_H) + 30
-            self.flow["chain"].insert(self.flow["chain"].index(anchor) + 1, nid)
+            self._chain_insert(self.flow["chain"].index(anchor) + 1, nid)
+            # 边：锚点 → 复制品 → 锚点原来的下一个（原样往后挪一位）
+            base_nd = self.flow["nodes"][anchor]
+            nd["next"] = base_nd.get("next")
+            base_nd["next"] = nid
+            base_nd.pop("cut", None)
         else:
-            ch = self.flow["chain"]
-            if ch:
-                last = self.flow["nodes"][ch[-1]]
-                nd["x"], nd["y"] = last["x"], last["y"] + CARD_H + 30
-            else:
-                nd["x"], nd["y"] = self._chain_col_x(), 60
-            self.flow["chain"].append(nid)
+            # 与"新建节点"同一条规则：没选中链上的节点就不接进流程，放未接入区
+            nd["next"] = None
+            nd["x"], nd["y"] = self._spot_in_view(card_h(nd))
         self.flow["nodes"][nid] = nd
         self.sel = nid
         self.build_prop_panel()
         self.redraw()
         self._scroll_to(nd["y"])
-        self.log(f"已粘贴节点「{nd.get('title', nid)}」（出口未连线，请重新连）")
+        self.log(f"已粘贴节点「{nd.get('title', nid)}」（出口未连线，请重新连）"
+                 if placed_in_chain else
+                 f"已粘贴节点「{nd.get('title', nid)}」：当前没选中链上的节点，"
+                 f"所以它【没有接进流程】（放在最右侧未接入区）；"
+                 f"要接进去：在「连接」里把「下一个」选成一个节点",
+                 None if placed_in_chain else "warn")
 
     def on_duplicate(self, _e=None):
         self.on_copy()
@@ -5314,7 +7656,21 @@ class FlowEditor:
                     f"（网格 {GRID}px；方向键一格 / Shift 四格）")
 
     def on_escape(self, _e=None):
-        """Esc：取消 ROI 拖框 / 取消取点 / 取消正在拖的连线"""
+        """Esc：取消 ROI 拖框 / 取消取点 / 取消正在拖的连线 / 取消框选"""
+        if self._pan_left:              # 正在用左键平移：松手前按 Esc = 停下
+            self._pan_left = False
+            try:
+                self.canvas.config(cursor="")
+            except tk.TclError:
+                pass
+            self.status("已停止平移")
+            return
+        if self.multi:
+            self.multi = set()
+            self.band = None
+            self.redraw()
+            self.status("已取消框选")
+            return
         if self.roi_pick is not None:
             self.roi_pick = None
             self.redraw()
@@ -5331,12 +7687,32 @@ class FlowEditor:
         """在背景帧上拖框来填 ROI（x,y,w,h），省得手敲坐标"""
         if not self.sel:
             return
-        if self.bg_disp is None:
-            self.status("框选 ROI 需要先有背景帧：先抓帧（F5）或打开帧图")
-            self.log("⚠ 框选失败：画布上没有背景帧。先点「⟳ 抓帧 (F5)」。", "warn")
+        if self.bg_pil is None:
+            self.status("框选 ROI 需要先有帧：先抓帧（F5）或打开帧图")
+            self.log("⚠ 框选失败：还没有帧画面。先点「⟳ 抓帧 (F5)」。", "warn")
             return
         self.roi_pick = {"key": key, "x0": None, "y0": None, "x1": None, "y1": None}
-        self.status("拖框模式：在左侧帧画面上拖出识别区域（Esc 取消）")
+        self._open_frame_window()          # ★ 在独立窗口里拖框，节点卡片不会挡
+        self.status("拖框模式：在「帧画面」窗口里拖出识别区域（Esc 取消）")
+
+    def _write_roi(self, key, x0, y0, x1, y1):
+        """把框（帧坐标）写进 ROI 字段："x,y,w,h"。太小/越界都拦一下。"""
+        if not self.sel or self.sel not in self.flow["nodes"]:
+            return False
+        W, H = self.frame_wh
+        x0, x1 = sorted((max(0, x0), min(W, x1)))
+        y0, y1 = sorted((max(0, y0), min(H, y1)))
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            self.log("⚠ 框选太小（不足 4px），未写入", "warn")
+            self.status("框选太小，未写入")
+            return False
+        self._snapshot(f"roi:{self.sel}")
+        self.flow["nodes"][self.sel]["props"][key] = f"{x0},{y0},{x1 - x0},{y1 - y0}"
+        self.build_prop_panel()
+        self.redraw()
+        self.log(f"✓ 已写入 ROI {x0},{y0},{x1 - x0},{y1 - y0}"
+                 f"（帧坐标，基准 {W}×{H}）", "ok")
+        return True
 
     def _finish_roi_pick(self):
         rp = self.roi_pick
@@ -5349,23 +7725,10 @@ class FlowEditor:
         a = self._canvas_to_frame(rp["x0"], rp["y0"])
         b = self._canvas_to_frame(rp["x1"], rp["y1"])
         if a is None or b is None:
-            self.log("⚠ 框选超出帧画面范围，未写入", "warn")
+            self.log("⚠ 框选超出帧画面范围，未写入（建议在「帧画面」窗口里框）", "warn")
             self.status("框选无效")
             return
-        x0, x1 = sorted((a[0], b[0]))
-        y0, y1 = sorted((a[1], b[1]))
-        W, H = self.frame_wh
-        x0, y0 = max(0, x0), max(0, y0)
-        x1, y1 = min(W, x1), min(H, y1)
-        if x1 - x0 < 4 or y1 - y0 < 4:
-            self.log("⚠ 框选太小，未写入", "warn")
-            return
-        self._snapshot(f"roi:{self.sel}")
-        self.flow["nodes"][self.sel]["props"][rp["key"]] = f"{x0},{y0},{x1 - x0},{y1 - y0}"
-        self.build_prop_panel()
-        self.redraw()
-        self.log(f"✓ 已写入 ROI {x0},{y0},{x1 - x0},{y1 - y0}"
-                 f"（帧坐标，基准 {W}×{H}）", "ok")
+        self._write_roi(rp["key"], a[0], a[1], b[0], b[1])
 
     # ---------- 模板管理（P2-6） ----------
 
@@ -5545,7 +7908,8 @@ class FlowEditor:
                            lambda pct, text: prog(pct, text))
             prog(60, "注册到【小工具】清单…")
             try:
-                register_on_phone(self.flow["name"], tlog)
+                register_on_phone(self.flow["name"], tlog,
+                                  options=flow_input_options(self.flow))
             except Exception as ex:
                 tlog("⚠ 注册【小工具】清单失败（不影响直达入口运行）: " + str(ex), "warn")
             entry = "VF_" + self.flow["name"]
@@ -5599,8 +7963,36 @@ def selftest():
     # 分支：hit 自动→04（swipe），miss 显式→e(05 tap)
     assert out[f"{E}_03"]["on_error"] == [f"{E}_05"], out[f"{E}_03"]
     assert out[f"{E}_03"]["next"] == [f"{E}_03_Hit"]
-    assert out[f"{E}_03_Hit"]["next"] == [f"{E}_04"]
+    # ★ 命中出口没连线 = 命中即结束（不再自动走链上下一个 —— 那条隐式边看不见）
+    assert "next" not in out[f"{E}_03_Hit"], out[f"{E}_03_Hit"]
     assert out[f"{E}_03_Hit"]["roi"] == [100, 200, 300, 400]
+    # 显式连上命中出口 → 才继续走那个节点
+    flow["nodes"]["c"]["hit_next"] = "d"
+    out_h = build_pipeline(flow, (1280, 720))
+    assert out_h[f"{E}_03_Hit"]["next"] == [f"{E}_04"], out_h[f"{E}_03_Hit"]
+    # 老流程的隐式边由 normalize_flow 补成显式连线（生成物因此一字不变）
+    legacy = {"name": "老分支", "chain": ["c", "d"],
+              "nodes": {"c": {"type": "branch", "x": 0, "y": 0, "title": "c",
+                              "props": {"template": "yanxun.png", "threshold": 0.7,
+                                        "ocr_text": "", "roi": "", "timeout": 3000,
+                                        "rate_limit": 0},
+                              "hit_next": None, "miss_next": None},
+                        "d": {"type": "tap", "x": 0, "y": 0, "title": "d",
+                              "props": {"x": 1, "y": 1, "pre_delay": 0,
+                                        "post_delay": 500, "post_wait_freezes": 0,
+                                        "repeat": 1, "repeat_delay": 350}}}}
+    lg = normalize_flow(legacy)
+    assert lg["nodes"]["c"]["hit_next"] == "d", lg["nodes"]["c"]
+    out_l = build_pipeline(lg, (1280, 720))
+    assert out_l[f"VF_老分支_01_Hit"]["next"] == ["VF_老分支_02"], out_l["VF_老分支_01_Hit"]
+    # 已经带版本号的流程【不再补】：新建分支"没连线"就是没连线 → 生成物里没有 next
+    fresh = json.loads(json.dumps(legacy))
+    fresh["schemaVersion"] = SCHEMA_VERSION
+    fresh["nodes"]["c"]["hit_next"] = None
+    fr = normalize_flow(fresh)
+    assert fr["nodes"]["c"].get("hit_next") is None, fr["nodes"]["c"]
+    assert "next" not in build_pipeline(fr, (1280, 720))["VF_老分支_01_Hit"]
+    flow["nodes"]["c"]["hit_next"] = None
     assert out[f"{E}_05"]["repeat"] == 3
     assert out[f"{E}_05"]["next"] == [f"{E}_06"]
     assert out[f"{E}_06"] == {"next": ["Common_回主页"]}
@@ -5630,20 +8022,24 @@ def selftest():
     errs, _ = validate_flow(flow, (1280, 720))
     assert errs and any("模板不存在" in e for e in errs), errs
     flow["nodes"]["c"]["props"]["template"] = "sutong_dialog.png"
-    # 枝干判定（switch）：级联展开 + 内容叶节点剥离线性 next
+    # 枝干判定（switch）：候选不自己配识别目标 —— 判定块取自它连到的【分支】节点，
+    # 并且候选 t 字段（旧写法）必须被忽略
     sf = {"name": "枝干测", "chain": ["s", "c1", "c2"],
           "nodes": {
               "s": {"type": "switch", "x": 0, "y": 0, "title": "s",
                     "props": {"candidates": [
-                        {"t": "yanxun.png", "timeout": 3000, "next": "c1"},
-                        {"t": "OCR:确认", "timeout": 2000, "next": "c2"}],
+                        {"timeout": 3000, "next": "c1"},
+                        {"t": "OCR:旧字段应被忽略", "timeout": 2000, "next": "c2"}],
                         "miss_next": None}},
-              "c1": {"type": "tap", "x": 0, "y": 0, "title": "c1",
-                     "props": {"x": 100, "y": 100, "pre_delay": 0, "post_delay": 500,
-                               "post_wait_freezes": 0, "repeat": 1, "repeat_delay": 350}},
-              "c2": {"type": "tap", "x": 0, "y": 0, "title": "c2",
-                     "props": {"x": 200, "y": 200, "pre_delay": 0, "post_delay": 500,
-                               "post_wait_freezes": 0, "repeat": 1, "repeat_delay": 350}}}}
+              "c1": {"type": "branch", "x": 0, "y": 0, "title": "c1",
+                     "props": {"template": "yanxun.png", "threshold": 0.65,
+                               "ocr_text": "", "roi": "", "timeout": 3000,
+                               "rate_limit": 0},
+                     "hit_next": None, "miss_next": None},
+              "c2": {"type": "branch", "x": 0, "y": 0, "title": "c2",
+                     "props": {"template": "", "threshold": 0.7, "ocr_text": "确认",
+                               "roi": "", "timeout": 3000, "rate_limit": 0},
+                     "hit_next": None, "miss_next": None}}}
     errs, _ = validate_flow(sf, (1280, 720))
     assert not errs, f"switch 校验报错: {errs}"
     out_sw = build_pipeline(sf, (1280, 720))
@@ -5651,10 +8047,142 @@ def selftest():
     assert out_sw[f"{B}_01_J1"]["on_error"] == [f"{B}_01_J2"]
     assert out_sw[f"{B}_01_J1_Hit"]["next"] == [f"{B}_02"]
     assert out_sw[f"{B}_01_J2"]["on_error"] == [f"{B}_End"]
+    # 候选的判定块 == 它连到的分支的判定块（模板/阈值/roi 只配一处，两处永远一致）
+    assert out_sw[f"{B}_01_J1_Hit"]["recognition"] == "TemplateMatch"
+    assert out_sw[f"{B}_01_J1_Hit"]["template"] == "yanxun.png"
+    assert out_sw[f"{B}_01_J1_Hit"]["threshold"] == 0.65, out_sw[f"{B}_01_J1_Hit"]
     assert out_sw[f"{B}_01_J2_Hit"]["recognition"] == "OCR"
-    assert "next" not in out_sw[f"{B}_02"] and "next" not in out_sw[f"{B}_03"], \
-        "内容叶节点不应沿线性链继续（防分支串线）"
+    assert out_sw[f"{B}_01_J2_Hit"]["expected"] == ["确认"], out_sw[f"{B}_01_J2_Hit"]
+    # 内容叶：分支容器指向自己的 _Hit，但命中后不再沿线性链继续（防分支串线）
+    assert out_sw[f"{B}_02"]["next"] == [f"{B}_02_Hit"]
+    assert "next" not in out_sw[f"{B}_02_Hit"] and "next" not in out_sw[f"{B}_03_Hit"], \
+        "内容叶分支命中后不应沿线性链继续（防分支串线）"
     assert f"{B}_End" in out_sw
+    # 候选没连线 → 取不到判定条件，校验必须报错
+    sf["nodes"]["s"]["props"]["candidates"][0].pop("next")
+    errs, _ = validate_flow(sf, (1280, 720))
+    assert errs and any("还没连到内容起点" in e for e in errs), errs
+    # 候选连到非分支节点 → 同样取不到条件，校验必须报错
+    sf["nodes"]["s"]["props"]["candidates"][0]["next"] = "t1"
+    sf["nodes"]["t1"] = {"type": "tap", "x": 0, "y": 0, "title": "t1",
+                         "props": {"x": 1, "y": 1, "pre_delay": 0, "post_delay": 500,
+                                   "post_wait_freezes": 0, "repeat": 1,
+                                   "repeat_delay": 350}}
+    sf["chain"].append("t1")
+    errs, _ = validate_flow(sf, (1280, 720))
+    assert errs and any("不是分支节点" in e for e in errs), errs
+    # 【输入】节点：离链的"参数声明" —— 不生成管线节点，注入目标存在 targets 列表里
+    cf = {"name": "输入测", "chain": ["s2", "br", "in1"],
+          "nodes": {
+              "s2": {"type": "startapp", "x": 0, "y": 0, "title": "s2",
+                     "props": {"package": "a.b", "post_delay": 100}},
+              "br": {"type": "branch", "x": 0, "y": 0, "title": "选角色",
+                     "props": {"template": "蛙锣.png", "threshold": 0.7,
+                               "ocr_text": "", "roi": "10,20,100,50",
+                               "timeout": 3000, "rate_limit": 0},
+                     "hit_next": None, "miss_next": None},
+              "in1": {"type": "input", "x": 400.0, "y": 46.0, "title": "目标角色",
+                      "props": {"option": "目标角色", "var": "角色",
+                                "var_label": "角色名", "kind": "文本",
+                                "default": "蛙锣", "desc": "填角色名",
+                                "targets": ["br"], "field": "模板图 (template)"}}}}
+    # 老文件里输入节点在链上 → normalize_flow 要把它移出主链
+    cf = normalize_flow(cf)
+    assert cf["chain"] == ["s2", "br"], cf["chain"]
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert not errs, f"input 校验报错: {errs}"
+    out_in = build_pipeline(cf, (1280, 720))
+    J = "VF_输入测"
+    assert f"{J}_03" not in out_in, "【输入】节点不该生成任何管线节点"
+    opts = flow_input_options(cf)
+    assert list(opts) == ["目标角色"], opts
+    op = opts["目标角色"]
+    assert op["type"] == "input" and op["label"] == "目标角色", op
+    assert op["description"] == "填角色名", op
+    assert op["inputs"] == [{"name": "角色", "label": "角色名", "default": "蛙锣",
+                             "pipeline_type": "string"}], op["inputs"]
+    # 识别类字段落到分支的 *_Hit（识别块在那儿），值默认 "{变量}.png"
+    assert op["pipeline_override"] == {f"{J}_02_Hit": {"template": "{角色}.png"}}, op
+    # ★ 一个参数可以注入多个节点：targets 加一个 → override 就多一条
+    #   （手写『目标角色』就是这样同时覆盖 CDZB2_Hit/升2_Hit/查2_Hit）
+    cf["nodes"]["in1"]["props"]["targets"].append("s2")
+    o2 = flow_input_options(cf)["目标角色"]
+    assert set(o2["pipeline_override"]) == {f"{J}_02_Hit", f"{J}_01"}, o2
+    assert o2["pipeline_override"][f"{J}_01"] == {"template": "{角色}.png"}, o2
+    cf["nodes"]["in1"]["props"]["targets"] = ["s2"]
+    # 整数类型 + 校验正则 → repeat（"提前设置次数"的通用做法）
+    cf["nodes"]["in1"]["props"].update({
+        "option": "次数", "var": "次数", "var_label": "次数", "kind": "整数",
+        "default": "1", "field": "repeat",
+        "verify": "^([1-9]|1[0-9]|20)$", "pattern_msg": "请输入 1~20 的整数"})
+    o3 = flow_input_options(cf)["次数"]
+    assert o3["inputs"][0]["pipeline_type"] == "int", o3
+    assert o3["inputs"][0]["verify"] == "^([1-9]|1[0-9]|20)$", o3
+    assert o3["inputs"][0]["pattern_msg"] == "请输入 1~20 的整数", o3
+    assert o3["pipeline_override"] == {f"{J}_01": {"repeat": "{次数}"}}, o3
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert not errs, f"input(整数) 校验报错: {errs}"
+    # 一个注入目标都没有 / 目标已删除 / 字段名不认识 → 都要报错
+    cf["nodes"]["in1"]["props"]["targets"] = []
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert errs and any("还没连到要注入的节点" in e for e in errs), errs
+    cf["nodes"]["in1"]["props"]["targets"] = ["nope"]
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert errs and any("已删除" in e for e in errs), errs
+    cf["nodes"]["in1"]["props"]["targets"] = ["s2"]
+    cf["nodes"]["in1"]["props"]["field"] = "nesne"
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert errs and any("不认识" in e for e in errs), errs
+    # 字段名合法但目标节点自己不读它 → 只警告、不报错
+    cf["nodes"]["in1"]["props"]["field"] = "roi"          # startapp 上没有 roi
+    errs, warns = validate_flow(cf, (1280, 720))
+    assert not errs, errs
+    assert any("没有用到" in w for w in warns), warns
+    cf["nodes"]["in1"]["props"].update({"field": "repeat", "option": ""})
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert errs and any("还没填参数名" in e for e in errs), errs
+    cf["nodes"]["in1"]["props"].update({"option": "次数", "verify": "(("})
+    errs, _ = validate_flow(cf, (1280, 720))
+    assert errs and any("不是合法正则" in e for e in errs), errs
+    # 下拉里"中文 (字段名)"的写法与纯字段名等价（两种写法都要认）
+    cf["nodes"]["in1"]["props"]["verify"] = ""
+    assert input_field({"field": "模板图 (template)"}) == "template"
+    assert input_field({"field": "repeat"}) == "repeat"
+    cf["nodes"]["in1"]["props"]["field"] = "模板图 (template)"
+    assert flow_input_options(cf)["次数"]["pipeline_override"] == {
+        f"{J}_01": {"template": "{次数}.png"}}, flow_input_options(cf)
+    # 同名参数拆成两个节点时也会合并成一份定义
+    cf["nodes"]["in2"] = {"type": "input", "x": 400.0, "y": 200.0,
+                          "title": "次数(第2处)",
+                          "props": {"option": "次数", "var": "次数", "kind": "整数",
+                                    "targets": ["s2"], "field": "repeat"}}
+    errs, warns = validate_flow(cf, (1280, 720))
+    assert not errs, errs
+    om = flow_input_options(cf)["次数"]
+    assert om["pipeline_override"] == {
+        f"{J}_01": {"template": "{次数}.png", "repeat": "{次数}"}}, om
+    assert len(om["inputs"]) == 1, om          # 合并后只有一份 inputs 定义
+    # 同名但字段定义不一致 → 警告（App 只认第一份 inputs）
+    cf["nodes"]["in3"] = {"type": "input", "x": 400.0, "y": 300.0,
+                          "title": "次数(定义不一致)",
+                          "props": {"option": "次数", "var": "别的变量", "kind": "整数",
+                                    "targets": ["s2"], "field": "repeat_delay"}}
+    errs, warns = validate_flow(cf, (1280, 720))
+    assert not errs, errs
+    assert any("字段定义不一样" in w for w in warns), warns
+    # 布局：卡片高度按类型算 + 重叠检测（打开旧流程要能发现"全叠在一起"）
+    lay = {"name": "布局测", "chain": ["s", "b"],
+           "nodes": {"s": {"type": "switch", "x": 46.0, "y": 46.0, "title": "s",
+                           "props": {"candidates": [{"timeout": 3000}] * 3,
+                                     "miss_next": ""}},
+                     "b": {"type": "tap", "x": 46.0, "y": 46.0, "title": "b",
+                           "props": {"x": 100, "y": 100, "pre_delay": 0,
+                                     "post_delay": 500, "post_wait_freezes": 0,
+                                     "repeat": 1, "repeat_delay": 350}}}}
+    assert card_h(lay["nodes"]["s"]) > card_h(lay["nodes"]["b"]), "枝干卡应当更高"
+    assert overlapping_nodes(lay) == {"s", "b"}, overlapping_nodes(lay)
+    lay["nodes"]["b"]["y"] = 46.0 + card_h(lay["nodes"]["s"]) + 26
+    assert overlapping_nodes(lay) == set(), overlapping_nodes(lay)
     # 坐标越界报错（1280 宽画布 x=1400）
     flow["nodes"]["d"]["props"]["x1"] = 1400
     errs, _ = validate_flow(flow, (1280, 720))
@@ -5666,6 +8194,116 @@ def selftest():
     assert errs and "模板不存在" in errs[0], errs
     # JSON 可序列化
     json.dumps(out2, ensure_ascii=False)
+    # ★ 出口指向"还没接进流程"的节点：那个节点不生成，生成物里就是一条指向不存在节点的
+    #   next/on_error。本机 MaaFw 引擎实测会 check_next_list "Invalid next node name"
+    #   → check_all_validity failed → 整包 loaded=False（手机上所有任务都跑不起来），
+    #   所以必须是 error，不能只是 NODE_OFFCHAIN 那种警告。
+    of9 = {"name": "离链出口", "chain": ["b1"],
+           "nodes": {
+               "b1": {"type": "branch", "x": 0, "y": 0, "title": "br",
+                      "props": {"template": "yanxun.png", "threshold": 0.7,
+                                "ocr_text": "", "roi": "", "timeout": 3000,
+                                "rate_limit": 0},
+                      "hit_next": None, "miss_next": "t9"},
+               "t9": {"type": "tap", "x": 0, "y": 0, "title": "没接进来",
+                      "props": {"x": 1, "y": 1, "pre_delay": 0, "post_delay": 500,
+                                "post_wait_freezes": 0, "repeat": 1,
+                                "repeat_delay": 350}}}}
+    errs, _ = validate_flow(of9, (1280, 720))
+    assert any("还没接进流程" in e for e in errs), errs
+    # 生成入口也会被拦下（不会生成一条指向不存在节点的 on_error 再去推手机）
+    try:
+        build_pipeline(of9, (1280, 720))
+        raise AssertionError("悬空出口竟然照样生成了")
+    except FlowValidationError as ex:
+        assert any("还没接进流程" in m for m in ex.errors), ex.errors
+    # 把目标接回主链 → 引用有着落，校验转绿，生成物里的 on_error 真有对应节点
+    of9["chain"].append("t9")
+    errs, _ = validate_flow(of9, (1280, 720))
+    assert not errs, errs
+    dd = build_pipeline(of9, (1280, 720))
+    assert dd["VF_离链出口_01"]["on_error"] == ["VF_离链出口_02"], dd["VF_离链出口_01"]
+    assert "VF_离链出口_02" in dd
+    # ★ v4 文件里缺 "next" 键 = 【到此结束】，不许回退到"链上后继"（只有老文件才回退）。
+    #   否则一个没写 next 的链上节点（新建时没选中任何节点 → 放进未接入区 → 后来被接进链的
+    #   那种）会悄悄连到链序里的下一个：博物研学里链尾是滑动 #22，于是"新建一个节点，
+    #   画布上总莫名多出一根连到 #22 的线"，而且生成物里也真多一条 VF_x_36 → VF_x_22 的边。
+    def _mk_tap(nid, y):
+        return {"type": "tap", "x": 0, "y": y, "title": nid,
+                "props": {"x": 1, "y": 1, "pre_delay": 0, "post_delay": 500,
+                          "repeat": 1}}
+    def _mk_pass(emit_name):
+        return {"type": "pass", "x": 0, "y": 100, "title": "通道/跳转",
+                "props": {"emit_name": emit_name}}
+    v4f = {"schemaVersion": SCHEMA_VERSION, "name": "无next自测", "chain": ["a", "b"],
+           "nodes": {"a": _mk_tap("a", 0), "b": _mk_tap("b", 100)}}
+    assert linear_successor(v4f, "a") is None, "v4 缺 next 键应视为『到此结束』"
+    assert "next" not in build_pipeline(v4f, (1280, 720))["VF_无next自测_01"], \
+        "v4 缺 next 键的节点不该生成 next"
+    v4f["nodes"]["a"]["next"] = "b"
+    assert linear_successor(v4f, "a") == "b"
+    old3 = {"schemaVersion": 3, "name": "老文件自测", "chain": ["a", "b"],
+            "nodes": {"a": _mk_tap("a", 0), "b": _mk_tap("b", 100)}}
+    assert linear_successor(old3, "a") == "b", "老文件仍要靠链序决定下一个"
+    # ★ 【通道/跳转】：不识别不动作，只为给参数留一个能连线的位置；
+    #   emit_name 指定"运行时的名字"（老流程要保留手写管线的节点名）。
+    pf = {"schemaVersion": SCHEMA_VERSION, "name": "通道自测",
+          "chain": ["p1", "p2"],
+          "nodes": {"p1": _mk_tap("p1", 0), "p2": _mk_pass("征集段2")}}
+    pf["nodes"]["p1"]["next"] = "p2"          # v4：边是显式的，测试里也得写
+    pp = build_pipeline(pf, (1280, 720))
+    assert pp["VF_通道自测_01"]["next"] == ["征集段2"], pp
+    assert pp["征集段2"] == {"next": []}, pp["征集段2"]
+    # 参数覆盖到"运行时名"上时，override 的键就是它（与手写管线一致）
+    pf["nodes"]["i1"] = {"type": "input", "x": 0, "y": 0, "title": "输入", "num": 3,
+                         "props": {"option": "P", "var": "", "var_label": "",
+                                   "kind": "文本", "default": "", "desc": "",
+                                   "target": "", "raw": "", "field": "next",
+                                   "value": "ZJ_DuiGou2", "verify": "", "pattern_msg": "",
+                                   "targets": ["p2"]}}
+    o = flow_input_options(pf)["P"]
+    assert o["pipeline_override"] == {"征集段2": {"next": ["ZJ_DuiGou2"]}}, o
+    print("通道/跳转节点自测通过")
+
+    # ★ 「同步到手机」写清单走的是 upsert_flow_task，它必须是**幂等**的：只按流程里的
+    #   【输入】节点写参数，跑一遍和跑两遍结果一样。以前它把「group=tools 且 entry==VF_x」
+    #   的条目一律删掉再追加 —— 【小工具】分组里的任务（查找器者 / 刷活动关 / 博物研学）
+    #   每同步一次就被挪到清单末尾，标签页上手写的 label/description/default_check 一起丢。
+    #   （迁移后查找器者的 entry 变成 VF_查找器者，正好踩到这条。）
+    udata = {"task": [
+        {"name": "查找器者", "label": "查找器者", "entry": "VF_查找器者",
+         "group": ["tools"], "option": ["目标角色"], "description": "手写的说明"},
+        {"name": "刷冬谷币", "label": "刷冬谷币", "entry": "VF_刷冬谷币",
+         "group": ["battle"], "option": ["刷冬谷币次数"]},
+    ], "option": {"目标角色": {"type": "input"}, "刷冬谷币次数": {"type": "select"}}}
+    before = json.dumps(udata, ensure_ascii=False, sort_keys=True)
+    upsert_flow_task(udata, "查找器者", options={"目标角色": {"type": "input"}})
+    upsert_flow_task(udata, "刷冬谷币", options={"刷冬谷币次数": {"type": "select"}})
+    assert json.dumps(udata, ensure_ascii=False, sort_keys=True) == before, udata
+    # 真正的重复条目（同一个流程既转正、又留着一个【小工具】条目）仍然要清掉
+    udata["task"].append({"name": "查找器者", "label": "查找器者",
+                          "entry": "VF_查找器者", "group": ["tools"]})
+    udata["task"].insert(0, {"name": "查找器者", "label": "查找器者",
+                             "entry": "VF_查找器者", "group": ["daily"],
+                             "option": ["目标角色"]})
+    upsert_flow_task(udata, "查找器者", options={"目标角色": {"type": "input"}})
+    assert [t["name"] for t in udata["task"]].count("查找器者") == 1, udata
+    assert udata["task"][0]["group"] == ["daily"], udata   # 留下的是正式任务、位置不动
+    print("清单同步幂等自测通过")
+
+    # ★ 从入口走不到的节点必须能报出来（2026-09-15 的教训：重建流程时把链上的 next 整片丢了，
+    #   任务跑完**第一个节点**就 task end [ret=true] —— 不报错不失败，引擎 loaded 还是 True，
+    #   只有实跑/结构比对能发现）。所以它要成为一条常驻警告。
+    dl = {"schemaVersion": SCHEMA_VERSION, "name": "死节点自测", "chain": ["u1", "u2"],
+          "nodes": {k: _mk_tap(k, i * 100) for i, k in enumerate(("u1", "u2"))}}
+    dl["nodes"]["u1"]["next"] = None          # 到此结束 → u2 没人指着，从入口走不到
+    _errs, _warns = validate_pipeline(dl, (1280, 720))
+    assert any("走不到" in w for w in _warns), _warns
+    # 接上就没事了
+    dl["nodes"]["u1"]["next"] = "u2"
+    _errs, _warns = validate_pipeline(dl, (1280, 720))
+    assert not any("走不到" in w for w in _warns), _warns
+    print("死节点（从入口走不到）自测通过")
     print("selftest OK：校验/生成逻辑全部通过")
 
     # GUI 构建烟测（有显示环境时）
@@ -5679,6 +8317,281 @@ def selftest():
             editor.add_node("branch")
             editor.redraw()
             root.update()
+
+            # ★ 未接入流程的节点必须能在下拉里选到 —— 选中它【上游】的节点去连它，
+            #   而不是只能反过来先选中它自己往链上接。以前候选只来自主链，
+            #   于是画布上写着"未接入流程（不执行）"的卡片在「下一个」里根本找不到。
+            def _tap(i):
+                return {"type": "tap", "x": 0, "y": i * 200, "title": f"点{i}",
+                        "num": i, "props": {"x": 1, "y": 1, "pre_delay": 0,
+                                            "post_delay": 500, "repeat": 1}}
+            ed2 = FlowEditor(root)
+            ed2.flow = {"schemaVersion": SCHEMA_VERSION, "name": "连线自测",
+                        "chain": ["n1", "n2"],
+                        "nodes": {"n1": _tap(1), "n2": _tap(2),
+                                  "n3": {"type": "branch", "x": 0, "y": 400,
+                                         "title": "分支", "num": 10,
+                                         "hit_next": None, "miss_next": None,
+                                         "props": {"template": "t.png",
+                                                   "threshold": 0.8, "ocr_text": "",
+                                                   "roi": "", "timeout": 3000,
+                                                   "rate_limit": 0}},
+                                  "n4": dict(_tap(11), type="swipe")}}
+            ed2.sel = "n1"
+            ed2._sync_conn_ui()
+            vals = list(ed2.next_combo.cget("values"))
+            assert any(v.startswith("#10 ") and v.endswith("（未接入）")
+                       for v in vals), vals
+            assert any(v.startswith("#11 ") and v.endswith("（未接入）")
+                       for v in vals), vals
+            # 「下一个 = #10」= 它排在我后面（并顺手把它接进流程）
+            ed2.next_combo.set([v for v in vals if v.startswith("#10 ")][0])
+            ed2.on_conn_combo("next")
+            assert ed2.flow["chain"] == ["n1", "n3", "n2"], ed2.flow["chain"]
+            # 分支出口下拉同理：✓ 能连到还没接进流程的节点，选完它就在链上了
+            ed2.sel = "n3"
+            ed2._sync_branch_ui()
+            hvals = list(ed2.hit_combo.cget("values"))
+            assert any(v.startswith("#11 ") and v.endswith("（未接入）")
+                       for v in hvals), hvals
+            ed2.hit_combo.set([v for v in hvals if v.startswith("#11 ")][0])
+            ed2.on_branch_combo("hit_next")
+            assert ed2.flow["nodes"]["n3"]["hit_next"] == "n4", ed2.flow["nodes"]["n3"]
+            assert ed2.flow["chain"] == ["n1", "n3", "n4", "n2"], ed2.flow["chain"]
+
+            # ★ 连出口时【两端都要接进链】：只补目标的话，源节点还在链外 →
+            #   目标被塞到链尾，画布上出现"链尾节点→目标"的直落箭头（用户看到的是
+            #   "我想连 10→12，怎么成了 11→12"）；而真正的出口边因为源节点不在链上
+            #   压根不画（出口连线以前只遍历主链）→ "日志说连上了、画布上一条线都没有"。
+            ed3 = FlowEditor(root)
+            br = {"type": "branch", "x": 0, "y": 300, "title": "分支", "num": 1,
+                  "hit_next": None, "miss_next": None,
+                  "props": {"template": "t.png", "threshold": 0.8, "ocr_text": "",
+                            "roi": "", "timeout": 3000, "rate_limit": 0}}
+            ed3.flow = {"schemaVersion": SCHEMA_VERSION, "name": "出口自测",
+                        "chain": ["nB"],
+                        "nodes": {"nB": _tap(2), "br": br, "nC": _tap(12)}}
+            assert ed3._link_exit("br", "nC") == (True, True), "两端都该是新接入的"
+            assert ed3.flow["chain"] == ["nB", "br", "nC"], ed3.flow["chain"]
+            # 目标已在链上时只补源节点，不搬动目标（分支出口是显式边，与链序无关）
+            ed3.flow["chain"] = ["nB"]
+            assert ed3._link_exit("br", "nB") == (True, False)
+            assert ed3.flow["chain"] == ["nB", "br"], ed3.flow["chain"]
+            # 源已在链上：只把目标插到它后面
+            ed3.flow["chain"] = ["br"]
+            assert ed3._link_exit("br", "nC") == (False, True)
+            assert ed3.flow["chain"] == ["br", "nC"], ed3.flow["chain"]
+            # 出口边要【画得出来】：离链的分支也要画（灰虚线），否则用户以为没连上
+            ed3.flow["nodes"]["br"]["hit_next"] = "nC"
+            ed3.flow["chain"] = ["nB"]              # br 离链
+            ed3.redraw()
+            drawn = [(ed3.canvas.itemcget(i, "text"), ed3.canvas.itemcget(i, "fill"))
+                     for i in ed3.canvas.find_all() if ed3.canvas.type(i) == "text"]
+            assert ("#12", THEME["text_dim"]) in drawn, \
+                f"离链分支的出口边应画成灰虚线，画布上没找到: {drawn}"
+            ed3.flow["chain"] = ["nB", "br"]        # br 接入链 → 换成正常配色
+            ed3.redraw()
+            drawn = [(ed3.canvas.itemcget(i, "text"), ed3.canvas.itemcget(i, "fill"))
+                     for i in ed3.canvas.find_all() if ed3.canvas.type(i) == "text"]
+            assert ("#12", THEME["ok"]) in drawn, f"接入链后应画成正常配色: {drawn}"
+
+            # ★ 「上一个 / 下一个」现在只改【那一条边】（nd["next"]）：
+            #   不挪节点、不改链序、不牵动别的连接 —— 不会冒出用户没画过的线。
+            ed4 = FlowEditor(root)
+            ed4.flow = {"schemaVersion": SCHEMA_VERSION, "name": "边自测",
+                        "chain": ["p1", "p2", "p3", "p5", "p4", "p6"],
+                        # 编号要和名字对上（#4 就是 p4）：node_ref_id 是按 num 反查的
+                        "nodes": {n: _tap(int(n[1:])) for n in
+                                  ("p1", "p2", "p3", "p5", "p4", "p6")}}
+            for _a, _b in zip(ed4.flow["chain"], ed4.flow["chain"][1:]):
+                ed4.flow["nodes"][_a]["next"] = _b
+
+            def _pick(combo, num):
+                combo.set([v for v in combo.cget("values")
+                           if v.startswith(f"#{num} ")][0])
+
+            def _next_of(nid):
+                return ed4.flow["nodes"][nid].get("next")
+
+            # 1) 「#3 的下一个 = #4」：只把 #3→#4 这条边改出来。
+            #    #3 的位置、它的上一个（#2→#3）、#4 自己的下一个（#6）都不许动 ——
+            #    用户原话："我把 3 接到 4，4 却自动连到 11 了"就是以前的链序副作用。
+            ed4.sel = "p3"
+            ed4._sync_conn_ui()
+            _pick(ed4.next_combo, 4)
+            ed4.on_conn_combo("next")
+            assert _next_of("p3") == "p4", _next_of("p3")
+            assert _next_of("p2") == "p3", "上面的连接不能动"
+            assert _next_of("p4") == "p6", "#4 自己的下一个不能动"
+            assert _next_of("p5") == "p4", "没被点到的边都不能动"
+            assert ed4.flow["chain"] == ["p1", "p2", "p3", "p5", "p4", "p6"], \
+                "链序（显示顺序）也不该动"
+            # 2) 「(无：到此结束)」= 这条边没有了
+            ed4.sel = "p3"
+            ed4._sync_conn_ui()
+            ed4.next_combo.set("(无：到此结束)")
+            ed4.on_conn_combo("next")
+            assert _next_of("p3") is None
+            assert ed4.flow["chain"] == ["p1", "p2", "p3", "p5", "p4", "p6"]
+            # 3) 「上一个 = #1」= 把 #1 的下一个改成"我"（别的都不动）
+            ed4.sel = "p3"
+            ed4._sync_conn_ui()
+            _pick(ed4.prev_combo, 1)
+            ed4.on_conn_combo("prev")
+            assert _next_of("p1") == "p3", _next_of("p1")
+            assert _next_of("p2") == "p3", "别人的边不受影响"
+            assert _next_of("p4") == "p6"
+            # 4) 生成结果跟着这条边走（不再看链序）
+            out_n = build_pipeline(normalize_flow(ed4.flow), (1280, 720))
+            assert out_n["VF_边自测_01"]["next"] == ["VF_边自测_03"], \
+                out_n["VF_边自测_01"]
+            assert "next" not in out_n["VF_边自测_03"], "没有下一个 = 到此结束"
+            # 5) 断开：还有人（边/出口）指着它 → 拒绝；没人指着 → 正常移出主链
+            ed4.sel = "p3"
+            ed4._sync_conn_ui()
+            _pick(ed4.prev_combo, 1)
+            ed4.on_conn_combo("prev")          # 让 #1 指着 #3
+            chain_before = list(ed4.flow["chain"])
+            ed4.next_combo.set("（不接入流程：断开）")
+            ed4.on_conn_combo("next")
+            assert ed4.flow["chain"] == chain_before, "被边指着的节点不能移出主链"
+            # 把指着 #3 的边都清掉（p1 和 p2），再断开就没人拦了
+            ed4.flow["nodes"]["p1"]["next"] = None
+            ed4.flow["nodes"]["p2"]["next"] = None
+            ed4.sel = "p3"
+            ed4._sync_conn_ui()
+            ed4.next_combo.set("（不接入流程：断开）")
+            ed4.on_conn_combo("next")
+            assert "p3" not in ed4.flow["chain"], "没人指着就该能移出主链"
+
+            ed5 = FlowEditor(root)
+            nodes = {}
+            for k, (cx, cy) in enumerate([(0, 0), (0, 120), (0, 240),
+                                          (360, 60), (360, 180), (360, 300)]):
+                nodes["q%d" % k] = dict(_tap(k + 1), x=float(cx), y=float(cy))
+            ed5.flow = {"schemaVersion": SCHEMA_VERSION, "name": "走线自测",
+                        "chain": list(nodes), "nodes": nodes}
+            ed5._rects_cache = None
+            pairs = 0
+            for a_id, a in nodes.items():
+                for b_id, b in nodes.items():
+                    if a_id == b_id:
+                        continue
+                    ssx, ssy = a["x"] + CARD_W / 2, a["y"] + card_h(a)
+                    side, (ax, ay) = ed5._anchor(b_id, ssx, ssy)
+                    pts = ed5._route(ssx, ssy, side, ax, ay,
+                                     self_ids=(a_id, b_id))
+                    for (px, py), (qx, qy) in zip(pts, pts[1:]):
+                        assert not ed5._seg_blocked(px, py, qx, qy,
+                                                    body_only=(a_id, b_id)), \
+                            f"{a_id}→{b_id} 的走线压到卡片: {pts}"
+                    pairs += 1
+            assert pairs == 30, pairs
+            print(f"走线避让自测通过（{pairs} 个方向都不压卡片）")
+
+            # ★ 新建流程不能继承「上次打开的文件」：否则新建后第一次保存时，
+            #   on_save 会把它当成「改名」，顺手删掉上次打开的那个流程文件
+            #   （2026-09-15 事故：打开 博物研学 → 新建 → 改名 刷活动关 保存，博物研学.flow.json 被删）
+            import tempfile
+            victim = os.path.join(tempfile.gettempdir(), "maa_flow_victim.flow.json")
+            with open(victim, "w", encoding="utf-8") as f:
+                f.write("{}")
+            ed6 = FlowEditor(root)
+            ed6._loaded_path = victim
+            ed6.on_new()
+            assert ed6._loaded_path is None, ed6._loaded_path
+            assert os.path.isfile(victim), "新建流程后，上次打开的流程文件不该被牵连"
+            os.remove(victim)
+            print("新建流程不牵连旧文件自测通过")
+            # ★ 布局/走线规则（2026-09-15）：回环边要画出来、回环节点贴到目标旁边、
+            #   【输入】按目标对齐、⛔ 截止标记不许伸进下一张卡片
+            ed7 = FlowEditor(root)
+            base = {"pre_delay": 0, "post_delay": 500, "repeat": 1}
+            n7 = {
+                "a": {"type": "tap", "x": 46, "y": 46, "title": "点", "num": 1,
+                      "props": dict(base, x=1, y=1), "next": "b"},
+                "b": {"type": "branch", "x": 46, "y": 138, "title": "分支", "num": 2,
+                      "hit_next": "c", "miss_next": "s",
+                      "props": {"template": "t.png", "threshold": 0.8, "ocr_text": "",
+                                "roi": "", "timeout": 3000, "rate_limit": 0}},
+                "c": {"type": "tap", "x": 46, "y": 230, "title": "点", "num": 3,
+                      "props": dict(base, x=1, y=1), "next": None},
+                "s": {"type": "swipe", "x": 46, "y": 322, "title": "滑动", "num": 4,
+                      "props": dict(base, x1=100, y1=100, x2=200, y2=100,
+                                    duration=500), "next": "b"},
+                "i": {"type": "input", "x": 500, "y": 46, "title": "输入", "num": 5,
+                      "props": {"option": "P", "var": "", "var_label": "", "kind": "文本",
+                                "default": "", "desc": "", "target": "",
+                                "field": "模板图 (template)", "value": "",
+                                "verify": "", "pattern_msg": "", "targets": ["c"]}},
+            }
+            ed7.flow = {"schemaVersion": SCHEMA_VERSION, "name": "布局自测",
+                        "chain": ["a", "b", "c", "s"], "nodes": n7}
+            ed7._rects_cache = None
+            ed7.tidy_layout()
+            # 注意：这里不能再 root.update() —— __init__ 里 after(200, 打开最近流程) 的
+            # 回调会被放出来，把 ed7.flow 换成"最近那个流程"，断言就会看着别人的画布说话。
+            # （create_line 是立刻生效的，读 coords 不需要 update）
+            # ① 纯回环节点（只有一个"下一个"指回上方）挪到目标右侧、y 贴着目标
+            assert n7["s"]["x"] > n7["b"]["x"] + CARD_W, n7["s"]
+            assert n7["s"]["y"] == n7["b"]["y"], (n7["s"], n7["b"])
+            # ③ 【输入】按它的目标对齐
+            assert n7["i"]["y"] == n7["c"]["y"], (n7["i"], n7["c"])
+            # ② 回环边（滑动 → 分支）真的画出来了：起点是滑动卡片的底边中点
+            ssx, ssy = n7["s"]["x"] + CARD_W / 2, n7["s"]["y"] + CARD_H
+            starts = [ed7.canvas.coords(i) for i in ed7.canvas.find_all()
+                      if ed7.canvas.type(i) == "line"]
+            assert any(len(p) >= 4 and abs(p[0] - ssx) < 1 and abs(p[1] - ssy) < 1
+                       for p in starts), "指回上方的显式 next 边没画出来"
+            # ④ ⛔ 截止标记（竖桩在分支卡片的中线）不能伸进下一张卡片里
+            bx = n7["b"]["x"] + CARD_W / 2
+            for i in ed7.canvas.find_all():
+                if ed7.canvas.type(i) != "line":
+                    continue
+                co = ed7.canvas.coords(i)
+                if len(co) == 4 and abs(co[0] - bx) < 1 and abs(co[0] - co[2]) < 1:
+                    assert co[3] <= n7["c"]["y"], (co, n7["c"])
+            print("布局与回环走线自测通过")
+
+            # ★ 普通节点下沿的「下一个」小球：拖到目标 = 接/改下一个；拖到空白 = 到此结束。
+            #   只给"真的有下一个"的类型画（分支走 ✓/✗、枝干走候选/✗、【输入】靠注入线、
+            #   收口节点进入即终止 —— 它们画了球也会让人以为拖了就能接）。
+            assert ed7._has_next_ball("a") and ed7._has_next_ball("s")
+            assert not ed7._has_next_ball("b"), "【分支】不该有「下一个」球"
+            assert not ed7._has_next_ball("i"), "【输入】不该有「下一个」球"
+            assert ed7.canvas.find_withtag("port:a:next"), "普通节点应当画「下一个」球"
+            assert not ed7.canvas.find_withtag("port:b:next"), "【分支】不该画「下一个」球"
+            n7["a"]["next"] = None
+            ed7.wire = {"from": "a", "port": "next",
+                        "mx": n7["b"]["x"] + 14, "my": n7["b"]["y"] + 14}
+            ed7.on_up(None)
+            assert n7["a"]["next"] == "b", n7["a"]
+            ed7.wire = {"from": "a", "port": "next", "mx": 9999, "my": 9999}
+            ed7.on_up(None)
+            assert n7["a"]["next"] is None, "拖到空白应当断成『到此结束』"
+            print("「下一个」拖线小球自测通过")
+
+            # ★ 空白处按住左键 = 平移画布（只动视图，改不到任何流程数据）；
+            #   点在节点上仍然是选中/拖动，两者不能互相抢。
+            class _Ev:                     # 假鼠标事件：on_down/on_motion 只用 .x/.y
+                def __init__(self, x, y):
+                    self.x, self.y = x, y
+            ed7.sel = "a"
+            assert not ed7._pan_left
+            ed7.on_down(_Ev(3, 3))         # (3,3) 附近没有卡片
+            assert ed7._pan_left, "空白处按左键应当开始平移"
+            assert ed7.sel is None, "空白处按下仍应取消选中"
+            txt0 = ed7._flow_text()
+            ed7.on_motion(_Ev(60, 40))
+            assert ed7._flow_text() == txt0, "平移不该改流程数据"
+            ed7.on_up(_Ev(60, 40))
+            assert not ed7._pan_left, "松手应当结束平移"
+            a_nd = ed7.flow["nodes"]["a"]
+            ed7.on_down(_Ev(int(a_nd["x"]) + 10, int(a_nd["y"]) + 10))
+            assert not ed7._pan_left and ed7.drag, "点节点上应当是选中/拖动，不是平移"
+            ed7.drag = None
+            ed7.on_up(_Ev(0, 0))
+            print("空白处左键拖动平移自测通过")
             root.destroy()
             print("GUI 构建烟测通过")
         except tk.TclError as e:

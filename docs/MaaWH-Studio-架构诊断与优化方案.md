@@ -113,8 +113,8 @@ E:\MaaWH Stdio\
 | `tap` | 固定坐标点击 | （无，DirectHit） | `Click` | x / y / pre_delay / post_delay / repeat / repeat_delay / post_wait_freezes |
 | `swipe` | 滑动 | （无） | `Swipe` | x1,y1,x2,y2 / duration / repeat / repeat_delay / post_delay |
 | `wait_tpl` | 等待模板出现 | `TemplateMatch` | `DoNothing` | template(多候选) / threshold / roi / timeout / rate_limit |
-| `branch` | 分支(模板在?) | `TemplateMatch` 或 `OCR` | `DoNothing` | template / threshold / ocr_text / roi / timeout / rate_limit + 出口 `hit_next` / `miss_next` |
-| `switch` | 枝干判定(多路) | `TemplateMatch` 或 `OCR`（级联） | `DoNothing` | candidates[{t,timeout,next}] / miss_next |
+| `branch` | 分支 | `TemplateMatch` 或 `OCR` | `DoNothing` | template / threshold / ocr_text / roi / timeout / rate_limit + 出口 `hit_next` / `miss_next` |
+| `switch` | 枝干判定(多路) | 取自已连到的分支（级联） | `DoNothing` | candidates[{timeout,next,mergeBack}] / miss_next |
 | `common` | 公共节点(收口) | （无） | （无，仅 `next`） | node（8 个 `Common_*` 白名单，只读下拉） |
 | `startapp` | 启动游戏 | （无） | `StartApp` | package / post_delay |
 
@@ -1261,7 +1261,7 @@ def build_pipeline(flow, frame_wh=(FRAME_W, FRAME_H)):
 | `wait_tpl` | 单节点 `{TemplateMatch, DoNothing, timeout}` | 只等，不需要分支出口 |
 | `branch` | 容器 `{DoNothing, timeout, next:[_Hit], on_error:[miss]}` + `_Hit{TemplateMatch/OCR, DoNothing, next:[hit]}` | 需要两个出口（`on_error` 只在容器上生效，见 `AGENTS.md:156`） |
 
-**不改生成形状**（改了会影响现有 16 个流程），只在属性面板为 `wait_tpl` 加一句提示：「需要未命中分支请改用『分支(模板在?)』节点」。这是一个**零风险、零 diff** 的可用性修正。
+**不改生成形状**（改了会影响现有 16 个流程），只在属性面板为 `wait_tpl` 加一句提示：「需要未命中分支请改用『分支』节点」。这是一个**零风险、零 diff** 的可用性修正。
 
 #### 4.4.5 命名空间查重（P0-2）
 

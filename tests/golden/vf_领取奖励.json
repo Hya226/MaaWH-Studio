@@ -1,16 +1,17 @@
 {
   "VF_领取奖励": {
     "next": [
-      "VF_领取奖励_01"
+      "VF_领取奖励_11"
     ]
   },
   "VF_领取奖励_01": {
     "action": "Click",
     "next": [
-      "VF_领取奖励_02"
+      "VF_领取奖励_10"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "renwu.png",
     "threshold": 0.5,
@@ -31,21 +32,23 @@
   "VF_领取奖励_03": {
     "action": "Click",
     "next": [
-      "VF_领取奖励_04"
+      "VF_领取奖励_09"
     ],
     "post_delay": 500,
     "target": [
       36,
       600
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_领取奖励_04": {
     "action": "Click",
     "next": [
-      "VF_领取奖励_05"
+      "VF_领取奖励_08"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "pre_delay": 1000,
     "recognition": "TemplateMatch",
     "template": "zhouchangrenwu.png",
@@ -73,7 +76,8 @@
     "target": [
       36,
       600
-    ]
+    ],
+    "timeout": 3000
   },
   "VF_领取奖励_07": {
     "next": [
@@ -86,7 +90,7 @@
       "VF_领取奖励_08_Hit"
     ],
     "on_error": [
-      "VF_领取奖励_End"
+      "VF_领取奖励_07"
     ],
     "timeout": 5000
   },

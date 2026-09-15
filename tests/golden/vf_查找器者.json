@@ -1,16 +1,17 @@
 {
   "VF_查找器者": {
     "next": [
-      "VF_查找器者_01"
+      "VF_查找器者_28"
     ]
   },
   "VF_查找器者_01": {
     "action": "Click",
     "next": [
-      "VF_查找器者_02"
+      "VF_查找器者_03"
     ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
     "threshold": 0.72,
@@ -18,11 +19,9 @@
   },
   "VF_查找器者_02": {
     "action": "Click",
-    "next": [
-      "VF_查找器者_03"
-    ],
     "order_by": "Score",
     "post_delay": 800,
+    "post_wait_freezes": 1500,
     "recognition": "TemplateMatch",
     "template": "蛙锣.png",
     "threshold": 0.85,
@@ -61,7 +60,8 @@
     "next": [
       "VF_查找器者_05"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_05": {
     "action": "DoNothing",
@@ -96,7 +96,8 @@
     "next": [
       "VF_查找器者_07"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_07": {
     "action": "DoNothing",
@@ -131,7 +132,8 @@
     "next": [
       "VF_查找器者_09"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_09": {
     "action": "DoNothing",
@@ -166,7 +168,8 @@
     "next": [
       "VF_查找器者_11"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_11": {
     "action": "DoNothing",
@@ -201,7 +204,8 @@
     "next": [
       "VF_查找器者_13"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_13": {
     "action": "DoNothing",
@@ -236,7 +240,8 @@
     "next": [
       "VF_查找器者_15"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_15": {
     "action": "DoNothing",
@@ -271,7 +276,8 @@
     "next": [
       "VF_查找器者_17"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_17": {
     "action": "DoNothing",
@@ -306,7 +312,8 @@
     "next": [
       "VF_查找器者_19"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_19": {
     "action": "DoNothing",
@@ -341,7 +348,8 @@
     "next": [
       "VF_查找器者_21"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_21": {
     "action": "DoNothing",
@@ -376,7 +384,8 @@
     "next": [
       "VF_查找器者_23"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_23": {
     "action": "DoNothing",
@@ -411,7 +420,8 @@
     "next": [
       "VF_查找器者_25"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_25": {
     "action": "DoNothing",
@@ -446,7 +456,8 @@
     "next": [
       "VF_查找器者_27"
     ],
-    "post_delay": 600
+    "post_delay": 600,
+    "timeout": 2000
   },
   "VF_查找器者_27": {
     "action": "DoNothing",
@@ -473,7 +484,7 @@
       "VF_查找器者_28_Hit"
     ],
     "on_error": [
-      "VF_查找器者_End"
+      "VF_查找器者_03"
     ],
     "timeout": 8000
   },

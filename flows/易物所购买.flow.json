@@ -1,47 +1,153 @@
 {
+  "schemaVersion": 4,
   "name": "易物所购买",
   "chain": [
-    "n0014b12",
-    "home",
-    "n0027725"
+    "n01",
+    "n02",
+    "n03",
+    "n05",
+    "n04",
+    "n06",
+    "n08",
+    "n07"
   ],
   "nodes": {
-    "home": {
+    "n01": {
+      "type": "ocr_click",
+      "x": 46.0,
+      "y": 46.0,
+      "title": "OCR识别点击",
+      "num": 1,
+      "props": {
+        "pre_delay": 0,
+        "post_delay": 600,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "post_wait_freezes": 0,
+        "roi": "",
+        "timeout": 8000,
+        "text": "易物所"
+      },
+      "next": "n02"
+    },
+    "n02": {
+      "type": "switch",
+      "x": 46.0,
+      "y": 138.0,
+      "title": "枝干判定",
+      "num": 2,
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "candidates": [
+          {
+            "timeout": 3000,
+            "next": "n03"
+          },
+          {
+            "timeout": 3000,
+            "next": "n04"
+          }
+        ],
+        "miss_next": null
+      }
+    },
+    "n03": {
+      "type": "branch",
+      "x": 46.0,
+      "y": 230.0,
+      "title": "分支",
+      "num": 3,
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 0,
+        "template": "zhaojiyishi.png",
+        "timeout": 3000
+      },
+      "hit_next": "n05",
+      "miss_next": null
+    },
+    "n04": {
+      "type": "branch",
+      "x": 46.0,
+      "y": 322.0,
+      "title": "分支",
+      "num": 4,
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 0,
+        "template": "shimoyishi.png",
+        "timeout": 3000
+      },
+      "hit_next": "n06",
+      "miss_next": null
+    },
+    "n05": {
+      "type": "tpl_click",
+      "x": 46.0,
+      "y": 414.0,
+      "title": "找模板点击",
+      "num": 5,
+      "props": {
+        "pre_delay": 0,
+        "post_delay": 800,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "post_wait_freezes": 0,
+        "roi": "",
+        "timeout": 8000,
+        "template": "zhaojiyishi.png",
+        "threshold": 0.8
+      },
+      "next": "n07"
+    },
+    "n06": {
+      "type": "tpl_click",
+      "x": 46.0,
+      "y": 506.0,
+      "title": "找模板点击",
+      "num": 6,
+      "props": {
+        "pre_delay": 0,
+        "post_delay": 800,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "post_wait_freezes": 0,
+        "roi": "",
+        "timeout": 8000,
+        "template": "shimoyishi.png",
+        "threshold": 0.8
+      },
+      "next": "n08"
+    },
+    "n07": {
       "type": "common",
-      "x": 220.0,
-      "y": 341.0,
-      "title": "回主页",
+      "x": 46.0,
+      "y": 598.0,
+      "title": "公共节点(收口)",
+      "num": 7,
       "props": {
         "node": "Common_回主页"
       }
     },
-    "n0014b12": {
-      "type": "ocr_click",
-      "x": 221.0,
-      "y": 236.0,
-      "title": "OCR识别点击",
+    "n08": {
+      "type": "common",
+      "x": 46.0,
+      "y": 690.0,
+      "title": "公共节点(收口)",
+      "num": 8,
       "props": {
-        "text": "易物所",
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 600
-      }
-    },
-    "n0027725": {
-      "type": "switch",
-      "x": 220.0,
-      "y": 431.0,
-      "title": "枝干判定(多路)",
-      "props": {
-        "candidates": [
-          {
-            "t": "",
-            "timeout": 3000
-          }
-        ],
-        "miss_next": ""
+        "node": "Common_回主页"
       }
     }
   }

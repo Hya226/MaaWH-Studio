@@ -2,20 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://maawh.local/schema/pipeline.vf.overlay.schema.json",
   "title": "MaaWH Studio 生成物（VF_ 命名空间 + $meta）",
-  "$comment": "不重写协议字段，只做两件事：① 叠加官方 pipeline.schema.json；② 约束根字段必须是 VF_* 或 $meta。官方 schema 见 vendor/pipeline.schema.json（只读副本，来源 commit 记录在 vendor/README.md）。",
+  "$comment": "不重写协议字段，只做两件事：① 叠加官方 pipeline.schema.json；② 约束根字段必须是 VF_* / Common_* 或 $meta。★ 例外：【通道/跳转】节点的 props.emit_name 可以让节点在生成物里用【手写管线里的名字】（征集段2 这种，老流程的参数要覆盖它），所以这里额外放行非 VF_ 的合法节点名（不含 $ 的普通标识）。官方 schema 见 vendor/pipeline.schema.json（只读副本，来源 commit 记录在 vendor/README.md）。",
   "allOf": [
     { "$ref": "vendor/pipeline.schema.json" },
     {
       "type": "object",
       "minProperties": 2,
       "required": ["$meta"],
-      "propertyNames": { "pattern": "^(\\$meta|VF_)" },
+      "propertyNames": { "pattern": "^(\\$meta|[^$])" },
       "additionalProperties": false,
       "properties": {
         "$meta": { "$ref": "#/$defs/meta" }
       },
       "patternProperties": {
-        "^VF_": { "$ref": "vendor/pipeline.schema.json#/$defs/Node" }
+        "^(VF_|Common_|[^$])": { "$ref": "vendor/pipeline.schema.json#/$defs/Node" }
       }
     }
   ],

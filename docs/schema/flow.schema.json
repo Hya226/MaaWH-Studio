@@ -7,7 +7,7 @@
   "required": ["name", "chain", "nodes"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "enum": [1, 2] },
+    "schemaVersion": { "enum": [ 1, 2, 3, 4 ], "$comment": "3 =【分支】命中出口只认显式连线；老文件由编辑器补连线后自动升级" },
     "name": { "type": "string", "minLength": 1 },
     "chain": {
       "type": "array",
@@ -29,15 +29,18 @@
     "nodeId": { "type": ["string", "null"] },
     "candidate": {
       "type": "object",
-      "required": ["t"],
       "additionalProperties": false,
       "properties": {
+        "timeout": { "type": "integer", "minimum": 0 },
+        "next": { "$ref": "#/$defs/nodeId" },
+        "mergeBack": {
+          "type": "boolean",
+          "$comment": "命中后内容跑完回并主线（不勾=内容跑完即结束）"
+        },
         "t": {
           "type": "string",
-          "$comment": "模板名.png 或 OCR:文字；允许空串在结构上合法，语义校验会拦"
-        },
-        "timeout": { "type": "integer", "minimum": 0 },
-        "next": { "$ref": "#/$defs/nodeId" }
+          "$comment": "【已废弃】旧版候选自带的识别目标。判定条件现在取自候选连到的分支节点，此字段仅为兼容旧流程文件保留，读入后不再参与生成"
+        }
       }
     },
     "node": {
@@ -47,7 +50,8 @@
       "properties": {
         "type": {
           "enum": ["tpl_click", "ocr_click", "tap", "swipe", "wait_tpl",
-                   "branch", "switch", "common", "startapp"]
+                   "branch", "switch", "loop", "subflow", "common", "startapp",
+                   "input", "pick", "pass"]
         },
         "key": {
           "type": "string",
@@ -55,10 +59,23 @@
           "$comment": "pipeline 名后缀。缺省时按链序号生成，所以旧文件没有它也是合法的"
         },
         "title": { "type": "string" },
+        "num": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "节点编号：新建时分配、之后固定不变（不再随链序变化），同时是 pipeline 名后缀 _<num>。缺省时按链序推算，所以旧文件没有它也是合法的"
+        },
         "x": { "type": "number" },
         "y": { "type": "number" },
+        "next": {
+          "$ref": "#/$defs/nodeId",
+          "$comment": "本节点的「下一个」（v4 起是显式的边）：链序只决定显示顺序，连接一律看它。缺省/空 = 到此结束。老文件（schemaVersion<4）由 normalize_flow 按当时的链序补出来，生成结果不变"
+        },
         "hit_next": { "$ref": "#/$defs/nodeId" },
         "miss_next": { "$ref": "#/$defs/nodeId" },
+        "cut": {
+          "type": "boolean",
+          "$comment": "「此处断开」：本节点不再接链上后继。写在【节点级】（不是 props 里），编辑器点「下一个 → 无：到此结束」或把节点移出主链时会给前一个节点打上它。链尾节点不需要这个标记"
+        },
         "props": { "$ref": "#/$defs/props" }
       },
       "allOf": [

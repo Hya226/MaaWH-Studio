@@ -4,90 +4,319 @@
     "n_ZJ_Entry",
     "n_ZJ_HasConfirm",
     "n_ZJ_TiaoGuoCK",
+    "b_ZJ_TiaoGuoCK",
     "n_ZJ_DuiGouCK",
-    "c_Common_点中间回主页"
+    "c_Common_点中间回主页",
+    "b_ZJ_HasConfirm",
+    "n_ZJ_GoStart",
+    "n_征集_检满检查",
+    "c_Common_回主页",
+    "n_ZJ_JiaHao2",
+    "n_ZJ_DuiGou2",
+    "b_ZJ_GoStart",
+    "n_ZJ_Branch",
+    "n_pass_征集段2"
   ],
   "nodes": {
     "n_ZJ_Entry": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 46.0,
       "title": "ZJ_Entry",
       "props": {
         "threshold": 0.65,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "qizhezhengji.png"
-      }
+      },
+      "num": 1,
+      "next": "n_ZJ_Branch"
     },
     "n_ZJ_HasConfirm": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 138.0,
       "title": "ZJ_HasConfirm",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 4000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 600,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "quanbuqueren.png"
-      }
+      },
+      "num": 2,
+      "next": "b_ZJ_TiaoGuoCK"
     },
     "n_ZJ_TiaoGuoCK": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 230.0,
       "title": "ZJ_TiaoGuoCK",
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 20000,
         "rate_limit": 500,
         "pre_delay": 1000,
         "post_delay": 1000,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "tiaoguochouka.png"
-      }
+      },
+      "num": 3,
+      "next": "n_ZJ_DuiGouCK"
     },
     "n_ZJ_DuiGouCK": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 322.0,
       "title": "ZJ_DuiGouCK",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 900,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "duigou.png"
-      }
+      },
+      "num": 4,
+      "next": "c_Common_点中间回主页"
     },
     "c_Common_点中间回主页": {
       "type": "common",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 414.0,
       "title": "Common_点中间回主页",
       "props": {
         "node": "Common_点中间回主页"
+      },
+      "num": 5
+    },
+    "b_ZJ_HasConfirm": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 138.0,
+      "title": "ZJ_HasConfirm?",
+      "props": {
+        "threshold": 0.6,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 4000,
+        "rate_limit": 0,
+        "template": "quanbuqueren.png"
+      },
+      "hit_next": "n_ZJ_HasConfirm",
+      "miss_next": null,
+      "num": 6
+    },
+    "n_ZJ_GoStart": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 598.0,
+      "title": "ZJ_GoStart",
+      "props": {
+        "threshold": 0.6,
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "kaishizhengji.png"
+      },
+      "num": 7,
+      "next": "n_征集_检满检查"
+    },
+    "n_征集_检满检查": {
+      "type": "branch",
+      "x": 46,
+      "y": 690.0,
+      "title": "征集_检满检查?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "征集队列已满,队列已满,已满",
+        "roi": "",
+        "timeout": 3500,
+        "rate_limit": 0
+      },
+      "hit_next": "c_Common_回主页",
+      "miss_next": "n_pass_征集段2",
+      "num": 8
+    },
+    "c_Common_回主页": {
+      "type": "common",
+      "x": 46,
+      "y": 782.0,
+      "title": "Common_回主页",
+      "props": {
+        "node": "Common_回主页"
+      },
+      "num": 9
+    },
+    "n_ZJ_JiaHao2": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 874.0,
+      "title": "ZJ_JiaHao2",
+      "props": {
+        "threshold": 0.65,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 600,
+        "template": "jiahao2.png"
+      },
+      "num": 10,
+      "next": "n_ZJ_DuiGou2"
+    },
+    "n_ZJ_DuiGou2": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 966.0,
+      "title": "ZJ_DuiGou2",
+      "props": {
+        "threshold": 0.65,
+        "roi": "696,380,200,120",
+        "timeout": 6000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 11,
+      "next": "c_Common_回主页"
+    },
+    "b_ZJ_GoStart": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 598.0,
+      "title": "ZJ_GoStart?",
+      "props": {
+        "threshold": 0.6,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "kaishizhengji.png"
+      },
+      "hit_next": "n_ZJ_GoStart",
+      "miss_next": null,
+      "num": 12
+    },
+    "n_ZJ_Branch": {
+      "type": "switch",
+      "x": 368.0,
+      "y": 230.0,
+      "title": "ZJ_Branch（多候选）",
+      "props": {
+        "candidates": [
+          {
+            "timeout": 10000,
+            "next": "b_ZJ_HasConfirm"
+          },
+          {
+            "timeout": 10000,
+            "next": "b_ZJ_GoStart"
+          }
+        ],
+        "miss_next": null
+      },
+      "num": 13
+    },
+    "n_opt_征集_征集次数": {
+      "type": "pick",
+      "x": 736.0,
+      "y": 46.0,
+      "title": "选择(下拉)",
+      "num": 14,
+      "props": {
+        "option": "征集次数",
+        "var_label": "",
+        "default": "1",
+        "desc": "",
+        "cases": [
+          {
+            "name": "1",
+            "node": "征集段2",
+            "field": "next",
+            "value": "VF_征集_11"
+          },
+          {
+            "name": "2",
+            "node": "n_ZJ_JiaHao2",
+            "field": "repeat",
+            "value": "1"
+          },
+          {
+            "name": "3",
+            "node": "n_ZJ_JiaHao2",
+            "field": "repeat",
+            "value": "2"
+          },
+          {
+            "name": "4",
+            "node": "n_ZJ_JiaHao2",
+            "field": "repeat",
+            "value": "3"
+          }
+        ],
+        "targets": []
       }
+    },
+    "n_pass_征集段2": {
+      "type": "pass",
+      "x": 368.0,
+      "y": 874.0,
+      "title": "通道/跳转",
+      "num": 15,
+      "props": {
+        "emit_name": "征集段2"
+      },
+      "next": "n_ZJ_JiaHao2"
+    },
+    "b_ZJ_TiaoGuoCK": {
+      "type": "branch",
+      "x": 368.0,
+      "y": 230.0,
+      "title": "ZJ_TiaoGuoCK?",
+      "props": {
+        "threshold": 0.55,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 20000,
+        "rate_limit": 500,
+        "template": "tiaoguochouka.png"
+      },
+      "hit_next": "n_ZJ_TiaoGuoCK",
+      "miss_next": "c_Common_回主页",
+      "num": 16
     }
-  }
+  },
+  "schemaVersion": 4
 }

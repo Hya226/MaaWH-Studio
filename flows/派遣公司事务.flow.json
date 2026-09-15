@@ -1,421 +1,424 @@
 {
   "name": "派遣公司事务",
   "chain": [
-    "entry",
-    "sq",
-    "r1",
-    "hg",
-    "r2",
-    "b_bg",
-    "bg",
-    "b_yj",
-    "yj",
-    "tb",
-    "mid",
-    "tcbg",
-    "b_tcbg",
-    "tea_nrukou",
-    "tea_n00498da",
-    "tea_n005504d",
-    "n0010b18",
-    "tea_n008d833",
-    "tea_n0099bd1",
-    "tea_n0108097",
-    "tea_nbranch_yaoqing",
-    "tea_n011527d",
-    "tea_n01224fd",
-    "tea_n0083554",
-    "tea_n0136932",
-    "tea_n014a86c",
-    "tea_n009fecc",
-    "tea_n0159955",
-    "tea_n0167080",
-    "tea_n010927f",
-    "tea_n017f641",
-    "tea_n0188abd",
-    "tea_n011df05",
-    "tea_n0199d5c",
-    "tea_n020b804",
-    "tea_n021e8f8",
-    "tea_n0221863",
-    "tui_pq",
-    "b_tcpq",
-    "huizhuye"
+    "n_VF_派遣公司事务_01",
+    "n_VF_派遣公司事务_02",
+    "n_VF_派遣公司事务_03",
+    "n_VF_派遣公司事务_04",
+    "n_VF_派遣公司事务_05",
+    "n_VF_派遣公司事务_06",
+    "n_VF_派遣公司事务_07",
+    "n_VF_派遣公司事务_08",
+    "n_VF_派遣公司事务_10",
+    "n_VF_派遣公司事务_11",
+    "n_VF_派遣公司事务_12",
+    "n_VF_派遣公司事务_13",
+    "n_VF_派遣公司事务_14",
+    "n_VF_派遣公司事务_15",
+    "n_VF_派遣公司事务_16",
+    "n_VF_派遣公司事务_17",
+    "n_VF_派遣公司事务_18",
+    "n_VF_派遣公司事务_19",
+    "n_VF_派遣公司事务_20",
+    "n_VF_派遣公司事务_21",
+    "n_VF_派遣公司事务_22",
+    "n_VF_派遣公司事务_23",
+    "n_VF_派遣公司事务_24",
+    "n_VF_派遣公司事务_25",
+    "n_VF_派遣公司事务_26",
+    "n_VF_派遣公司事务_27",
+    "n_VF_派遣公司事务_28",
+    "n_VF_派遣公司事务_29",
+    "n_VF_派遣公司事务_30",
+    "n_VF_派遣公司事务_31",
+    "n_VF_派遣公司事务_32",
+    "n_VF_派遣公司事务_33",
+    "n_VF_派遣公司事务_34",
+    "n_VF_派遣公司事务_35",
+    "n_VF_派遣公司事务_36",
+    "n_VF_派遣公司事务_37",
+    "n_VF_派遣公司事务_38",
+    "n_VF_派遣公司事务_39",
+    "n0145cb0"
   ],
   "nodes": {
-    "entry": {
+    "n_VF_派遣公司事务_01": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 50,
-      "title": "点派遣公司入口",
+      "x": 46,
+      "y": 46.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "paiqiangongsi.png"
-      }
+      },
+      "num": 1,
+      "next": "n_VF_派遣公司事务_02"
     },
-    "sq": {
+    "n_VF_派遣公司事务_02": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 140,
-      "title": "收取资源",
+      "x": 46,
+      "y": 138.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 600,
-        "repeat": 1,
-        "repeat_delay": 350,
+        "post_delay": 1000,
         "template": "shouquziyuan.png"
-      }
+      },
+      "num": 2,
+      "next": "n_VF_派遣公司事务_03"
     },
-    "r1": {
+    "n_VF_派遣公司事务_03": {
       "type": "tap",
-      "x": 500,
-      "y": 230,
+      "x": 46.0,
+      "y": 230.0,
       "title": "感应操作1",
       "props": {
         "x": 1086,
         "y": 400,
-        "pre_delay": 0,
-        "post_delay": 600,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 1000
+      },
+      "num": 3,
+      "next": "n_VF_派遣公司事务_04"
     },
-    "hg": {
+    "n_VF_派遣公司事务_04": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 320,
-      "title": "获取感应",
+      "x": 46,
+      "y": 322.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 600,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "huoquganying.png"
-      }
+      },
+      "num": 4,
+      "next": "n_VF_派遣公司事务_05"
     },
-    "r2": {
+    "n_VF_派遣公司事务_05": {
       "type": "tap",
-      "x": 500,
-      "y": 410,
+      "x": 46,
+      "y": 414.0,
       "title": "感应操作2",
       "props": {
         "x": 1186,
         "y": 400,
-        "pre_delay": 0,
-        "post_delay": 600,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 600
+      },
+      "num": 5,
+      "next": "n_VF_派遣公司事务_06"
     },
-    "b_bg": {
+    "n_VF_派遣公司事务_06": {
       "type": "branch",
-      "x": 500,
-      "y": 500,
-      "title": "办公室标识出现?",
+      "x": 46,
+      "y": 506.0,
+      "title": "分支",
       "props": {
         "threshold": 0.55,
+        "ocr_text": "",
         "roi": "",
         "timeout": 3000,
         "rate_limit": 0,
         "template": "bangongshi_biaozhi.png"
       },
-      "hit_next": "bg",
-      "miss_next": "tea_nrukou"
+      "hit_next": "n_VF_派遣公司事务_07",
+      "miss_next": "n_VF_派遣公司事务_14",
+      "num": 6
     },
-    "bg": {
+    "n_VF_派遣公司事务_07": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 590,
-      "title": "进办公室",
+      "x": 46,
+      "y": 598.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "bangongshi.png"
-      }
+      },
+      "num": 7,
+      "next": "n_VF_派遣公司事务_08"
     },
-    "b_yj": {
+    "n_VF_派遣公司事务_08": {
       "type": "branch",
-      "x": 500,
-      "y": 680,
-      "title": "易物机购买出现?",
+      "x": 46.0,
+      "y": 690.0,
+      "title": "分支",
       "props": {
         "threshold": 0.55,
-        "roi": "",
+        "ocr_text": "",
+        "roi": "188,62,71,51",
         "timeout": 3000,
         "rate_limit": 0,
         "template": "yiwujigoumai.png"
       },
-      "hit_next": "yj",
-      "miss_next": "tcbg"
+      "hit_next": "n0145cb0",
+      "miss_next": "n_VF_派遣公司事务_12",
+      "num": 8
     },
-    "yj": {
+    "n_VF_派遣公司事务_10": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 770,
-      "title": "点易物机购买",
+      "x": 46,
+      "y": 874.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "yiwujigoumai.png"
-      }
-    },
-    "tb": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 860,
-      "title": "点击投币",
-      "props": {
-        "threshold": 0.6,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "dianjitoubi.png"
-      }
+      },
+      "num": 10,
+      "next": "n_VF_派遣公司事务_11"
     },
-    "mid": {
+    "n_VF_派遣公司事务_11": {
       "type": "tap",
-      "x": 500,
-      "y": 950,
+      "x": 46,
+      "y": 966.0,
       "title": "点中央关闭",
       "props": {
         "x": 836,
         "y": 360,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 800
+      },
+      "num": 11,
+      "next": "n_VF_派遣公司事务_12"
     },
-    "tcbg": {
+    "n_VF_派遣公司事务_12": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 1040,
-      "title": "点退出办公室",
+      "x": 46,
+      "y": 1058.0,
+      "title": "找模板点击",
       "props": {
         "threshold": 0.5,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "tuichubangongshi.png"
-      }
+      },
+      "num": 12,
+      "next": "n_VF_派遣公司事务_13"
     },
-    "b_tcbg": {
+    "n_VF_派遣公司事务_13": {
       "type": "branch",
-      "x": 500,
-      "y": 1130,
+      "x": 46,
+      "y": 1150.0,
       "title": "退出办公室按钮还在?",
       "props": {
         "threshold": 0.5,
+        "ocr_text": "",
         "roi": "",
         "timeout": 1500,
         "rate_limit": 0,
         "template": "tuichubangongshi.png"
       },
-      "hit_next": "tcbg",
-      "miss_next": "tea_nrukou"
+      "hit_next": "n_VF_派遣公司事务_12",
+      "miss_next": "n_VF_派遣公司事务_14",
+      "num": 13
     },
-    "tui_pq": {
+    "n_VF_派遣公司事务_14": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 3290,
-      "title": "点退出派遣公司",
+      "x": 46,
+      "y": 1242.0,
+      "title": "找模板点击",
       "props": {
-        "threshold": 0.5,
+        "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tuichupaiqiangongsi.png"
-      }
-    },
-    "b_tcpq": {
-      "type": "branch",
-      "x": 500,
-      "y": 3380,
-      "title": "退出派遣公司按钮还在?",
-      "props": {
-        "threshold": 0.5,
-        "roi": "",
-        "timeout": 1500,
-        "rate_limit": 0,
-        "template": "tuichupaiqiangongsi.png"
+        "template": "chashi_rukou.png"
       },
-      "hit_next": "tui_pq",
-      "miss_next": null
+      "num": 14,
+      "next": "n_VF_派遣公司事务_15"
     },
-    "huizhuye": {
-      "type": "common",
-      "x": 500,
-      "y": 3470,
-      "title": "回主页",
-      "props": {
-        "node": "Common_回主页"
-      }
-    },
-    "tea_n00498da": {
+    "n_VF_派遣公司事务_15": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 1310,
+      "x": 46,
+      "y": 1334.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
-        "pre_delay": 0,
+        "rate_limit": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "tea_0.png"
-      }
+      },
+      "num": 15,
+      "next": "n_VF_派遣公司事务_16"
     },
-    "tea_n008d833": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 1490,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_queren.png"
-      }
-    },
-    "tea_n0099bd1": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 1580,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_queren2.png"
-      }
-    },
-    "tea_n0108097": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 1670,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_qipao.png",
-        "rate_limit": 200
-      }
-    },
-    "tea_n011527d": {
-      "type": "tpl_click",
-      "x": 500,
-      "y": 1850,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_yaoqing.png"
-      }
-    },
-    "tea_n01224fd": {
+    "n_VF_派遣公司事务_16": {
       "type": "tap",
-      "x": 500.0,
-      "y": 1939.0,
+      "x": 46,
+      "y": 1426.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 200,
+        "y": 400,
+        "post_delay": 500
+      },
+      "num": 16,
+      "next": "n_VF_派遣公司事务_17"
+    },
+    "n_VF_派遣公司事务_17": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1518.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_max.png"
+      },
+      "num": 17,
+      "next": "n_VF_派遣公司事务_18"
+    },
+    "n_VF_派遣公司事务_18": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1610.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_queren.png"
+      },
+      "num": 18,
+      "next": "n_VF_派遣公司事务_19"
+    },
+    "n_VF_派遣公司事务_19": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1702.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_queren2.png"
+      },
+      "num": 19,
+      "next": "n_VF_派遣公司事务_20"
+    },
+    "n_VF_派遣公司事务_20": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1794.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 200,
+        "post_delay": 800,
+        "template": "tea_qipao.png"
+      },
+      "num": 20,
+      "next": "n_VF_派遣公司事务_21"
+    },
+    "n_VF_派遣公司事务_21": {
+      "type": "branch",
+      "x": 46,
+      "y": 1886.0,
+      "title": "邀请出现了?",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "tea_yaoqing.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_22",
+      "miss_next": "n_VF_派遣公司事务_20",
+      "num": 21
+    },
+    "n_VF_派遣公司事务_22": {
+      "type": "tpl_click",
+      "x": 46,
+      "y": 1978.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "post_delay": 800,
+        "template": "tea_yaoqing.png"
+      },
+      "num": 22,
+      "next": "n_VF_派遣公司事务_23"
+    },
+    "n_VF_派遣公司事务_23": {
+      "type": "tap",
+      "x": 46,
+      "y": 2070.0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 23,
+      "next": "n_VF_派遣公司事务_24"
     },
-    "tea_n0136932": {
+    "n_VF_派遣公司事务_24": {
+      "type": "branch",
+      "x": 46,
+      "y": 2162.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_25",
+      "miss_next": "n_VF_派遣公司事务_23",
+      "num": 24
+    },
+    "n_VF_派遣公司事务_25": {
       "type": "tap",
-      "x": 500,
-      "y": 2120,
+      "x": 46,
+      "y": 2254.0,
       "title": "固定坐标点击",
       "props": {
         "x": 978,
         "y": 376,
-        "pre_delay": 0,
         "post_delay": 500,
         "repeat": 2,
         "repeat_delay": 350
-      }
+      },
+      "num": 25,
+      "next": "n_VF_派遣公司事务_26"
     },
-    "tea_n014a86c": {
+    "n_VF_派遣公司事务_26": {
       "type": "tap",
-      "x": 500,
-      "y": 2210,
+      "x": 46,
+      "y": 2346.0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
@@ -424,248 +427,220 @@
         "post_delay": 500,
         "repeat": 2,
         "repeat_delay": 350
-      }
+      },
+      "num": 26,
+      "next": "n_VF_派遣公司事务_27"
     },
-    "tea_n0159955": {
+    "n_VF_派遣公司事务_27": {
+      "type": "branch",
+      "x": 46,
+      "y": 2438.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_28",
+      "miss_next": "n_VF_派遣公司事务_26",
+      "num": 27
+    },
+    "n_VF_派遣公司事务_28": {
       "type": "tap",
-      "x": 500,
-      "y": 2390,
+      "x": 46,
+      "y": 2530.0,
       "title": "固定坐标点击",
       "props": {
         "x": 978,
         "y": 376,
-        "pre_delay": 0,
-        "post_delay": 1500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 1500
+      },
+      "num": 28,
+      "next": "n_VF_派遣公司事务_29"
     },
-    "tea_n0167080": {
+    "n_VF_派遣公司事务_29": {
       "type": "tap",
-      "x": 502.0,
-      "y": 2479.0,
+      "x": 46,
+      "y": 2622.0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
         "post_delay": 2000,
         "repeat": 2,
         "repeat_delay": 200
-      }
+      },
+      "num": 29,
+      "next": "n_VF_派遣公司事务_30"
     },
-    "tea_n017f641": {
+    "n_VF_派遣公司事务_30": {
+      "type": "branch",
+      "x": 46,
+      "y": 2714.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_31",
+      "miss_next": "n_VF_派遣公司事务_28",
+      "num": 30
+    },
+    "n_VF_派遣公司事务_31": {
       "type": "tap",
-      "x": 506.0,
-      "y": 2658.0,
+      "x": 46,
+      "y": 2806.0,
       "title": "固定坐标点击",
       "props": {
         "x": 988,
         "y": 266,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 31,
+      "next": "n_VF_派遣公司事务_32"
     },
-    "tea_n0188abd": {
+    "n_VF_派遣公司事务_32": {
       "type": "tap",
-      "x": 501.0,
-      "y": 2749.0,
+      "x": 46,
+      "y": 2898.0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 32,
+      "next": "n_VF_派遣公司事务_33"
     },
-    "tea_n0199d5c": {
+    "n_VF_派遣公司事务_33": {
+      "type": "branch",
+      "x": 46,
+      "y": 2990.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duihua_maohao.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_34",
+      "miss_next": "n_VF_派遣公司事务_31",
+      "num": 33
+    },
+    "n_VF_派遣公司事务_34": {
       "type": "tap",
-      "x": 500,
-      "y": 2930,
+      "x": 46,
+      "y": 3082.0,
       "title": "固定坐标点击",
       "props": {
         "x": 988,
         "y": 266,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 34,
+      "next": "n_VF_派遣公司事务_35"
     },
-    "tea_n020b804": {
+    "n_VF_派遣公司事务_35": {
       "type": "tap",
-      "x": 500,
-      "y": 3020,
+      "x": 46,
+      "y": 3174.0,
       "title": "固定坐标点击",
       "props": {
         "x": 642,
         "y": 284,
-        "pre_delay": 0,
-        "post_delay": 1500,
-        "repeat": 1,
-        "repeat_delay": 1500
-      }
+        "post_delay": 1500
+      },
+      "num": 35,
+      "next": "n_VF_派遣公司事务_36"
     },
-    "tea_n021e8f8": {
+    "n_VF_派遣公司事务_36": {
       "type": "tap",
-      "x": 500,
-      "y": 3110,
+      "x": 46,
+      "y": 3266.0,
       "title": "固定坐标点击",
       "props": {
         "x": 136,
         "y": 449,
-        "pre_delay": 0,
-        "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
+        "post_delay": 500
+      },
+      "num": 36,
+      "next": "n_VF_派遣公司事务_37"
     },
-    "tea_n0221863": {
+    "n_VF_派遣公司事务_37": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 3200,
+      "x": 46,
+      "y": 3358.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
-        "pre_delay": 0,
+        "rate_limit": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
         "template": "chashi_tuichu.png"
-      }
-    },
-    "tea_nbranch_yaoqing": {
-      "type": "branch",
-      "x": 500,
-      "y": 1760,
-      "title": "邀请出现了?",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "tea_yaoqing.png"
       },
-      "hit_next": null,
-      "miss_next": "tea_n0108097"
+      "num": 37,
+      "next": "n_VF_派遣公司事务_38"
     },
-    "tea_nrukou": {
+    "n_VF_派遣公司事务_38": {
       "type": "tpl_click",
-      "x": 500,
-      "y": 1220,
-      "title": "进入茶室",
+      "x": 46,
+      "y": 3450.0,
+      "title": "找模板点击",
       "props": {
-        "threshold": 0.8,
+        "threshold": 0.5,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
-        "pre_delay": 0,
         "post_delay": 800,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "chashi_rukou.png"
-      }
+        "template": "tuichupaiqiangongsi.png"
+      },
+      "num": 38,
+      "next": "n_VF_派遣公司事务_39"
     },
-    "tea_n005504d": {
+    "n_VF_派遣公司事务_39": {
+      "type": "branch",
+      "x": 46,
+      "y": 3542.0,
+      "title": "退出派遣公司按钮还在?",
+      "props": {
+        "threshold": 0.5,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 1500,
+        "rate_limit": 0,
+        "template": "tuichupaiqiangongsi.png"
+      },
+      "hit_next": "n_VF_派遣公司事务_38",
+      "miss_next": null,
+      "num": 39
+    },
+    "n0145cb0": {
       "type": "tap",
-      "x": 500,
-      "y": 1400,
+      "x": 46.0,
+      "y": 782.0,
       "title": "固定坐标点击",
       "props": {
-        "x": 200,
-        "y": 400,
+        "x": 222,
+        "y": 89,
         "pre_delay": 0,
         "post_delay": 500,
-        "repeat": 1,
-        "repeat_delay": 350
-      }
-    },
-    "tea_n0083554": {
-      "type": "branch",
-      "x": 501.0,
-      "y": 2029.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "tea_n01224fd"
-    },
-    "tea_n009fecc": {
-      "type": "branch",
-      "x": 500,
-      "y": 2300,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "tea_n014a86c"
-    },
-    "tea_n010927f": {
-      "type": "branch",
-      "x": 500.0,
-      "y": 2569.0,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "tea_n0159955"
-    },
-    "tea_n011df05": {
-      "type": "branch",
-      "x": 500,
-      "y": 2840,
-      "title": "分支(模板在?)",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "duihua_maohao.png"
-      },
-      "hit_next": null,
-      "miss_next": "tea_n017f641"
-    },
-    "n0010b18": {
-      "type": "tpl_click",
-      "x": 201.0,
-      "y": 1439.0,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "order_by": false,
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
         "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tea_max.png"
-      }
+        "repeat_delay": 350
+      },
+      "num": 40,
+      "next": "n_VF_派遣公司事务_10"
     }
-  }
+  },
+  "schemaVersion": 4
 }

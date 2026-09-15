@@ -1,6 +1,7 @@
 {
   "name": "装备分解",
   "chain": [
+    "n_分_物资库",
     "n_分_物资库_Hit",
     "n_分_分解_Hit",
     "n_分_白板",
@@ -10,8 +11,7 @@
     "c_Common_回主页",
     "n_分_√中",
     "n_分_√右下",
-    "n_分_分解",
-    "n_分_物资库"
+    "n_分_分解"
   ],
   "nodes": {
     "n_分_物资库_Hit": {
@@ -22,15 +22,18 @@
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "wuziku.png"
-      }
+      },
+      "num": 1,
+      "next": "n_分_分解"
     },
     "n_分_分解_Hit": {
       "type": "tpl_click",
@@ -40,15 +43,18 @@
       "props": {
         "threshold": 0.55,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "fenjie.png"
-      }
+      },
+      "num": 2,
+      "next": "n_分_白板"
     },
     "n_分_白板": {
       "type": "tap",
@@ -60,9 +66,13 @@
         "y": 175,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 3,
+      "next": "n_分_√右下"
     },
     "n_分_√右下_Hit": {
       "type": "tpl_click",
@@ -72,15 +82,18 @@
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1000,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "duigou1.png"
-      }
+      },
+      "num": 4,
+      "next": "n_分_√中"
     },
     "n_分_√中_Hit": {
       "type": "tpl_click",
@@ -90,15 +103,18 @@
       "props": {
         "threshold": 0.6,
         "roi": "",
-        "order_by": true,
+        "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 1000,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "duigou2.png"
-      }
+      },
+      "num": 5,
+      "next": "n_分_中"
     },
     "n_分_中": {
       "type": "tap",
@@ -110,9 +126,13 @@
         "y": 360,
         "pre_delay": 0,
         "post_delay": 800,
+        "post_wait_freezes": 0,
         "repeat": 1,
-        "repeat_delay": 350
-      }
+        "repeat_delay": 350,
+        "timeout": 3000
+      },
+      "num": 6,
+      "next": "c_Common_回主页"
     },
     "c_Common_回主页": {
       "type": "common",
@@ -121,7 +141,8 @@
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
-      }
+      },
+      "num": 7
     },
     "n_分_√中": {
       "type": "branch",
@@ -137,7 +158,8 @@
         "template": "duigou2.png"
       },
       "hit_next": "n_分_√中_Hit",
-      "miss_next": null
+      "miss_next": null,
+      "num": 8
     },
     "n_分_√右下": {
       "type": "branch",
@@ -153,7 +175,8 @@
         "template": "duigou1.png"
       },
       "hit_next": "n_分_√右下_Hit",
-      "miss_next": null
+      "miss_next": null,
+      "num": 9
     },
     "n_分_分解": {
       "type": "branch",
@@ -169,7 +192,8 @@
         "template": "fenjie.png"
       },
       "hit_next": "n_分_分解_Hit",
-      "miss_next": null
+      "miss_next": null,
+      "num": 10
     },
     "n_分_物资库": {
       "type": "branch",
@@ -185,7 +209,9 @@
         "template": "wuziku.png"
       },
       "hit_next": "n_分_物资库_Hit",
-      "miss_next": null
+      "miss_next": null,
+      "num": 11
     }
-  }
+  },
+  "schemaVersion": 4
 }
