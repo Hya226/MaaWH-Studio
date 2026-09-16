@@ -23,6 +23,7 @@
 import os
 import re
 import sys
+import copy
 import json
 import glob
 import time
@@ -296,10 +297,22 @@ def pass_summary(p):
 
 
 def pick_summary(p):
-    """【选择】卡片摘要：'参数名（N 个选项）'"""
-    opt = str((p or {}).get("option") or "").strip() or "?"
-    n = len((p or {}).get("cases") or [])
-    return f"{opt}（{n} 个选项）"
+    """【选择】卡片摘要：'参数名（N 个选项[ · 注入 M 个节点]）'。
+
+    选项数只数【有名字】的（没名字的进不了 interface.json，卡片上也不该显得配好了）；
+    「注入 M 个节点」= 右侧小球连到的节点数（`props.targets`）—— 一条线都没拉、
+    选项又只写了字段和值时，那一项生成不出来，摘要里能看到"注入 0 个节点"。"""
+    p = p if isinstance(p, dict) else {}
+    opt = str(p.get("option") or "").strip() or "?"
+    rows = [r for r in (p.get("cases") or []) if isinstance(r, dict)]
+    named = [r for r in rows if str(r.get("name") or "").strip()]
+    base = {str(t or "").strip() for t in (p.get("targets") or [])}
+    base.discard("")
+    row_nodes = {str(r.get("node") or "").strip() for r in rows}
+    row_nodes.discard("")
+    n = len(base | row_nodes)
+    tail = f" · 注入 {n} 个节点" if n else ""
+    return f"{opt}（{len(named)} 个选项{tail}）"
 
 
 # 【输入】参数能覆盖的字段：下拉里显示成"模板图 (template)"这种带中文说明的写法
@@ -338,6 +351,7 @@ def input_field(p):
 # 选项 2~4 → ZJ_JiaHao2.repeat）。
 PICK_FIELD_LABELS = (("下一个出口", "next"), ("启用", "enabled")) + INPUT_FIELD_LABELS
 PICK_FIELDS = tuple(f"{lab} ({name})" for lab, name in PICK_FIELD_LABELS)
+PICK_FIELD_NAMES = tuple(name for _lab, name in PICK_FIELD_LABELS)
 _PICK_FIELD_DISPLAY = {name: f"{lab} ({name})" for lab, name in PICK_FIELD_LABELS}
 
 
@@ -382,10 +396,15 @@ def target_name_of(flow, token):
     return token
 
 
-def case_value(field, raw):
+def case_value(field, raw, flow=None):
     """选项里那一格"值"文本 → 写进 pipeline_override 的值。
     `next` 是节点名列表（多个用逗号分隔）；`[..]` 开头按 JSON 解析；纯数字认成 int；
-    其余当字符串。"""
+    其余当字符串。
+
+    ★ `next` 的每一段再过一遍 target_name_of()：那里写 `#12`（或画布节点的标题）也能
+      落到正确的**节点名**上 —— 生成物里 next 的值必须是节点名，写别的名字会让引擎
+      因为"引用不存在的节点"拒绝整包（铁律 #1）。老流程写的手写管线节点名认不出来，
+      target_name_of 会原样返回，不受影响。"""
     text = str(raw or "").strip()
     if text.startswith("["):
         try:
@@ -393,7 +412,10 @@ def case_value(field, raw):
         except ValueError:
             pass
     if field == "next":
-        return [s.strip() for s in re.split(r"[,，]", text) if s.strip()]
+        items = [s.strip() for s in re.split(r"[,，]", text) if s.strip()]
+        if flow is None:
+            return items
+        return [target_name_of(flow, v) for v in items]
     if re.fullmatch(r"-?\d+", text):
         return int(text)
     if text in ("true", "false"):
@@ -403,30 +425,53 @@ def case_value(field, raw):
 
 def pick_cases(flow, nd):
     """【选择】节点的选项 → interface.json 的 cases（形状与 App 端 TaskPack 逐字段对齐）。
-    每个选项一行：选项名 + 目标（画布节点 / #编号 / 手写管线节点名）+ 字段 + 值。"""
+
+    目标节点来自两处，按行优先：
+      · 这一行自己写了「目标节点」（老流程的写法：征集次数的选项 1 只作用在「征集段2」上）
+        → 就用它；
+      · 没写 → 用卡片右侧小球注入到的**全部**节点（一条注入线都不拉就生成不出这一项）。
+    生成出来的每个选项都要有「选项名」和「字段」，否则整行丢掉（App 的下拉里就没有这一项）。"""
     out = []
+    nodes = flow.get("nodes") or {}
+    base = [t for t in inject_targets_of(nd) if t in nodes]
     for row in ((nd or {}).get("props") or {}).get("cases") or []:
         if not isinstance(row, dict):
             continue
         name = str(row.get("name") or "").strip()
         node = str(row.get("node") or "").strip()
         field = input_field({"field": row.get("field")})
-        if not name or not node or not field:
+        if not name or not field:
             continue
-        tgt = target_name_of(flow, node)
-        out.append({"name": name,
-                    "pipeline_override": {tgt: {field: case_value(field, row.get("value"))}}})
+        targets = [node] if node else list(base)
+        ov = {}
+        for t in targets:
+            nm = target_name_of(flow, t)
+            if nm and nm not in ov:
+                ov[nm] = {field: case_value(field, row.get("value"), flow)}
+        if ov:
+            out.append({"name": name, "pipeline_override": ov})
     return out
 
 
 def case_brief(flow, row):
-    """选项在列表里的一行摘要（只读回显用）"""
+    """选项在列表里的一行摘要（只读回显用）。
+
+    空着的格子要看得见（「(未命名)」「(空)」）—— 选项名没填的这一项不会写进
+    interface.json。目标节点只在**这一行自己写了**的时候才显示（`@节点名`）：
+    没写就是"作用在注入线连到的那些节点上"，不写出来反而更清楚。"""
+    row = row if isinstance(row, dict) else {}
+    name = str(row.get("name") or "").strip() or "(未命名)"
     field = input_field({"field": row.get("field")})
-    tgt = target_name_of(flow, str(row.get("node") or "").strip())
-    val = row.get("value")
-    if field == "next" and not str(val or "").strip().startswith("["):
-        val = "[" + str(val or "").strip() + "]"
-    return f"{row.get('name', '?')}: {tgt}.{field} = {val}"
+    text = str(row.get("value") or "").strip()
+    if not text:
+        val = "(空)"
+    elif field == "next" and not text.startswith("["):
+        val = "[" + text + "]"
+    else:
+        val = text
+    node = str(row.get("node") or "").strip()
+    at = f" @{target_name_of(flow, node) or node}" if node else ""
+    return f"{name}{at}: {field} = {val}"
 
 
 def cand_target(flow, c):
@@ -691,15 +736,18 @@ NODE_TYPES = {
         # 同样是"参数声明"，但值是【从几个选项里挑一个】，每个选项覆盖不同字段
         # （对应 PI v2 的 type=select + cases）：征集次数就是这么写的 ——
         # 选 1 时把「征集段2」的下一个换成 ZJ_DuiGou2，选 2~4 时改「ZJ_JiaHao2」的重复次数。
+        # ★ 作用在哪个节点上由**注入小球**决定（props.targets，与【输入】同一套）；
+        #   老流程把目标写死在单个选项里（row["node"]），那种写法继续支持。
         "fields": [
             ("option", "参数名(进 interface.json / App 里显示)", "str"),
             ("var_label", "该参数的字段标题", "str_opt"),
             ("default", "默认选项名(空=第一个)", "str_opt"),
             ("desc", "说明(App 里的提示)", "str_opt"),
-            ("cases", "选项(名称 / 目标节点 / 字段 / 值)", "cases_list"),
+            ("targets", "已注入到(拖右侧小球增删)", "inject_list"),
+            ("cases", "选项(名称 / 字段 / 值)", "cases_list"),
         ],
         "defaults": {"option": "", "var_label": "", "default": "", "desc": "",
-                     "cases": []},
+                     "targets": [], "cases": []},
     },
     "switch": {
         "label": "枝干判定(多路)", "icon": "☰", "color": "#7a5cb0", "light": "#c0a8f0",
@@ -815,6 +863,37 @@ def _num(v, default=-1):
         return int(float(v))
     except (TypeError, ValueError):
         return default
+
+
+# 编辑器自己的小偏好（目前只有"删除免确认"）。放在工具目录下、和 recent.txt 同一类
+# 本机状态文件（.gitignore 里忽略）。**读失败一律当默认值** —— 这文件坏了不该让
+# 编辑器起不来。
+PREFS_PATH = os.path.join(TOOLS_DIR, "ui_prefs.json")
+DEFAULT_PREFS = {"no_confirm_delete": False}
+
+
+def load_prefs():
+    prefs = dict(DEFAULT_PREFS)
+    try:
+        with open(PREFS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            prefs.update({k: v for k, v in data.items() if k in DEFAULT_PREFS})
+    except Exception:
+        pass
+    return prefs
+
+
+def save_prefs(**kw):
+    """改一项偏好就写回文件（只认识 DEFAULT_PREFS 里登记过的键）"""
+    prefs = load_prefs()
+    prefs.update({k: v for k, v in kw.items() if k in DEFAULT_PREFS})
+    try:
+        with open(PREFS_PATH, "w", encoding="utf-8") as f:
+            json.dump(prefs, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    return prefs
 
 
 def card_h(nd):
@@ -960,6 +1039,19 @@ def normalize_flow(flow):
             _nx = _nd.get("next")
             if _nx and (_nx not in (flow.get("nodes") or {}) or _nx == _nid):
                 _nd["next"] = None
+    # ★ 参数节点的注入目标（【输入】/【选择】共用的 props.targets）里指向已删除节点的
+    #   死 id 直接摘掉：那是"连过的节点被删掉"留下的残渣，画布上已经没有球可拖、
+    #   面板里也没有清它的入口，留着只会让卡片摘要显示"注入 N 个节点"（实际连不上），
+    #   生成时还会往一个不存在的节点名上写覆盖。_delete_nodes() 只在删除那一刻清理，
+    #   老文件（或早先版本写脏的数据）里仍有残留，所以读文件时统一兜一次。
+    _live = flow.get("nodes") or {}
+    for _nd in _live.values():
+        if not isinstance(_nd, dict) or _nd.get("type") not in ("input", "pick"):
+            continue
+        _p = _nd.get("props") or {}
+        _tg = _p.get("targets")
+        if isinstance(_tg, list):
+            _p["targets"] = [t for t in _tg if t in _live]
     for nd in flow.get("nodes", {}).values():
         spec = NODE_TYPES.get(nd.get("type"))
         if not spec:
@@ -1667,6 +1759,63 @@ def _check_inputs(flow, issues):
                                 f"用户在 App 里填的值替换", nid))
 
 
+def _check_picks(flow, issues):
+    """【选择】节点的校验：参数名 + 每个选项的「选项名 / 字段 / 值」+ 有没有节点可作用。
+
+    ★ 这几种情况会让某一项**静默消失**（生成物照样合法、引擎加载不报错，只有同步后
+      才发现手机上的下拉里没这一项）：选项名没填、字段不认识、没有任何目标节点能作用。
+    ★ 目标节点优先看这一行自己写的（老流程的写法），其次看注入线连到的节点。"""
+    nodes = flow.get("nodes") or {}
+    items = sorted((node_no(flow, nid, 0), nid, nd)
+                   for nid, nd in nodes.items()
+                   if isinstance(nd, dict) and nd.get("type") == "pick")
+    for _no, nid, nd in items:
+        p = nd.get("props") or {}
+        no = f"#{node_no(flow, nid, 0)}"
+        where = f"{no}「{nd.get('title', '选择(下拉)')}」"
+        rows = [r for r in (p.get("cases") or []) if isinstance(r, dict)]
+        base = [t for t in (p.get("targets") or []) if t in nodes]
+        if not rows and not base:
+            continue            # 还没开始配（刚新建的空白节点）
+        opt_name = str(p.get("option") or "").strip()
+        if not opt_name:
+            issues.append(Issue("error", "PK_NAME_EMPTY",
+                                f"{where}还没填参数名（App 的【参数】里显示这个名字）",
+                                nid))
+        # 有选项行没自己写目标节点、而注入线又一条都没连 → 这些选项生成不出来
+        if not base and any(not str(r.get("node") or "").strip() for r in rows):
+            issues.append(Issue(
+                "warn", "PK_NO_TARGET",
+                f"{where}右侧的「注入」小球还没连到任何节点 —— 没写死目标的选项"
+                f"不知道该改谁的字段（把小球拖到要作用的节点上，可以连好几个）", nid))
+        for i, r in enumerate(rows, 1):
+            rname = str(r.get("name") or "").strip()
+            node = str(r.get("node") or "").strip()
+            label = f"{where}的第 {i} 个选项" + (f"「{rname}」" if rname else "")
+            if not rname:
+                issues.append(Issue(
+                    "warn", "PK_CASE_NAME",
+                    f"{label}还没填选项名 —— 不填这一项不会写进 interface.json"
+                    f"（同步到手机后，下拉里没有这个选项）", nid))
+            field = input_field({"field": r.get("field")})
+            if field not in PICK_FIELD_NAMES:
+                issues.append(Issue(
+                    "warn", "PK_CASE_FIELD",
+                    f"{label}的字段「{field}」不认识"
+                    f"（可用：{'、'.join(PICK_FIELD_NAMES)}）", nid))
+            if not str(r.get("value") or "").strip():
+                # 值是空的 → 写出 {"repeat": ""} 这种覆盖，类型可能对不上，
+                # 引擎校验不过会拒绝【整包】（铁律 #1）
+                issues.append(Issue(
+                    "warn", "PK_CASE_VALUE",
+                    f"{label}还没填值（空值覆盖上去可能让引擎拒绝整包加载）", nid))
+            if node and base:
+                issues.append(Issue(
+                    "warn", "PK_MIX",
+                    f"{label}自己写死了目标节点「{node}」—— 注入线对它不起作用"
+                    f"（这一项以行内写的为准）", nid))
+
+
 def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace=True,
                    _depth=0):
     """模型级校验（不需要生成结果）。返回 list[Issue]，按检出顺序。"""
@@ -1805,6 +1954,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
     _check_loops(flow, issues)
     _check_ocr_regex(flow, issues)
     _check_inputs(flow, issues)
+    _check_picks(flow, issues)
     _check_offchain(flow, issues)
     _check_offchain_exits(flow, issues)
     _check_subflows(flow, issues, _depth)
@@ -3114,14 +3264,22 @@ def jsonc_loads(text):
 RECO_FIELDS = ("template", "expected", "threshold", "roi")
 
 
-def input_targets(nd):
-    """【输入】节点当前注入到的节点 id 列表（就地返回，可增删）。
-    ★ 一个参数可以注入多个节点：右侧小球往每个目标各拉一条线（就像手写的
-      『目标角色』同时覆盖 CDZB2_Hit / 升2_Hit / 查2_Hit 三个）。"""
+def inject_targets_of(nd):
+    """参数节点（【输入】/【选择】）注入到的节点 id 列表（就地返回，可增删）。
+
+    ★ 一个参数可以注入多个节点：卡片右侧的小球往每个目标各拉一条线（就像手写的
+      『目标角色』同时覆盖 CDZB2_Hit / 升2_Hit / 查2_Hit 三个）。
+    这条线只表示"参数作用在哪个节点上"，与流程顺序无关，生成时变成 interface.json
+    里 pipeline_override 的键。"""
     p = (nd or {}).setdefault("props", {})
     if not isinstance(p.get("targets"), list):
         p["targets"] = []
     return p["targets"]
+
+
+def input_targets(nd):
+    """【输入】节点的注入目标 —— 就是上面的 inject_targets_of()（保留旧名）。"""
+    return inject_targets_of(nd)
 
 
 def input_override_pairs(flow, nd):
@@ -3147,6 +3305,130 @@ def input_override_pairs(flow, nd):
         if nm and (nm, field) not in out:
             out.append((nm, field))
     return out
+
+
+def cases_of(nd):
+    """【选择】节点的选项行（就地返回，可增删；保证是 list）。"""
+    p = (nd or {}).setdefault("props", {})
+    if not isinstance(p.get("cases"), list):
+        p["cases"] = []
+    return p["cases"]
+
+
+def case_row_blank(row):
+    """选项行是不是「空壳」（没名字、没连目标、没填值）。
+
+    断开注入线之后留下这种行没有意义（不会进 interface.json，画布上也没有线），
+    直接删掉，免得面板里堆一排空行。field 有默认值，不算内容。"""
+    if not isinstance(row, dict):
+        return True
+    return not (str(row.get("name") or "").strip()
+                or str(row.get("node") or "").strip()
+                or str(row.get("value") or "").strip())
+
+
+def resolve_param_target(flow, token):
+    """参数里写的「目标」→ 画布节点 id（认不出来返回 None）。
+
+    三种写法都认：画布节点 id / `#编号`（按固定编号反查，不是链序下标）/
+    生成名（含【通道/跳转】的运行时名）或节点标题 —— 老流程的参数常直接写手写管线里的
+    节点名（`ZJ_JiaHao2`），而画布上那个节点的标题就是那个名字。
+
+    ★ 画布上画注入线与拖线落地都用这一个函数：两边解析口径必须一致，
+      否则会出现"看着连上了、松手却没写进去"。"""
+    tk_ = str(token or "").strip()
+    if not tk_:
+        return None
+    nodes = (flow or {}).get("nodes") or {}
+    if tk_ in nodes:
+        return tk_
+    m = re.match(r"^#(\d+)$", tk_)
+    if m:
+        want = int(m.group(1))
+        for nid, nd in nodes.items():
+            if not isinstance(nd, dict) or nd.get("type") in ("input", "pick"):
+                continue
+            if node_no(flow, nid, 0) == want:
+                return nid
+    for nid, nd in nodes.items():
+        if not isinstance(nd, dict) or nd.get("type") in ("input", "pick"):
+            continue
+        if jname(flow, nid) == tk_ or str(nd.get("title") or "") == tk_:
+            return nid
+    return None
+
+
+def pick_case_targets(flow, nd):
+    """【选择】卡片上要画线的目标节点 id 列表：注入线连到的（`props.targets`）
+    加上各选项自己写死的（老流程的 `row["node"]`）。
+
+    口径与 pick_cases() 生成时**完全一致** —— 画布上看得见的虚线，就是同步后真正生效的。"""
+    out = list(inject_targets_of(nd))
+    for r in ((nd or {}).get("props") or {}).get("cases") or []:
+        if isinstance(r, dict):
+            out.append(resolve_param_target(flow, r.get("node")))
+    return out
+
+
+def pick_target_choices(flow):
+    """【选择】选项「目标节点」下拉的候选：画布上每个非参数节点的「#编号 标题」。
+
+    ★ 参数节点（【输入】/【选择】）自己不作为目标；编号是节点的【固定编号】，
+      写回文件时会存成节点 id，生成时换成节点名。"""
+    out = []
+    for nid, nd in (flow.get("nodes") or {}).items():
+        if not isinstance(nd, dict) or nd.get("type") in ("input", "pick"):
+            continue
+        no = node_no(flow, nid, 0)
+        out.append((no, f"#{no} {nd.get('title') or nid}"))
+    out.sort(key=lambda p: p[0])
+    return [label for _no, label in out]
+
+
+def pick_value_choices(flow, field):
+    """【选择】选项「值」这一格的候选，随【字段】变：
+
+    - 模板图 (template) → 模板目录里的文件名（框选工具新存的模板立刻可选）
+    - 下一个出口 (next) → 画布节点（同样给「#编号 标题」，写 `#编号` 就够）
+    - 其余（OCR 文字 / 数字 / 阈值 / 延时…）不限制 —— 下拉只是省手打的入口，
+      输入框仍然可以直接填任何字符串。"""
+    field = input_field({"field": field})
+    if field == "template":
+        return list_templates()
+    if field == "next":
+        return pick_target_choices(flow)
+    return []
+
+
+def pick_value_hint(field):
+    """「值」这一格随【字段】的填法说明（面板上一行小字，省得猜该填什么）"""
+    field = input_field({"field": field})
+    if field == "template":
+        return "值：模板文件名（点下拉挑一张，或直接填）"
+    if field == "next":
+        return "值：要跳到的节点（点下拉挑，或写节点名/手写管线节点名，多个用逗号）"
+    if field == "expected":
+        return "值：OCR 文字（引擎按【正则】编译）"
+    if field == "roi":
+        return "值：识别区域 左,上,右,下（如 100,200,300,400）"
+    if field == "threshold":
+        return "值：0~1 之间的小数（如 0.8）"
+    if field in ("enabled", "order_by"):
+        return "值：true / false"
+    if field in ("repeat", "max_hit", "index", "timeout", "rate_limit",
+                 "pre_delay", "post_delay", "repeat_delay"):
+        return "值：整数（次数 / 毫秒，按字段而定）"
+    return "值：直接填（会原样进 interface.json 的 pipeline_override）"
+
+
+def norm_ref_text(text):
+    """「目标节点 / 值」格里可能留着下拉给的「#编号 标题」写法 —— 只留 `#编号`。
+
+    ★ 带标题的那一串不是能反查的 token：生成时会被当"手写管线的节点名"原样写进
+      生成物，引擎随即因为引用了不存在的节点拒绝**整包**（铁律 #1）。其余写法原样返回。"""
+    t = str(text or "").strip()
+    m = re.match(r"^(#\d+)[\s\u3000]+", t)
+    return m.group(1) if m else t
 
 
 def input_value_expr(p):
@@ -3472,6 +3754,14 @@ class FlowEditor:
         self.bg_photo = None
         self.bg_disp = None         # (ox, oy, w, h) 帧显示区域
         self.show_bg = tk.BooleanVar(value=True)
+        # 删除免确认（工具栏「✖ 删除」右边那个开关）：开着时点删除直接删，不弹询问框。
+        # 记住上次的选择（ui_prefs.json）—— 连着清理一批节点时每次都要点一次"是"很烦，
+        # 而误删有 Ctrl+Z 兜底。
+        self.no_confirm_delete = tk.BooleanVar(
+            value=bool(load_prefs().get("no_confirm_delete")))
+        self.no_confirm_delete.trace_add(
+            "write", lambda *_: save_prefs(
+                no_confirm_delete=bool(self.no_confirm_delete.get())))
         self.sel = None
         self.templates = list_templates()
         self._frame_file = None     # 当前背景帧文件路径（联动框选工具）
@@ -3479,6 +3769,9 @@ class FlowEditor:
         self.drag = None
         self.wire = None
         self.prop_widgets = {}
+        # 属性面板"重建前要提交"的回调（目前是【选择】的选项编辑器：三格里的改动
+        # 得先落进 props，再销毁控件）。面板重建时由 build_prop_panel() 调用一次。
+        self._panel_commit = None
         self._tpl_img_cache = {}   # 模板名 -> (mtime, PhotoImage, dw, dh)
         self._loaded_path = None   # 当前打开的流程文件路径
         self._var_traces = []      # (StringVar, trace_id)，面板重建时统一解除
@@ -3823,6 +4116,14 @@ class FlowEditor:
         self._flat_btn(prow, "✖ 删除", self.delete_selected, padx=8,
                        bg="#5a2733", fg="#ffc9d2", hover="#74323f",
                        font=FONT_SM).pack(side="left", padx=(12, 0))
+        # 删除右边的开关：开着 = 点「✖ 删除」直接删，不再弹询问框（误删有 Ctrl+Z）
+        del_toggle = self._make_toggle(prow, self.no_confirm_delete, "删除免确认",
+                                       font=FONT_SM)
+        del_toggle.pack(side="left", padx=(6, 0))
+        self._bind_tip(del_toggle,
+                       "✓ = 点「✖ 删除」（或按 Delete）直接删除，不再弹询问框\n"
+                       "✗ = 每次删除都先问一句（默认）\n"
+                       "开关状态会记住；删错了随时 Ctrl+Z 撤回")
 
         ttk.Separator(right).pack(side="top", fill="x", pady=2, padx=8)
         ttk.Label(right, text="  连接（下拉可直接改接）",
@@ -4018,7 +4319,12 @@ class FlowEditor:
         self._nid += 1
         nid = f"n{self._nid:03d}{os.urandom(2).hex()}"
         spec = NODE_TYPES[ntype]
-        p = dict(spec["defaults"])
+        # ★ 必须【深拷贝】：defaults 里的 targets / candidates / cases 是 list，
+        #   浅拷贝会让所有同类型节点共用同一个 list —— 往其中一个 append（拉注入线、
+        #   加候选、加选项）就等于改了 NODE_TYPES 的"出厂默认值"，之后新建的节点一出生
+        #   就带着上一个节点连过的节点/候选（真实事故：删掉【选择】再新建一个，
+        #   它自动连回之前连过的两个节点，像"删不干净"）。
+        p = copy.deepcopy(spec["defaults"])
         if props:
             p.update(props)
         if ntype == "input":
@@ -4046,7 +4352,8 @@ class FlowEditor:
             self.redraw()
             self._scroll_to(node["y"])
             self.log("已新建【选择】节点（它不占流程顺序）：填好参数名，"
-                     "再在下面逐条加选项（名称 / 目标节点 / 字段 / 值）")
+                     "再在下面逐条加选项（名称 / 目标节点 / 字段 / 值）—— "
+                     "目标节点也可以直接把卡片右侧的「注入」小球拖到那个节点上")
             return nid
         # ★ 新建节点挂在【当前选中节点】的出口下：链上插到它后面，
         #   而不是像以前那样一律甩到链尾（链尾决定了 next，会让新节点接到别的节点后面）。
@@ -4147,20 +4454,24 @@ class FlowEditor:
         return nid
 
     def delete_selected(self):
-        """删除选中的节点：批量（右键框选出来的）优先，否则删当前单选的那个。"""
+        """删除选中的节点：批量（右键框选出来的）优先，否则删当前单选的那个。
+
+        工具栏「删除免确认」开关开着时不弹询问框（开关状态记在 ui_prefs.json 里）——
+        删错了由 `_snapshot()` + Ctrl+Z 兜底。"""
         ids = set(self.multi) if self.multi else ({self.sel} if self.sel else set())
         ids = {i for i in ids if i in self.flow.get("nodes", {})}
         if not ids:
             return
-        if len(ids) == 1:
-            nid = next(iter(ids))
-            if not messagebox.askyesno(
-                    "删除节点", "确定删除该节点？" + self._node_ref_label(nid)):
-                return
-        else:
-            if not messagebox.askyesno(
-                    "删除节点", f"确定删除框选的这 {len(ids)} 个节点？"):
-                return
+        if not self.no_confirm_delete.get():
+            if len(ids) == 1:
+                nid = next(iter(ids))
+                if not messagebox.askyesno(
+                        "删除节点", "确定删除该节点？" + self._node_ref_label(nid)):
+                    return
+            else:
+                if not messagebox.askyesno(
+                        "删除节点", f"确定删除框选的这 {len(ids)} 个节点？"):
+                    return
         self._snapshot()
         # ★ 名字要在删之前取：删完 _node_ref_label 就查不到了（会打出一串空名字）
         names = "、".join(self._node_ref_label(i)
@@ -4201,12 +4512,20 @@ class FlowEditor:
                 lop = other.get("props", {})
                 if lop.get("body_end") in ids:
                     lop["body_end"] = None
-            if other.get("type") == "input":
-                # 被删的节点若是某个参数的注入目标，顺手摘掉，别留个死 id
-                tg = input_targets(other)
+            if other.get("type") in ("input", "pick"):
+                # 被删的节点若是某个参数的注入目标，顺手摘掉，别留个死 id。
+                # ★【选择】的注入目标（props.targets）与【输入】是同一份数据 ——
+                #   以前这里只清 input，删掉目标节点后【选择】那边还挂着死 id：
+                #   摘要还显示"注入 N 个节点"，生成时也照旧往那个名字上写覆盖。
+                tg = inject_targets_of(other)
                 for nid in ids:
                     while nid in tg:
                         tg.remove(nid)
+            if other.get("type") == "pick":
+                # 选项里"写死的目标节点"指到被删节点 → 清空（留着会生成指向不存在节点的键）
+                for r in cases_of(other):
+                    if str(r.get("node") or "").strip() in ids:
+                        r["node"] = ""
 
     # ---------- 右键拖框：批量选择 ----------
 
@@ -4369,7 +4688,11 @@ class FlowEditor:
         for nid, nd in self.flow["nodes"].items():
             if nd.get("type") not in ("input", "pick") or nid in ch:
                 continue
-            tgts = [t for t in input_targets(nd) if t in self.flow["nodes"]]
+            # 【输入】看注入目标、【选择】看选项连到的节点（别对 pick 调 input_targets：
+            # 那会顺手给它塞一个没用的 props.targets，而且对齐的位置也不是它连的节点）
+            raw_tgts = (pick_case_targets(self.flow, nd) if nd.get("type") == "pick"
+                        else list(input_targets(nd)))
+            tgts = [t for t in raw_tgts if t and t in self.flow["nodes"]]
             ty = [self.flow["nodes"][t]["y"] for t in tgts]
             want = min(ty) if ty else free_y
             while any(abs(want - t) < step for t in taken):
@@ -4780,22 +5103,8 @@ class FlowEditor:
                 self._draw_loop_marks(nid)
         # 【输入】注入线 / 【选择】选项目标线：右侧小球 → 目标节点左侧。虚线 + 专属色 ——
         # 它们只表示"这个参数作用在哪个节点上"，与流程顺序无关，所以画法与流程连线区分开。
-        def _resolve_target(token):
-            """目标写法 → 画布节点 id：画布 id / #编号 / 生成名（含【通道/跳转】的运行时名）
-            / 节点标题（老流程里参数常直接写手写管线的节点名，而画布节点的标题就是它）。"""
-            tk_ = str(token or "").strip()
-            if not tk_:
-                return None
-            nodes = self.flow["nodes"]
-            if tk_ in nodes:
-                return tk_
-            for nid, nd2 in nodes.items():
-                if nd2.get("type") in ("input", "pick"):
-                    continue
-                if jname(self.flow, nid) == tk_ or str(nd2.get("title") or "") == tk_:
-                    return nid
-            return None
-
+        # ★ 目标解析统一走 resolve_param_target()：拖线落地用的是同一个函数，
+        #   不然会出现"画布上画着这条线、拖线却判断成没连过"这种对不上的情况。
         for nd_id, nd in self.flow["nodes"].items():
             if nd.get("type") not in ("input", "pick"):
                 continue
@@ -4804,10 +5113,9 @@ class FlowEditor:
             if nd.get("type") == "input":
                 tgt_ids += list(input_targets(nd))
                 for raw in parse_raw_targets(nd.get("props") or {}):
-                    tgt_ids.append(_resolve_target(raw))
+                    tgt_ids.append(resolve_param_target(self.flow, raw))
             else:
-                for row in (nd.get("props") or {}).get("cases") or []:
-                    tgt_ids.append(_resolve_target((row or {}).get("node")))
+                tgt_ids += pick_case_targets(self.flow, nd)
             for tgt in [t for t in dict.fromkeys(tgt_ids) if t]:
                 t = self.flow["nodes"].get(tgt)
                 if not isinstance(t, dict):
@@ -4979,8 +5287,10 @@ class FlowEditor:
             c.create_oval(hx - 6, hy - 6, hx + 6, hy + 6, fill=THEME["arrow"],
                           outline="#ffffff", width=1,
                           tags=("port", f"port:{nid}:next"))
-        if nd["type"] == "input":
-            # 「注入」小球：拖到目标节点 = 把这个参数注入过去（拖到已注入的 = 取消）
+        if nd["type"] in ("input", "pick"):
+            # 「注入」小球（右侧中间）：【输入】拖到目标节点 = 这个参数注入过去；
+            # 【选择】拖到目标节点 = 把这个节点挂成某个选项的「目标节点」。
+            # 两者都是"拖到已经连着的节点 = 取消"，线只表示参数作用在哪，不代表流程顺序。
             hx, hy = self._port_pos(nd, "inject")
             c.create_oval(hx - 10, hy - 10, hx + 10, hy + 10,
                           fill="#241c2e", outline="")
@@ -5076,7 +5386,7 @@ class FlowEditor:
             sides.add("right")
         if t == "switch":
             sides.add("bottom")
-        if t == "input":
+        if t in ("input", "pick"):
             sides.add("right")
         if self._has_next_ball(nid):
             sides.add("bottom")        # 下沿正中的「下一个」球
@@ -5227,8 +5537,8 @@ class FlowEditor:
         return None
 
     def _port_pos(self, nd, port):
-        if nd["type"] == "input":
-            # 【输入】的「注入」小球在卡片右侧中间
+        if nd["type"] in ("input", "pick"):
+            # 【输入】/【选择】的「注入」小球都在卡片右侧中间
             return nd["x"] + CARD_W, nd["y"] + CARD_H * 0.5
         if nd["type"] == "loop":
             if port == "next":
@@ -5770,7 +6080,8 @@ class FlowEditor:
             self.redraw()
         if hit[0] == "port":
             self.wire = {"from": hit[1], "port": hit[2], "mx": cx, "my": cy}
-            self.status(f"拖到目标节点设置 {hit[2]} 出口；拖到空白处=断开")
+            self.status(f"拖到目标节点设置「{port_label(hit[2])}」；"
+                        f"拖到空白处 = 断开")
             return
         nid = hit[1]
         if self.sel != nid:
@@ -5960,10 +6271,11 @@ class FlowEditor:
                 else:
                     self.status("把卡片下沿的「＋」球拖到目标节点，即可新建一条分支")
                 return
-            if port == "inject" and src.get("type") == "input":
-                # 「注入」小球：拖到目标节点 → 参数注入过去；拖到已注入的节点 → 取消。
-                # ★ 这条线只表示参数注入，不代表流程顺序（生成时它变成 interface.json 里
-                #   的一条 pipeline_override，与链序无关）。
+            if port == "inject" and src.get("type") in ("input", "pick"):
+                # 「注入」小球：【输入】= 这个参数注入过去；【选择】= 这个下拉作用在哪些节点上
+                # （`props.targets`，与【输入】同一份数据）。拖到已经连着的节点 = 取消。
+                # ★ 这条线只表示参数作用在哪个节点上，不代表流程顺序（生成时它变成
+                #   interface.json 里的 pipeline_override / 选项的覆盖目标，与链序无关）。
                 self.wire = None
                 self.redraw()
                 if hit and hit[0] == "node" and hit[1] != src_id:
@@ -5971,17 +6283,30 @@ class FlowEditor:
                     if self._ensure_in_chain(hit[1], src_id):
                         self.log(f"（「{self.flow['nodes'][hit[1]].get('title', hit[1])}」"
                                  f"原本还没接进流程，已顺手接上）", "warn")
-                    tg = input_targets(src)
+                    tg = inject_targets_of(src)
                     tname = self.flow["nodes"][hit[1]].get("title", hit[1])
                     opt = (str((src.get("props") or {}).get("option") or "").strip()
                            or "(还没填参数名)")
                     if hit[1] in tg:
                         tg.remove(hit[1])
-                        self.log(f"已取消注入：「{opt}」不再注入到「{tname}」")
+                        self.log(f"已取消注入：「{opt}」不再作用在「{tname}」")
                     else:
                         tg.append(hit[1])
                         self.log(f"✓ 「{opt}」已注入到「{tname}」"
-                                 f"（这条线只表示参数注入，不代表流程顺序）", "ok")
+                                 f"（这条线只表示参数作用在哪个节点上，不代表流程顺序）",
+                                 "ok")
+                        if src.get("type") == "pick":
+                            # 老流程把目标写死在选项里，那种行以行内为准 —— 拖了线
+                            # 却"没反应"时，得让用户知道为什么
+                            fixed = [r for r in cases_of(src)
+                                     if str((r or {}).get("node") or "").strip()]
+                            if fixed:
+                                nm = str(fixed[0].get("name") or "?")
+                                self.log(
+                                    f"（提示：这个【选择】有 {len(fixed)} 个选项自己写死了"
+                                    f"目标节点（如「{nm}」），它们以行内写的为准 —— "
+                                    f"想让它们也跟注入线走，属性面板里有「⇢ 目标改用注入线」）",
+                                    "warn")
                     self.build_prop_panel()
                     self.redraw()
                 else:
@@ -6051,6 +6376,16 @@ class FlowEditor:
 
     def build_prop_panel(self):
         self._close_tpl_pop()      # 面板重建时收起可能开着的模板弹窗，避免残留
+        # ★ 面板要重建了：先把里面"正在编辑但还没提交"的内容写回去。
+        #   Tk 销毁控件**不会**补发 <FocusOut>，所以"改完选项名直接点画布上别的节点"
+        #   这类操作会走到这里 —— 不提交就等于把用户刚敲的字丢掉（2026-09-16 用户报的：
+        #   "改了选项名，点到其他地方，没同步进选项里"）。
+        cb, self._panel_commit = self._panel_commit, None
+        if cb is not None:
+            try:
+                cb()
+            except Exception:
+                pass
         # 先解除旧控件变量上的回调（控件销毁时会触发 var 变化，
         # 回调若访问已销毁控件会抛 invalid command）
         for var, tid in self._var_traces:
@@ -6111,7 +6446,7 @@ class FlowEditor:
                 dead = key in overridden
                 lab = ttk.Label(self.props_inner,
                                 text=label + ("（被 OCR 文本覆盖）" if dead else ""),
-                                style="Dim.TLabel")
+                                style="Dim.TLabel", wraplength=170, justify="left")
                 lab.grid(row=row, column=0, sticky="w", pady=2)
                 self._bind_tip(lab, FIELD_TIPS.get(key))
                 var = self._make_var(nd["props"], key, kind)
@@ -6126,6 +6461,9 @@ class FlowEditor:
             ttk.Label(self.props_inner, text="⚠ " + hint, style="Dim.TLabel",
                       wraplength=300, justify="left").grid(
                 row=row, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        # 标签列固定最小宽: 长标签折行而不是把右列控件挤出面板(填 OCR 文本后
+        # 标签会追加"（被 OCR 文本覆盖）", 不固定列宽时整面板会被撑变形)
+        self.props_inner.columnconfigure(0, minsize=186)
         self.props_inner.columnconfigure(1, weight=1)
         self._sync_conn_ui()
         self._sync_branch_ui()
@@ -6370,109 +6708,289 @@ class FlowEditor:
         return ttk.Entry(self.props_inner, textvariable=var, width=22, font=FONT_SM)
 
     def _make_cases_list(self, var):
-        """【选择】的选项编辑：列表 + 一行四个格子（选项名 / 目标节点 / 字段 / 值）+ 增删改。
+        """【选择】的选项编辑：上面三格是"正在填的这一项"，点「＋ 加选项」才成为列表里的一项。
 
-        目标节点可以写三种：画布上的节点 id、`#编号`（按固定编号反查）、
-        或者**手写管线里的节点名**（`征集段2`、`ZJ_JiaHao2` —— 老流程的参数就作用在
-        那些节点上，编辑器流程里没有它们）。"""
+        三格 = 选项名 / 字段 / 值。**目标节点不在这里**：它由卡片右侧的「注入」小球决定
+        （`props.targets`，与【输入】同一套数据），选项只回答"选中时把那个节点（们）的
+        哪个字段改成什么值"。点列表里已有的一行 = 把它载进三格改，改完点到别处自动写回。
+
+        ★ 老流程（征集次数）把目标节点**写死在单个选项里**（选项 1 只作用在「征集段2」上），
+          那种写法继续支持：列表行显示成 `1 @征集段2: next = [...]`，以行内写的为准。"""
         wrap = ttk.Frame(self.props_inner)
         lb = tk.Listbox(wrap, height=7, width=44, font=FONT_SM, bg=THEME["field"],
                         fg=THEME["text"], selectbackground=THEME["accent"],
                         selectforeground=THEME["text"], relief="flat",
                         highlightthickness=1, highlightbackground=THEME["card_line"])
         lb.pack(fill="x", padx=(8, 0))
+        # ★ 这块面板属于哪个节点，建面板时就记下来：面板重建前 `self.sel` 可能已经被
+        #   清空（点画布空白 → 先 `self.sel = None` 再 build_prop_panel），
+        #   而提交钩子要在那一刻把三格里没存的内容写回**原来那个节点**。
+        owner = self.sel
 
         def _rows():
-            return self.flow["nodes"][self.sel]["props"].setdefault("cases", [])
+            nd = (self.flow.get("nodes") or {}).get(owner)
+            if not isinstance(nd, dict):
+                return []
+            return nd.setdefault("props", {}).setdefault("cases", [])
 
         def refresh(_e=None):
             rows = _rows()
+            # ★ 重建列表时把选中行留住：`lb.delete(0,"end")` 会清掉 selection，而
+            #   _apply/_fill 都靠 `lb.curselection()` 认"正在编辑哪一行" —— 以前
+            #   改完一格（refresh 一次）选中行就没了，之后改「字段 / 值」静默不写回，
+            #   得重新点一下那一行才行。
+            keep = lb.curselection()
+            keep = keep[0] if keep else None
             lb.delete(0, "end")
             for i, r in enumerate(rows):
                 lb.insert("end", f"{i + 1}. {case_brief(self.flow, r)}")
+            if keep is not None and keep < len(rows):
+                lb.selection_set(keep)
+                lb.activate(keep)
             var.set(str(len(rows)))     # 触发面板重绘钩子（摘要/校验跟着更新）
 
         grid = ttk.Frame(wrap)
         grid.pack(fill="x", padx=(8, 0), pady=(6, 0))
+        for _c in (0, 1):
+            grid.columnconfigure(_c, weight=1)
         entries = {}
-        for col, (key, lab, width) in enumerate((("name", "选项名", 6),
-                                                 ("node", "目标节点", 14),
-                                                 ("field", "字段", 16),
-                                                 ("value", "值", 14))):
-            ttk.Label(grid, text=lab, style="Dim.TLabel").grid(row=0, column=col,
-                                                               sticky="w", padx=(0, 4))
+        # 「选项名 / 字段」并排，「值」单独一行占满宽度（模板名和节点串比格子长）。
+        # ★ 一行四格在窄面板里会超出可用宽度，最后一格被裁掉（连下拉箭头都看不见），
+        #   所以这里只排三格、且分成两行。
+        for col, (key, lab) in enumerate((("name", "选项名"), ("field", "字段"))):
+            ttk.Label(grid, text=lab, style="Dim.TLabel").grid(
+                row=0, column=col, sticky="w", padx=(0, 4), pady=(2, 0))
             if key == "field":
-                e = ttk.Combobox(grid, width=width, font=FONT_SM,
+                e = ttk.Combobox(grid, width=15, font=FONT_SM,
                                  values=list(PICK_FIELDS))
             else:
-                e = ttk.Entry(grid, width=width, font=FONT_SM)
+                e = ttk.Entry(grid, width=15, font=FONT_SM)
             e.grid(row=1, column=col, sticky="we", padx=(0, 4))
+            e._cell_key = key       # 定位用（纯 Python 侧属性，Tk 不认）
             entries[key] = e
+        ttk.Label(grid, text="值", style="Dim.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=(0, 4), pady=(2, 0))
+        ve = ttk.Combobox(grid, width=15, font=FONT_SM)   # 可编辑：候选现填，也能直接打字
+        ve.grid(row=3, column=0, columnspan=2, sticky="we", padx=(0, 4))
+        ve._cell_key = "value"
+        entries["value"] = ve
+        # 「值」这一格该填什么，随【字段】变（模板文件名 / 节点名 / 数字 / 文字…）
+        hint = ttk.Label(wrap, style="Dim.TLabel", wraplength=250, justify="left")
+        hint.pack(anchor="w", padx=8, pady=(2, 0))
 
-        def _sel_row():
-            sel = lb.curselection()
-            return _rows()[sel[0]] if sel else None
+        def refresh_choices(_e=None):
+            """刷新下拉候选。
+
+            ★ 点开下拉前现刷：才认得上刚用框选工具做出来的模板、刚改过标题的节点。
+              「值」的候选还要跟着【字段】走 —— 模板图 → 模板文件名列表、
+              下一个出口 → 画布节点、其余（OCR 文字/数字/阈值…）不限制，
+              输入框一直能手填。"""
+            field_label = entries["field"].get()
+            field = input_field({"field": field_label})
+            self.templates = list_templates()
+            # 字段名是手写的奇特写法时，把它自己也临时列进候选，免得下拉里看不到当前值
+            fvals = list(PICK_FIELDS)
+            if str(field_label).strip() and field_label not in fvals:
+                fvals.append(field_label)
+            entries["field"].configure(values=fvals)
+            entries["value"].configure(values=pick_value_choices(self.flow, field))
+            hint.configure(text=pick_value_hint(field))
+
+        editing = {"idx": None}   # 三格现在装的是**哪一行**（切行/取消选中都不丢改动）
+
+        def _row_at(i):
+            rows = _rows()
+            return rows[i] if isinstance(i, int) and 0 <= i < len(rows) else None
+
+        filled = {}     # 三格里"填进去时"的原文 —— 逐格比出哪一格真被改过
+
+        def set_cells(name="", field="", value=""):
+            """程序性写三格，并同步记进 filled —— 这样"程序写的"不算用户改动，
+            失焦时不会被当成编辑写回（否则刚清空的草稿会把那一行也清空）。"""
+            for k, v in (("name", name), ("field", field), ("value", value)):
+                e = entries[k]
+                e.delete(0, "end")
+                e.insert(0, v)
+                filled[k] = v
 
         def _fill(_e=None):
-            r = _sel_row()
+            """把列表选中那一行载进三格（这时三格=那一行，editing 记下来）"""
+            sel = lb.curselection()
+            editing["idx"] = sel[0] if sel else None
+            r = _row_at(editing["idx"])
             if r is None:
                 return
-            for key, e in entries.items():
-                e.delete(0, "end")
-                val = r.get(key, "")
-                if key == "field":
-                    val = pick_field_display(input_field({"field": val}))
-                e.insert(0, "" if val is None else str(val))
+            set_cells(str(r.get("name") or ""),
+                      pick_field_display(input_field({"field": r.get("field")})),
+                      str(r.get("value") or ""))
+            # ★ 必须在三格填完之后刷：候选和提示都跟着刚刚填进去的【字段】走
+            refresh_choices()
 
         def _apply(_e=None):
-            """把四个格子写回选中的那一行（不新增）"""
-            r = _sel_row()
+            """把改动过的格子写回**三格所属的那一行**（`editing`）；草稿状态（没点任何
+            选项行）就不写 —— 那时三格是"新选项输入区"，改动只通过「＋ 加选项」提交。
+
+            ★ 只写真的被改过的格，也不碰这一行原有的目标节点（老流程里写死的那个）——
+              点进点出就把用户文件改写的事不能再发生。
+            ★ 目标行用 `editing` 而不是 `lb.curselection()`：切行时事件到达那一刻
+              curselection 已经是新行了，用它会把内容写到错误的一行。"""
+            r = _row_at(editing["idx"])
             if r is None:
                 return
+            changed = [k for k in ("name", "field", "value")
+                       if entries[k].get() != filled.get(k, "")]
+            if not changed:
+                return
             self._snapshot("case")
-            r["name"] = entries["name"].get().strip()
-            r["node"] = entries["node"].get().strip()
-            r["field"] = input_field({"field": entries["field"].get()})
-            r["value"] = entries["value"].get().strip()
+            if "name" in changed:
+                r["name"] = entries["name"].get().strip()
+            if "field" in changed:
+                r["field"] = input_field({"field": entries["field"].get()})
+            if "value" in changed:
+                r["value"] = norm_ref_text(entries["value"].get()).strip()
             refresh()
+            refresh_choices()
 
-        for e in entries.values():
+        def _on_select(_e=None):
+            """点列表里另一行：**先把刚才那一行的改动写回去**，再载入新行。
+
+            ★ 顺序不能反：`<<ListboxSelect>>` 到达时 curselection 已经是新行，而正在
+              编辑的还是旧行（靠 `editing` 记着）。以前直接 _fill 会先把新行载进三格，
+              随后的 FocusOut 写回要么写到错行、要么判定"没改动"而跳过 ——
+              用户看到的就是"改完点下一个选项，刚才的修改白做了"。"""
+            _apply()
+            _fill()
+
+        for key, e in entries.items():
             e.bind("<FocusOut>", _apply)
             e.bind("<Return>", _apply)
+            if key in ("field", "value"):
+                # 下拉里选一项就写回；打开下拉前把候选刷一遍（模板随时在变）
+                e.bind("<<ComboboxSelected>>", _apply)
+                e.bind("<Button-1>", refresh_choices, add="+")
 
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", padx=(8, 0), pady=(6, 0))
 
         def _add():
+            """把三格里填好的内容加成一个新选项。
+
+            ★ 三格是草稿，选项名和值都得填：缺名字的那一项不会写进 interface.json，
+              值是空的会写出类型不对的覆盖（比如 repeat: ""）—— 引擎可能因此拒绝
+              **整包**加载（铁律 #1），所以两个都在这里拦下，不猜。"""
+            name = entries["name"].get().strip()
+            field = input_field({"field": entries["field"].get()})
+            value = norm_ref_text(entries["value"].get()).strip()
+            if not name:
+                self.status("先填【选项名】再点「＋ 加选项」——App 的下拉里显示的就是这个名字")
+                self.log("⚠ 没填【选项名】：没有名字的选项不会写进 interface.json，所以没往上加",
+                         "warn")
+                try:
+                    entries["name"].focus_set()
+                except tk.TclError:
+                    pass
+                return
+            if not value:
+                self.status("先填【值】再点「＋ 加选项」——空值覆盖可能让引擎拒绝整包")
+                self.log(f"⚠ 选项「{name}」还没填【值】：空值覆盖上去可能让引擎拒绝整包加载，"
+                         f"所以没往上加", "warn")
+                try:
+                    entries["value"].focus_set()
+                except tk.TclError:
+                    pass
+                return
             self._snapshot("case")
-            rows = _rows()
-            # 选项名默认接着编（已有 1..N 就下一个数字），省得每行手敲
-            used = {str(r.get("name") or "").strip() for r in rows}
-            n = len(rows) + 1
-            while str(n) in used:
-                n += 1
-            rows.append({"name": str(n), "node": "", "field": "next", "value": ""})
+            _rows().append({"name": name, "node": "", "field": field, "value": value})
             refresh()
             lb.selection_clear(0, "end")
             lb.selection_set("end")
-            _fill()
+            # 草稿清空（字段留着：连着加同一字段的选项更省事）；三格此刻不属于任何一行，
+            # 之后再编辑三格不会把内容写回刚加的那一行
+            editing["idx"] = None
+            set_cells(name="", field=pick_field_display(field), value="")
+            refresh_choices()
+            self.log(f"✓ 已加选项「{name}」：{field} = {value}"
+                     f"（作用在注入线连到的那些节点上）", "ok")
 
         def _del():
             sel = lb.curselection()
             if not sel:
+                self.status("先点列表里的一行（要删的选项），再点「－ 删选中」")
                 return
             self._snapshot("case")
             del _rows()[sel[0]]
             refresh()
+            editing["idx"] = None   # 三格回到空白草稿状态
+            set_cells()
+            refresh_choices()
+
+        def _commit_click():
+            """【✔ 确认修改】：把三格的改动显式写回当前选中的那一项（不新增）。
+
+            自动保存有好几个触发点（失焦 / 切行 / 面板重建前），但这个按钮把话说死：
+            按了就一定提交，并给一句明确回执 —— 不用猜"我改的到底进去没有"。"""
+            r = _row_at(editing["idx"])
+            if r is None:
+                self.status("先点列表里要改的那一行，改上面的三格，再点「✔ 确认修改」")
+                self.log("⚠ 现在没有选中的选项：三格是「新选项」草稿区 —— "
+                         "填好点「＋ 加选项」才会新增一项，或者先点列表里的一行再改", "warn")
+                return
+            before = (str(r.get("name") or ""), input_field({"field": r.get("field")}),
+                      str(r.get("value") or ""))
+            _apply()
+            after = (str(r.get("name") or ""), input_field({"field": r.get("field")}),
+                     str(r.get("value") or ""))
+            if before == after:
+                self.status(f"选项「{after[0] or '(未命名)'}」没有改动")
+                self.log(f"（选项「{after[0] or '(未命名)'}」没有改动 —— "
+                         f"要新增一项请用「＋ 加选项」）")
+            else:
+                self.status(f"已保存选项「{after[0] or '(未命名)'}」")
+                self.log(f"✓ 已保存到选项「{after[0] or '(未命名)'}」："
+                         f"{after[1]} = {after[2] or '(空)'}", "ok")
+
+        def _to_inject():
+            """把选项里**写死的**目标节点清掉，让它们跟着注入线走（老流程迁移用）。
+
+            老流程（征集次数）的目标写在每个选项里，画布上的注入线对它们不起作用 ——
+            以前没有入口能把这件事改过来，只能删行重建。"""
+            rows = [r for r in _rows() if isinstance(r, dict)
+                    and str(r.get("node") or "").strip()]
+            if not rows:
+                self.status("这些选项都没有写死的目标节点了")
+                return
+            self._snapshot("case")
+            for r in rows:
+                r["node"] = ""
+            refresh()
+            self.log(f"✓ 已把 {len(rows)} 个选项的目标改成「跟着注入线走」—— "
+                     f"记得把卡片右侧的「注入」小球拖到要作用的节点上，"
+                     f"不然它们生成不出来（Ctrl+Z 可撤回）", "ok")
 
         self._flat_btn(btns, "＋ 加选项", _add).pack(side="left")
         self._flat_btn(btns, "－ 删选中", _del).pack(side="left", padx=(6, 0))
+        self._flat_btn(btns, "✔ 确认修改", _commit_click, padx=8, font=FONT_SM,
+                       bg="#274a33", fg="#c9f0d5", hover="#31603f"
+                       ).pack(side="left", padx=(6, 0))
+        if any(str((r or {}).get("node") or "").strip() for r in _rows()):
+            # 只在真有"写死目标"的老数据时才出现，平时界面不变
+            self._flat_btn(btns, "⇢ 目标改用注入线", _to_inject).pack(side="left",
+                                                                     padx=(6, 0))
         tip = ttk.Label(wrap, style="Dim.TLabel", wraplength=250, justify="left",
-                        text="目标节点：画布节点 id / #编号 / 手写管线的节点名（如 征集段2）。"
-                             "字段里选「下一个出口」时，值填节点名（多个用逗号）。")
+                        text="填好【选项名 / 字段 / 值】再点「＋ 加选项」，就是 App 里的一个"
+                             "下拉项。作用在哪些节点上由卡片右侧的「注入」小球决定："
+                             "拉几根线，这一组选项就对几个节点生效（拖到已连着的节点=取消）。"
+                             "改已有选项：点列表里那一行 → 改上面三格 → 点「✔ 确认修改」"
+                             "（换行或点到别处也会自动存）。")
         tip.pack(anchor="w", padx=8, pady=(4, 0))
-        lb.bind("<<ListboxSelect>>", _fill)
+        # ★ 绑 _on_select（先存旧的、再载入新的），不能直接绑 _fill —— 见 _on_select 的注释
+        lb.bind("<<ListboxSelect>>", _on_select)
+        # ★ 面板重建（点画布选别的节点、拖线、框选…）之前，让 build_prop_panel() 先
+        #   把三格里还没提交的改动写回去 —— Tk 销毁控件不会补发 <FocusOut>，
+        #   光靠失焦保存会丢掉"改完直接点画布"的编辑
+        self._panel_commit = _apply
         refresh()
+        refresh_choices()
         return wrap
 
     def _make_switch_list(self, var):
@@ -8571,6 +9089,262 @@ def selftest():
             assert n7["a"]["next"] is None, "拖到空白应当断成『到此结束』"
             print("「下一个」拖线小球自测通过")
 
+            # ★【选择(下拉)】的注入球（2026-09-16）：右侧也和【输入】一样有紫色小球，
+            #   拖到目标节点 = 把这个节点挂成某个选项的「目标节点」（那正是
+            #   interface.json 里 pipeline_override 的键）；拖到已经连着的 = 断开。
+            #   线是虚线的 INJECT_COLOR，与【输入】的注入线同一种画法。
+            n7["k"] = {"type": "pick", "x": 500.0, "y": 400.0, "title": "选择(下拉)",
+                       "num": 9, "props": {"option": "次数", "var_label": "",
+                                           "default": "", "desc": "", "cases": []}}
+            knd = n7["k"]
+            assert not ed7._has_next_ball("k"), "【选择】不该有「下一个」球"
+            assert "right" in ed7._ball_sides("k"), "带球的右边不该再当接入边"
+            kx, ky = ed7._port_pos(knd, "inject")
+            assert (kx, ky) == (500.0 + CARD_W, 400.0 + CARD_H * 0.5), (kx, ky)
+            ed7.redraw()
+            assert ed7.canvas.find_withtag("port:k:inject"), \
+                "【选择】卡片右侧应当画出「注入」小球"
+            # 拖到目标节点 → 记进 props.targets（与【输入】同一套：线只表示"参数作用在
+            # 哪个节点上"），**不往选项列表里塞行** —— 选项是"选中时改成什么值"，靠面板填
+            tgt_hit = (int(n7["c"]["x"]) + 10, int(n7["c"]["y"]) + 10)
+            ed7.wire = {"from": "k", "port": "inject",
+                        "mx": tgt_hit[0], "my": tgt_hit[1]}
+            ed7.on_up(None)
+            assert knd["props"]["targets"] == ["c"], knd["props"]
+            assert knd["props"]["cases"] == [], "拖注入线不该往选项列表里塞行"
+            dashed = [ed7.canvas.coords(i) for i in ed7.canvas.find_all()
+                      if ed7.canvas.type(i) == "line"
+                      and ed7.canvas.itemcget(i, "fill") == INJECT_COLOR]
+            assert any(len(p) >= 4 and abs(p[0] - kx) < 1 and abs(p[1] - ky) < 1
+                       for p in dashed), "【选择】的注入线没画出来（起点应是球的位置）"
+            # 再拖一次同一个节点 = 断开
+            ed7.wire = {"from": "k", "port": "inject",
+                        "mx": tgt_hit[0], "my": tgt_hit[1]}
+            ed7.on_up(None)
+            assert knd["props"]["targets"] == [], knd["props"]
+            # 选项列表与注入线互不干扰：连上再断开，选项一个字都不该动
+            knd["props"]["cases"] = [{"name": "1", "field": "repeat", "value": "2"}]
+            for _ in range(2):
+                ed7.wire = {"from": "k", "port": "inject",
+                            "mx": tgt_hit[0], "my": tgt_hit[1]}
+                ed7.on_up(None)
+            assert knd["props"]["targets"] == [], knd["props"]
+            assert len(knd["props"]["cases"]) == 1, knd["props"]["cases"]
+            # 生成规则：选项作用在注入线连到的节点上；行内写死目标的老写法优先
+            ed7.wire = {"from": "k", "port": "inject",
+                        "mx": tgt_hit[0], "my": tgt_hit[1]}
+            ed7.on_up(None)
+            got = pick_cases(ed7.flow, knd)
+            assert got[0]["pipeline_override"] == {jname(ed7.flow, "c"): {"repeat": 2}}, got
+            knd["props"]["cases"] = [{"name": "1", "node": "a", "field": "next",
+                                      "value": "#3"}]
+            got = pick_cases(ed7.flow, knd)
+            assert list(got[0]["pipeline_override"]) == [jname(ed7.flow, "a")], got
+            assert got[0]["pipeline_override"][jname(ed7.flow, "a")]["next"] == \
+                [jname(ed7.flow, "c")], got
+            # 校验：一条注入线都没有、值是空的，都要说清楚
+            knd["props"]["cases"] = [{"name": "1", "field": "repeat", "value": ""}]
+            knd["props"]["targets"] = []
+            codes = {i.code for i in collect_issues(ed7.flow) if i.level == "warn"}
+            assert "PK_NO_TARGET" in codes and "PK_CASE_VALUE" in codes, codes
+            # ★ 选项那两格的下拉候选：「目标节点」= 画布节点（参数节点自己不列），
+            #   「值」随【字段】变 —— 模板图给模板文件名、下一个出口给画布节点、
+            #   数字/文字不限制（下拉只是省手打，输入框一直能手填）
+            targets = pick_target_choices(ed7.flow)
+            assert targets and all(s.startswith("#") for s in targets), targets
+            assert "#9 选择(下拉)" not in targets, "参数节点不该出现在目标候选里"
+            assert pick_value_choices(ed7.flow, "next") == targets
+            assert pick_value_choices(ed7.flow, "repeat") == []
+            assert all(s.endswith(".png") for s in pick_value_choices(ed7.flow, "template")
+                       ) or pick_value_choices(ed7.flow, "template") == []
+            assert "模板" in pick_value_hint("模板图 (template)")
+            assert "节点" in pick_value_hint("next")
+            # 下拉给的「#3 点3」只留 #编号；值里写 #3，生成时换成节点名
+            assert norm_ref_text("#3 点3") == "#3", norm_ref_text("#3 点3")
+            assert norm_ref_text("征集段2") == "征集段2"
+            # ★ 面板：三格是"草稿"，点「＋ 加选项」才成为列表里的一项；界面上没有
+            #   「目标节点」（那个交给卡片右侧的注入小球）；改完一格不能把列表的选中行
+            #   弄丢（`lb.delete(0,"end")` 会清 selection，而写回全靠"选中哪一行"）。
+            ed7.sel = "k"
+            wrap2 = ed7._make_cases_list(tk.StringVar())
+            kids = []
+
+            def _collect(w):
+                for c in w.winfo_children():
+                    kids.append(c)
+                    _collect(c)
+
+            _collect(wrap2)
+            cells = {getattr(c, "_cell_key", None): c for c in kids
+                     if getattr(c, "_cell_key", None)}
+            lb2 = [c for c in kids if isinstance(c, tk.Listbox)][0]
+            assert "node" not in cells, "面板里不该再有「目标节点」格（它由注入球决定）"
+            fld2, val2 = cells["field"], cells["value"]
+            # 三种常用字段（模板图 / OCR文字 / 命中次数）都在字段下拉里
+            for want in ("template", "expected", "repeat"):
+                assert pick_field_display(want) in list(fld2.cget("values")), \
+                    fld2.cget("values")
+            lb2.selection_clear(0, "end")
+            lb2.selection_set(0)
+            lb2.event_generate("<<ListboxSelect>>")
+            assert lb2.curselection() == (0,), lb2.curselection()
+            fld2.set("模板图 (template)")
+            fld2.event_generate("<FocusOut>")
+            assert lb2.curselection() == (0,), "改完一格后选中行不该被清掉"
+            assert knd["props"]["cases"][0]["field"] == "template", knd["props"]["cases"]
+            hints = [c for c in kids if isinstance(c, ttk.Label)
+                     and str(c.cget("text")).startswith("值：")]
+            assert hints and "模板" in str(hints[0].cget("text")), \
+                [str(h.cget("text")) for h in hints]
+            assert list(val2.cget("values")) and all(
+                s.endswith(".png") for s in val2.cget("values")), val2.cget("values")
+            val2.set("yx_jc.png")
+            val2.event_generate("<FocusOut>")
+            assert knd["props"]["cases"][0]["value"] == "yx_jc.png", knd["props"]["cases"]
+            # 点进点出（一个字没改）不回写；行内写死的目标节点更不许被面板碰
+            knd["props"]["cases"][0]["node"] = "征集段2"
+            lb2.selection_clear(0, "end")
+            lb2.selection_set(0)
+            lb2.event_generate("<<ListboxSelect>>")
+            fld2.event_generate("<FocusOut>")
+            val2.event_generate("<FocusOut>")
+            assert knd["props"]["cases"][0]["node"] == "征集段2", knd["props"]["cases"]
+            # ★ 填好三格 → 点「＋ 加选项」→ 列表里多出一项（用户要的就是这个顺序）
+            add_btn = next(b for b in kids if isinstance(b, tk.Button)
+                           and "加选项" in str(b.cget("text")))
+            knd["props"]["cases"] = []
+            cells["name"].delete(0, "end")
+            cells["name"].insert(0, "选A")
+            fld2.set("模板图 (template)")
+            val2.set("yx_zb.png")
+            add_btn.invoke()
+            assert len(knd["props"]["cases"]) == 1, knd["props"]["cases"]
+            row1 = knd["props"]["cases"][0]
+            assert (row1["name"], row1["field"], row1["value"]) == \
+                ("选A", "template", "yx_zb.png"), row1
+            assert row1["node"] == "", "新加的选项不写死目标节点（靠注入线）"
+            assert cells["name"].get() == "" and val2.get() == "", "加完要把草稿清空"
+            # 只填名字没填值 → 不加（空的覆盖值可能让引擎拒绝整包）
+            cells["name"].delete(0, "end")
+            cells["name"].insert(0, "选B")
+            add_btn.invoke()
+            assert len(knd["props"]["cases"]) == 1, knd["props"]["cases"]
+            # ★ 老数据「目标写死在选项里」的迁移入口：⇢ 目标改用注入线
+            knd["props"]["cases"] = [{"name": "1", "node": "a", "field": "repeat",
+                                      "value": "2"}]
+            wrap4 = ed7._make_cases_list(tk.StringVar())
+            kids4 = []
+
+            def _c4(w):
+                for c in w.winfo_children():
+                    kids4.append(c)
+                    _c4(c)
+
+            _c4(wrap4)
+            to_inj = next(b for b in kids4 if isinstance(b, tk.Button)
+                          and "改用注入线" in str(b.cget("text")))
+            to_inj.invoke()
+            assert knd["props"]["cases"][0]["node"] == "", knd["props"]["cases"]
+            # ★ 切行不能丢改动：改完第 1 行直接点第 2 行，第 1 行的修改必须已经存回去
+            #   （`<<ListboxSelect>>` 到达时 curselection 是新行，写回要靠 editing 记住旧行）
+            def _panel():
+                """重建面板 + 抓一套控件。每次 build_prop_panel() 都会销毁旧控件，
+                所以断言前必须重新拿 —— 复用上一轮的引用会撞上 invalid command name。"""
+                ed7.sel = "k"
+                ed7.build_prop_panel()
+                kids = []
+
+                def _c(w):
+                    for c in w.winfo_children():
+                        kids.append(c)
+                        _c(c)
+
+                _c(ed7.props_inner)
+                cells_ = {getattr(c, "_cell_key", None): c for c in kids
+                          if getattr(c, "_cell_key", None)}
+                lb_ = next((c for c in kids if isinstance(c, tk.Listbox)), None)
+                btns_ = {str(b.cget("text")): b for b in kids
+                         if isinstance(b, tk.Button)}
+                return cells_, lb_, btns_
+
+            def _pick(lb_, i):
+                lb_.selection_clear(0, "end")
+                lb_.selection_set(i)
+                lb_.event_generate("<<ListboxSelect>>")
+
+            knd["props"]["cases"] = [
+                {"name": "1", "field": "template", "value": "a.png"},
+                {"name": "2", "field": "repeat", "value": "2"}]
+            cells, lb, btns = _panel()
+            _pick(lb, 0)
+            cells["value"].set("b.png")        # 改第 1 行的值
+            _pick(lb, 1)                       # 不点别处，直接切到第 2 行
+            assert knd["props"]["cases"][0]["value"] == "b.png", knd["props"]["cases"]
+            assert knd["props"]["cases"][1]["value"] == "2", knd["props"]["cases"]
+            assert cells["value"].get() == "2", "三格该换成第 2 行的内容"
+            # ★ 改完直接点画布（面板会重建、控件被销毁）也不能丢：Tk 销毁控件不会补发
+            #   <FocusOut>，所以 build_prop_panel() 重建前必须先提交一次
+            knd["props"]["cases"] = [{"name": "甲", "field": "repeat", "value": "1"}]
+            cells, lb, btns = _panel()
+            _pick(lb, 0)
+            cells["name"].delete(0, "end")
+            cells["name"].insert(0, "乙")
+            ed7.sel = None                  # 模拟"点了画布空白"：选中先被清掉…
+            ed7.build_prop_panel()          # …然后面板重建（提交钩子要写回原来那个节点）
+            assert knd["props"]["cases"][0]["name"] == "乙", knd["props"]["cases"]
+            # ★ 显式的「✔ 确认修改」：点了就把三格写回选中项（不依赖自动保存的时机）
+            knd["props"]["cases"] = [{"name": "甲", "field": "repeat", "value": "1"}]
+            cells, lb, btns = _panel()
+            _pick(lb, 0)
+            cells["name"].delete(0, "end")
+            cells["name"].insert(0, "丙")
+            btns["✔ 确认修改"].invoke()
+            assert knd["props"]["cases"][0]["name"] == "丙", knd["props"]["cases"]
+            # 草稿状态（还没点任何选项行）点它 → 只给提示，不新增也不改数据
+            cells, lb, btns = _panel()
+            n_cases = len(knd["props"]["cases"])
+            btns["✔ 确认修改"].invoke()
+            assert len(knd["props"]["cases"]) == n_cases, "草稿状态点「确认修改」不该动数据"
+            # ★ 新建节点不能共用 defaults 里那几个 list（浅拷贝的坑）：往一个节点拉注入线
+            #   不能让"出厂默认值"变脏 —— 否则删掉【选择】再新建一个，它会自动连回
+            #   上一个连过的节点（用户报的"删除了还是自动连接之前连过的节点"）。
+            k1 = ed7.add_node("pick", pos=(960.0, 46.0))
+            k2 = ed7.add_node("pick", pos=(960.0, 220.0))
+            assert n7[k1]["props"]["cases"] is not n7[k2]["props"]["cases"]
+            n7[k1]["props"]["targets"].append("c")
+            assert n7[k2]["props"]["targets"] == [], "新建的节点不该共用 targets"
+            assert NODE_TYPES["pick"]["defaults"]["targets"] == [], \
+                f"NODE_TYPES 的出厂默认值被写脏了：{NODE_TYPES['pick']['defaults']}"
+            assert NODE_TYPES["pick"]["defaults"]["cases"] == []
+            assert NODE_TYPES["switch"]["defaults"]["candidates"] == [{"timeout": 3000}]
+            # ★ 删节点要把指向它的引用清干净：注入目标（【输入】/【选择】共用一份数据）
+            #   与选项里写死的目标节点都不能留死 id
+            n7[k2]["props"]["targets"] = ["c"]
+            n7[k2]["props"]["cases"] = [{"name": "1", "node": "c", "field": "repeat",
+                                         "value": "2"}]
+            ed7._delete_nodes(["c"])
+            assert n7[k2]["props"]["targets"] == [], n7[k2]["props"]
+            assert n7[k2]["props"]["cases"][0]["node"] == "", n7[k2]["props"]
+            # add_node 会把画布滚到新节点上；后面的平移自测按"视图在原点"算坐标，复位一下
+            ed7.canvas.xview_moveto(0)
+            ed7.canvas.yview_moveto(0)
+            # 读文件时的兜底：注入目标里指向已删除节点的死 id 直接摘掉（画布上没有球可拖、
+            # 面板里也没有清它的入口，留着只会让摘要显示"注入 N 个节点"）
+            dead = {"schemaVersion": SCHEMA_VERSION, "name": "死id自测",
+                    "chain": ["x"], "nodes": {
+                        "x": {"type": "tap", "x": 0, "y": 0, "title": "点", "num": 1,
+                              "props": dict(_tap(1)), "next": None},
+                        "p": {"type": "pick", "x": 0, "y": 100, "title": "选择(下拉)",
+                              "num": 2, "props": {"option": "P", "cases": [],
+                                                  "targets": ["x", "n999dead"]}},
+                        "i": {"type": "input", "x": 0, "y": 200, "title": "输入",
+                              "num": 3, "props": {"option": "Q", "cases": [],
+                                                  "targets": ["n888dead"]}}}}
+            dead = normalize_flow(dead)
+            assert dead["nodes"]["p"]["props"]["targets"] == ["x"], dead["nodes"]["p"]
+            assert dead["nodes"]["i"]["props"]["targets"] == [], dead["nodes"]["i"]
+            print("【选择】注入球自测通过")
+
             # ★ 空白处按住左键 = 平移画布（只动视图，改不到任何流程数据）；
             #   点在节点上仍然是选中/拖动，两者不能互相抢。
             class _Ev:                     # 假鼠标事件：on_down/on_motion 只用 .x/.y
@@ -8592,6 +9366,22 @@ def selftest():
             ed7.drag = None
             ed7.on_up(_Ev(0, 0))
             print("空白处左键拖动平移自测通过")
+            # ★ 工具栏「删除免确认」开关：开着时点删除/按 Delete 不再弹询问框，直接删
+            #   （关着会弹 askyesno —— 自测里会卡住等点击，所以只测开着这一半）。
+            #   偏好写在 ui_prefs.json，自测跑完要还原，别改掉用户自己的设置。
+            pref_before = load_prefs()
+            try:
+                ed7.no_confirm_delete.set(True)
+                assert load_prefs()["no_confirm_delete"] is True, "开关状态没记住"
+                k9 = ed7.add_node("tap", pos=(1000.0, 420.0))
+                ed7.sel = k9
+                ed7.delete_selected()
+                assert k9 not in ed7.flow["nodes"], "免确认开关开着时应当直接删掉"
+            finally:
+                ed7.no_confirm_delete.set(bool(pref_before["no_confirm_delete"]))
+                save_prefs(**pref_before)
+            assert load_prefs() == pref_before, "自测不该改掉用户的偏好"
+            print("「删除免确认」开关自测通过")
             root.destroy()
             print("GUI 构建烟测通过")
         except tk.TclError as e:
