@@ -41,8 +41,10 @@ import project_paths  # noqa: E402
 ROOT = project_paths.PROJECT_ROOT
 OUT_DIR = project_paths.IMG_DIR
 NEG_DIR = project_paths.NEG_DIR
-ADB = r"D:\android-studio\Sdk\platform-tools\adb.exe"
-DEVICE = "2c92e197"
+# adb 路径与手机序列号由 device.json 控制（与流程编辑器共用，见 device_config.py）
+import device_config  # noqa: E402
+ADB, DEVICE = device_config.load_device_config()
+device_config.ensure_config_file()
 PKG = "com.maawh.app"
 
 # ---------------- 状态 ----------------

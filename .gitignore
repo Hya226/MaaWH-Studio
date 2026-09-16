@@ -21,6 +21,8 @@ _tmp/
 recent.txt
 # 编辑器的小偏好（删除免确认等）—— 本机状态，每个人不一样
 ui_prefs.json
+# adb 路径与手机序列号 —— 每台电脑不一样（见 device_config.py）
+device.json
 
 # ── 调试用帧图/裁图（下划线开头，如 _check_frame.png）────────
 _*.png

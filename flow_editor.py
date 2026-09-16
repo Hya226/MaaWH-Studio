@@ -56,8 +56,11 @@ FLOWS_DIR = os.path.join(TOOLS_DIR, "flows")
 BUILD_DIR = os.path.join(FLOWS_DIR, "build")
 IMG_DIR = project_paths.IMG_DIR
 NEG_DIR = project_paths.NEG_DIR
-ADB = r"D:\android-studio\Sdk\platform-tools\adb.exe"
-DEVICE = "2c92e197"
+# adb 路径与手机序列号由 device.json 控制（换电脑改文件即可，见 device_config.py）；
+# 文件缺省/键缺省时回退到写死默认值
+import device_config  # noqa: E402
+ADB, DEVICE = device_config.load_device_config()
+device_config.ensure_config_file()
 PKG = "com.maawh.app"
 GAME_PKG = "com.cipaishe.wuhua.bilibili"
 
@@ -3831,6 +3834,12 @@ class FlowEditor:
         self._update_undo_buttons()
         self.root.after(150, lambda: self.log(
             project_paths.describe(), "" if project_paths.PACK_OK else "warn"))
+        # 设备配置用的是哪一份，也让它自己说清楚（换电脑排查先看这行）
+        self.root.after(160, lambda: self.log(
+            f"设备配置：adb = {ADB}；序列号 = {DEVICE}"
+            + ("" if os.path.isfile(device_config.CONFIG_PATH)
+               else "（默认值 —— 没有 device.json，可新建一份改 adb/序列号）"),
+            "" if os.path.isfile(device_config.CONFIG_PATH) else "warn"))
         # 窗口被 WM 摆出来之后量一次真实底边，伸进任务栏就收掉（见方法注释）
         self.root.after(60, self._fit_window_to_workarea)
         # 从最大化「还原」时 WM 会重新摆位置，可能又伸进任务栏 —— 再量一次
@@ -8544,6 +8553,29 @@ class FlowEditor:
 def selftest():
     """无 GUI 校验核心生成逻辑"""
     print(project_paths.describe())
+    # ★ device.json 配置加载：缺文件/空值回退默认，显式值覆盖（换电脑改文件不改代码）
+    import device_config as _dc
+    import tempfile as _tf
+    _cfgp = os.path.join(_tf.gettempdir(), "maa_device_config_selftest.json")
+    if os.path.exists(_cfgp):
+        os.remove(_cfgp)
+    assert _dc.load_device_config(_cfgp) == (_dc.DEFAULT_ADB, _dc.DEFAULT_DEVICE), \
+        "没有配置文件应当整体回退默认值"
+    with open(_cfgp, "w", encoding="utf-8") as f:
+        json.dump({"adb": r"C:\other\adb.exe", "device": "abc123"}, f)
+    assert _dc.load_device_config(_cfgp) == (r"C:\other\adb.exe", "abc123"), \
+        "显式配置应当覆盖默认值"
+    with open(_cfgp, "w", encoding="utf-8") as f:
+        json.dump({"adb": "  "}, f)         # 只写了 adb 且是空串 → adb 回退、device 回退
+    got = _dc.load_device_config(_cfgp)
+    assert got == (_dc.DEFAULT_ADB, _dc.DEFAULT_DEVICE), got
+    with open(_cfgp, "w", encoding="utf-8") as f:
+        f.write("{not json")                # 坏文件不能让编辑器起不来
+    assert _dc.load_device_config(_cfgp) == (_dc.DEFAULT_ADB, _dc.DEFAULT_DEVICE)
+    os.remove(_cfgp)
+    assert os.path.isfile(_dc.CONFIG_PATH), "编辑器导入时应已生成默认 device.json"
+    print(f"设备配置自测通过（当前 adb = {os.path.basename(ADB)}，"
+          f"序列号 = {DEVICE}）")
     flow = {"name": "自测流程", "chain": [], "nodes": {}}
 
     def add(nid, t, props, **kw):

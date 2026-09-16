@@ -25,9 +25,12 @@
 | `tools/fix_flow_edges.py` | 重建流程的**边修复**（对齐手写管线）。审计老管线 vs 画布流程的逐节点有序后继，补 `next`/`miss_next`/丢掉的候选/入口，默认干跑 |
 | `启动.bat`、`框选模板.bat` | 双击启动 |
 
-关键常量（`flow_editor.py` 顶部）：`ADB = D:\android-studio\Sdk\platform-tools\adb.exe`、
-`DEVICE = "2c92e197"`、`PKG = "com.maawh.app"`、`GAME_PKG = "com.cipaishe.wuhua.bilibili"`、
+关键常量（`flow_editor.py` 顶部）：`PKG = "com.maawh.app"`、`GAME_PKG = "com.cipaishe.wuhua.bilibili"`、
 帧基准 `1280x720`、卡片 `240x60`、网格 `46`。
+★ **adb 路径与手机序列号由 `device.json` 控制**（2026-09-16 加，`device_config.py` 加载，
+编辑器与框选工具共用）：换电脑改文件即可，不用改代码；缺文件/键缺省/坏文件逐项回退到
+写死默认值（`device_config.py` 里的 `DEFAULT_ADB/DEFAULT_DEVICE`）；首次运行自动生成一份
+默认值；文件已进 .gitignore（本机环境配置）。
 
 ---
 
