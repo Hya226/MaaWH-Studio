@@ -63,7 +63,7 @@
       "y": 138.0,
       "title": "升2_Hit",
       "props": {
-        "threshold": 0.85,
+        "threshold": 0.8,
         "roi": "",
         "order_by": "Score",
         "timeout": 4000,
@@ -168,12 +168,12 @@
       "y": 690.0,
       "title": "升2?",
       "props": {
-        "threshold": 0.85,
+        "threshold": 0.75,
         "ocr_text": "",
         "roi": "",
         "timeout": 3000,
         "rate_limit": 0,
-        "template": "蛙锣.png"
+        "template": "冷暖自知印.png"
       },
       "hit_next": "n_升2_Hit",
       "miss_next": "n_升2_S0",
