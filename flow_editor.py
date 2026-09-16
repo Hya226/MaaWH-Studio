@@ -4368,32 +4368,38 @@ class FlowEditor:
         if props:
             p.update(props)
         if ntype == "input":
-            # 【输入】是"参数声明"，不进主链：放到主链右侧的参数区，不参与链序、
-            # 不生成管线节点；它注入到哪些节点由右侧小球拉线决定（拖线时才建立关系）。
-            x, y = pos if pos else self._param_col_pos()
+            # 【输入】是"参数声明"，不进主链：不参与链序、不生成管线节点；它注入到哪些
+            # 节点由右侧小球拉线决定（拖线时才建立关系）。
+            # ★ 新建时和其他节点一样落在【可见画布右上角】—— 以前放固定的参数列，
+            #   那列常常不在屏幕里，点完节点库还得滚半天去找（2026-09-16 用户要求）。
+            #   「整理布局」仍会把它们收进参数列、按注入目标对齐，不冲突。
+            x, y = pos if pos else self._spot_in_view(CARD_H)
             node = {"type": ntype, "x": self._snap(x), "y": self._snap(y),
                     "title": spec["label"], "props": p, "num": self._next_num()}
             self.flow["nodes"][nid] = node
             self.sel = nid
             self.build_prop_panel()
             self.redraw()
-            self._scroll_to(node["y"])
+            if pos:
+                self._scroll_to(node["y"])
             self.log("已新建【输入】节点（它不占流程顺序）：填好参数名，"
                      "再把卡片右侧的「注入」小球拖到要注入的节点上")
             return nid
         if ntype == "pick":
-            # 【选择】也是参数声明：不占流程顺序，选项在属性面板里逐条填
-            x, y = pos if pos else self._param_col_pos()
+            # 【选择】也是参数声明：不占流程顺序，选项在属性面板里逐条填。
+            # ★ 同【输入】：新建落在可见画布右上角，不丢到屏幕外的参数列。
+            x, y = pos if pos else self._spot_in_view(CARD_H)
             node = {"type": ntype, "x": self._snap(x), "y": self._snap(y),
                     "title": spec["label"], "props": p, "num": self._next_num()}
             self.flow["nodes"][nid] = node
             self.sel = nid
             self.build_prop_panel()
             self.redraw()
-            self._scroll_to(node["y"])
+            if pos:
+                self._scroll_to(node["y"])
             self.log("已新建【选择】节点（它不占流程顺序）：填好参数名，"
-                     "再在下面逐条加选项（名称 / 目标节点 / 字段 / 值）—— "
-                     "目标节点也可以直接把卡片右侧的「注入」小球拖到那个节点上")
+                     "再在下面逐条加选项（名称 / 字段 / 值）—— "
+                     "作用在哪些节点上，用卡片右侧的「注入」小球拖线决定")
             return nid
         # ★ 新建节点挂在【当前选中节点】的出口下：链上插到它后面，
         #   而不是像以前那样一律甩到链尾（链尾决定了 next，会让新节点接到别的节点后面）。
@@ -9348,6 +9354,21 @@ def selftest():
             # ★ 新建节点不能共用 defaults 里那几个 list（浅拷贝的坑）：往一个节点拉注入线
             #   不能让"出厂默认值"变脏 —— 否则删掉【选择】再新建一个，它会自动连回
             #   上一个连过的节点（用户报的"删除了还是自动连接之前连过的节点"）。
+            # ★ 新建的【输入】/【选择】要落在【可见画布右上角】（和其他节点一样出现在
+            #   眼前），不再丢到固定的参数列 —— 那列可能不在屏幕里，点完还得滚半天找。
+            #   自测环境画布没有真实尺寸（1x1），注入一个固定视口来测放置逻辑。
+            ed7._visible_rect = lambda: (0.0, 0.0, 1200.0, 900.0)
+            vi = ed7.add_node("input")
+            vp = ed7.add_node("pick")
+            for k in (vi, vp):
+                nd_v = ed7.flow["nodes"][k]
+                assert 0 <= nd_v["x"] <= 1200 - CARD_W and \
+                    0 <= nd_v["y"] <= 900 - CARD_H, (k, nd_v["x"], nd_v["y"])
+            # 连着建两个也不许叠在一起（空位探测会往下让）
+            assert ed7.flow["nodes"][vp]["y"] > ed7.flow["nodes"][vi]["y"], \
+                (ed7.flow["nodes"][vi]["y"], ed7.flow["nodes"][vp]["y"])
+            ed7._delete_nodes([vi, vp])
+            del ed7._visible_rect          # 撤掉注入，恢复真实方法
             k1 = ed7.add_node("pick", pos=(960.0, 46.0))
             k2 = ed7.add_node("pick", pos=(960.0, 220.0))
             assert n7[k1]["props"]["cases"] is not n7[k2]["props"]["cases"]
