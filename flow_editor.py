@@ -3913,15 +3913,16 @@ class FlowEditor:
                     troughcolor=T["field"], bordercolor=T["panel"],
                     lightcolor=T["accent"], darkcolor=T["accent"])
         # 滚动条：默认浅色在深色界面里非常扎眼（2026-09-16 用户嫌丑）——
-        # 槽用画布底色、滑块用卡片色、悬停提亮一格、按住变主题蓝；
-        # lightcolor/darkcolor 是 clam 给滑块画的立体高光/阴影，抹成同色才是扁平的。
-        s.configure("TScrollbar", background=T["card"], troughcolor=T["canvas"],
+        # 槽用画布底色、滑块比卡片再暗一档；悬停只微微提亮、按住是【暗】蓝，
+        # 不用主题蓝（#5b8cff 太亮，用户点名要暗）。clam 给滑块画的立体
+        # 高光/阴影（lightcolor/darkcolor）抹成同色才是扁平的。
+        s.configure("TScrollbar", background="#222735", troughcolor=T["canvas"],
                     bordercolor=T["panel"], arrowcolor=T["text_dim"],
-                    lightcolor=T["card"], darkcolor=T["card"])
+                    lightcolor="#222735", darkcolor="#222735")
         s.map("TScrollbar",
-              background=[("pressed", T["accent"]), ("active", T["card_hi"])],
-              lightcolor=[("pressed", T["accent"]), ("active", T["card_hi"])],
-              darkcolor=[("pressed", T["accent"]), ("active", T["card_hi"])],
+              background=[("pressed", "#33415e"), ("active", "#2a3040")],
+              lightcolor=[("pressed", "#33415e"), ("active", "#2a3040")],
+              darkcolor=[("pressed", "#33415e"), ("active", "#2a3040")],
               arrowcolor=[("pressed", T["text"]), ("active", T["text"])])
 
     def _flat_btn(self, parent, text, cmd, bg=None, fg=None, hover=None,
@@ -9501,7 +9502,7 @@ def selftest():
             # ★ 滚动条深色化：样式真的挂上去了（槽=画布底、滑块=卡片色）
             _st = ttk.Style(root)
             assert _st.theme_use() == "clam"
-            assert _st.lookup("TScrollbar", "background") == THEME["card"], \
+            assert _st.lookup("TScrollbar", "background") == "#222735", \
                 _st.lookup("TScrollbar", "background")
             assert _st.lookup("TScrollbar", "troughcolor") == THEME["canvas"], \
                 _st.lookup("TScrollbar", "troughcolor")
