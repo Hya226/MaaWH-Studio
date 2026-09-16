@@ -3744,7 +3744,8 @@ class FlowEditor:
     def __init__(self, root, load_path=None):
         self.root = root
         root.title("流程编辑器 · MaaWH")
-        root.geometry(initial_geometry(root))
+        root.geometry(initial_geometry(root))   # 还原（非最大化）时回到这个尺寸
+        maximize_window(root)                   # 默认最大化打开（zoomed 自动避开任务栏）
         root.configure(bg=THEME["bg"])
         self._setup_style()
 
@@ -3828,6 +3829,21 @@ class FlowEditor:
             project_paths.describe(), "" if project_paths.PACK_OK else "warn"))
         # 窗口被 WM 摆出来之后量一次真实底边，伸进任务栏就收掉（见方法注释）
         self.root.after(60, self._fit_window_to_workarea)
+        # 从最大化「还原」时 WM 会重新摆位置，可能又伸进任务栏 —— 再量一次
+        self._win_state = "zoomed"
+
+        def _refit_on_state_change(_e=None):
+            try:
+                st = self.root.state()
+            except tk.TclError:
+                return
+            if st != self._win_state:
+                was_zoomed = self._win_state == "zoomed"
+                self._win_state = st
+                if was_zoomed and st == "normal":
+                    self.root.after(80, self._fit_window_to_workarea)
+
+        self.root.bind("<Configure>", _refit_on_state_change, add="+")
 
     # ---------- 主题 ----------
 
@@ -9432,6 +9448,23 @@ def selftest():
 
 
 # ================= main =================
+
+def maximize_window(root):
+    """把主窗口最大化（默认打开就是最大化，用户 2026-09-16 定的）。
+
+    用 WM 的 zoomed 状态而不是手动铺满屏幕：Windows 自己会把窗口摆进工作区
+    （自动避开任务栏），比手算尺寸可靠；用户点"还原"后回到 initial_geometry()
+    给的那个尺寸（同样夹在工作区里）。非 Windows 走 X11 的 attributes，再不行就放弃。"""
+    try:
+        root.state("zoomed")
+        return
+    except tk.TclError:
+        pass
+    try:
+        root.attributes("-zoomed", True)
+    except tk.TclError:
+        pass
+
 
 def _windows_workarea():
     """主显示器的【工作区】（整个屏幕去掉任务栏后的可用区域）→ (宽, 高)。
