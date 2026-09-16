@@ -869,7 +869,7 @@ def _num(v, default=-1):
 # 本机状态文件（.gitignore 里忽略）。**读失败一律当默认值** —— 这文件坏了不该让
 # 编辑器起不来。
 PREFS_PATH = os.path.join(TOOLS_DIR, "ui_prefs.json")
-DEFAULT_PREFS = {"no_confirm_delete": False}
+DEFAULT_PREFS = {"no_confirm_delete": False, "show_bg_frame": True}
 
 
 def load_prefs():
@@ -3754,7 +3754,9 @@ class FlowEditor:
         self.bg_pil = None          # 背景帧 PIL（调暗后）
         self.bg_photo = None
         self.bg_disp = None         # (ox, oy, w, h) 帧显示区域
-        self.show_bg = tk.BooleanVar(value=True)
+        # 「画布上显示背景帧」也记进偏好：抓过一帧帧图后想关掉背景的人，下次打开
+        # 不用再点一遍（默认开 —— 背景帧本来就是用来对着取点/摆放的）。
+        self.show_bg = tk.BooleanVar(value=bool(load_prefs().get("show_bg_frame")))
         # 删除免确认（工具栏「✖ 删除」右边那个开关）：开着时点删除直接删，不弹询问框。
         # 记住上次的选择（ui_prefs.json）—— 连着清理一批节点时每次都要点一次"是"很烦，
         # 而误删有 Ctrl+Z 兜底。
@@ -4095,7 +4097,9 @@ class FlowEditor:
             fill="x", padx=8, pady=1)
         self._make_toggle(g, self.show_bg, "画布上显示背景帧").pack(
             anchor="w", padx=10, pady=3)
-        self.show_bg.trace_add("write", lambda *_: self.redraw())
+        self.show_bg.trace_add(
+            "write", lambda *_: (save_prefs(show_bg_frame=bool(self.show_bg.get())),
+                                 self.redraw()))
         self.frame_lbl = ttk.Label(g, text="", style="Dim.TLabel", justify="left")
         self.frame_lbl.pack(anchor="w", padx=12, pady=2)
         self._update_frame_label()
@@ -9488,6 +9492,16 @@ def selftest():
                 save_prefs(**pref_before)
             assert load_prefs() == pref_before, "自测不该改掉用户的偏好"
             print("「删除免确认」开关自测通过")
+            # ★「画布上显示背景帧」开关同样记进 ui_prefs.json（关掉后重开编辑器还是关的）
+            bg_before = load_prefs()["show_bg_frame"]
+            try:
+                ed7.show_bg.set(not bg_before)
+                assert load_prefs()["show_bg_frame"] == (not bg_before), \
+                    load_prefs()
+            finally:
+                ed7.show_bg.set(bool(bg_before))
+                save_prefs(show_bg_frame=bool(bg_before))
+            assert load_prefs()["show_bg_frame"] == bg_before, "自测不该改掉用户的偏好"
             # ★ 初始窗口尺寸不许超出屏幕工作区：写死 1640x960 在高缩放屏上比整个屏幕
             #   还大，Windows 会把窗口压满全屏、底边（状态栏）被任务栏挡住
             assert initial_geometry(root, workarea=(4000, 2000)) == "1640x960", \
