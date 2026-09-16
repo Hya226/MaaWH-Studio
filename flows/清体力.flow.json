@@ -1,0 +1,347 @@
+{
+  "chain": [
+    "n001919d",
+    "n0027669",
+    "n001827d",
+    "n002e93e",
+    "n0038fa7",
+    "n0040f60",
+    "n00313b8",
+    "n004adb2",
+    "n0023c04",
+    "n0051d2d",
+    "n001a694",
+    "n00404ed"
+  ],
+  "name": "清体力",
+  "nodes": {
+    "n001919d": {
+      "next": "n0027669",
+      "num": 1,
+      "props": {
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "pre_delay": 0,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "roi": "",
+        "template": "sy_yx.png",
+        "threshold": 0.8,
+        "timeout": 8000
+      },
+      "title": "找模板点击",
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 92.0
+    },
+    "n0027669": {
+      "next": "n001827d",
+      "num": 2,
+      "props": {
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "pre_delay": 0,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "roi": "",
+        "template": "yx_ksxl.png",
+        "threshold": 0.8,
+        "timeout": 8000
+      },
+      "title": "找模板点击",
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 230.0
+    },
+    "n0038fa7": {
+      "next": "n0040f60",
+      "num": 6,
+      "props": {
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "pre_delay": 0,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "roi": "",
+        "template": "st.png",
+        "threshold": 0.8,
+        "timeout": 8000
+      },
+      "title": "找模板点击",
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 598.0
+    },
+    "n0040f60": {
+      "next": "n00313b8",
+      "num": 7,
+      "props": {
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "pre_delay": 0,
+        "rate_limit": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "roi": "",
+        "template": "zd_jia.png",
+        "threshold": 0.8,
+        "timeout": 8000
+      },
+      "title": "找模板点击",
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 690.0
+    },
+    "n00446aa": {
+      "num": 4,
+      "props": {
+        "cases": [
+          {
+            "field": "expected",
+            "name": "冬谷币",
+            "node": "",
+            "value": "冬谷币"
+          },
+          {
+            "field": "expected",
+            "name": "装备",
+            "node": "",
+            "value": "装备"
+          },
+          {
+            "field": "expected",
+            "name": "教材",
+            "node": "",
+            "value": "教材"
+          }
+        ],
+        "default": "",
+        "desc": "",
+        "option": "类型",
+        "targets": [
+          "n001827d"
+        ],
+        "var_label": ""
+      },
+      "title": "选择(下拉)",
+      "type": "pick",
+      "x": 460.0,
+      "y": 230.0
+    },
+    "n001050b": {
+      "type": "pick",
+      "x": 506.0,
+      "y": 644.0,
+      "title": "选择(下拉)",
+      "props": {
+        "option": "次数",
+        "var_label": "",
+        "default": "",
+        "desc": "",
+        "targets": [
+          "n0040f60"
+        ],
+        "cases": [
+          {
+            "name": "2",
+            "node": "",
+            "field": "repeat",
+            "value": "1"
+          },
+          {
+            "name": "3",
+            "node": "",
+            "field": "repeat",
+            "value": "2"
+          },
+          {
+            "name": "4",
+            "node": "",
+            "field": "repeat",
+            "value": "3"
+          },
+          {
+            "name": "5",
+            "node": "",
+            "field": "repeat",
+            "value": "4"
+          },
+          {
+            "name": "6",
+            "node": "",
+            "field": "repeat",
+            "value": "5"
+          },
+          {
+            "name": "7",
+            "node": "",
+            "field": "repeat",
+            "value": "6"
+          },
+          {
+            "name": "8",
+            "node": "",
+            "field": "repeat",
+            "value": "7"
+          },
+          {
+            "name": "9",
+            "node": "",
+            "field": "repeat",
+            "value": "8"
+          },
+          {
+            "name": "10",
+            "node": "",
+            "field": "repeat",
+            "value": "9"
+          }
+        ]
+      },
+      "num": 8
+    },
+    "n001827d": {
+      "type": "ocr_click",
+      "x": 184.0,
+      "y": 368.0,
+      "title": "OCR识别点击",
+      "props": {
+        "text": "冬谷币",
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      },
+      "num": 9,
+      "next": "n002e93e"
+    },
+    "n002e93e": {
+      "type": "tap",
+      "x": 184.0,
+      "y": 460.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 1097,
+        "y": 353,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 10,
+      "next": "n0038fa7"
+    },
+    "n00313b8": {
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 782.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 11,
+      "next": "n004adb2"
+    },
+    "n004adb2": {
+      "type": "branch",
+      "x": 184.0,
+      "y": 920.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "部分器者好感已满",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0
+      },
+      "num": 12,
+      "hit_next": "n001a694",
+      "miss_next": "n00404ed"
+    },
+    "n001a694": {
+      "type": "tpl_click",
+      "x": 598.0,
+      "y": 920.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.7,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "duigou.png"
+      },
+      "num": 13,
+      "next": "n00404ed",
+      "hit_next": null,
+      "miss_next": null
+    },
+    "n0023c04": {
+      "type": "tpl_click",
+      "x": 184.0,
+      "y": 1196.0,
+      "title": "找模板点击",
+      "props": {
+        "threshold": 0.8,
+        "roi": "",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 500,
+        "post_delay": 800,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350,
+        "template": "wancheng.png"
+      },
+      "num": 14,
+      "next": "n0051d2d"
+    },
+    "n00404ed": {
+      "type": "tap",
+      "x": 184.0,
+      "y": 1058.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 320,
+        "y": 247,
+        "pre_delay": 500,
+        "post_delay": 500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 15,
+      "next": "n0023c04"
+    },
+    "n0051d2d": {
+      "type": "common",
+      "x": 184.0,
+      "y": 1288.0,
+      "title": "公共节点(收口)",
+      "props": {
+        "node": "Common_回主页"
+      },
+      "num": 16,
+      "next": null
+    }
+  },
+  "schemaVersion": 4
+}

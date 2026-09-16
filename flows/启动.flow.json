@@ -3,6 +3,7 @@
   "chain": [
     "n0018d7f",
     "n004914b",
+    "n0067984",
     "n002c32e",
     "n003882b",
     "n0081576",
@@ -15,19 +16,19 @@
     "n0018d7f": {
       "type": "startapp",
       "x": 138.0,
-      "y": 92.0,
+      "y": 46.0,
       "title": "启动游戏",
       "props": {
         "package": "com.cipaishe.wuhua.bilibili",
-        "post_delay": 1000
+        "post_delay": 10000
       },
       "num": 1,
       "next": "n004914b"
     },
     "n002c32e": {
       "type": "tpl_click",
-      "x": 138.0,
-      "y": 276.0,
+      "x": 506.0,
+      "y": 230.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
@@ -39,7 +40,7 @@
         "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
-        "template": "qd_cha.png"
+        "template": "ks_cha.png"
       },
       "num": 2,
       "next": "n003882b"
@@ -47,7 +48,7 @@
     "n003882b": {
       "type": "tap",
       "x": 138.0,
-      "y": 368.0,
+      "y": 460.0,
       "title": "固定坐标点击",
       "props": {
         "x": 611,
@@ -64,22 +65,22 @@
     "n004914b": {
       "type": "wait_tpl",
       "x": 138.0,
-      "y": 184.0,
+      "y": 138.0,
       "title": "等待模板出现",
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "timeout": 10000,
+        "timeout": 6000,
         "rate_limit": 0,
-        "template": "qd_cha.png"
+        "template": "ks_cha.png"
       },
       "num": 4,
-      "next": "n002c32e"
+      "next": "n0067984"
     },
     "n0081576": {
       "type": "branch",
       "x": 138.0,
-      "y": 460.0,
+      "y": 552.0,
       "title": "分支",
       "props": {
         "threshold": 0.7,
@@ -96,7 +97,7 @@
     "n0094d42": {
       "type": "tap",
       "x": 138.0,
-      "y": 598.0,
+      "y": 690.0,
       "title": "固定坐标点击",
       "props": {
         "x": 640,
@@ -113,7 +114,7 @@
     "n010ccd9": {
       "type": "tpl_click",
       "x": 138.0,
-      "y": 690.0,
+      "y": 782.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.85,
@@ -133,7 +134,7 @@
     "n011b55e": {
       "type": "branch",
       "x": 138.0,
-      "y": 828.0,
+      "y": 920.0,
       "title": "分支",
       "props": {
         "threshold": 0.8,
@@ -150,7 +151,7 @@
     "n0130b97": {
       "type": "tpl_click",
       "x": 552.0,
-      "y": 828.0,
+      "y": 920.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
@@ -166,6 +167,24 @@
       },
       "num": 9,
       "next": "n011b55e"
+    },
+    "n0067984": {
+      "type": "branch",
+      "x": 138.0,
+      "y": 230.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "ks_cha.png"
+      },
+      "num": 10,
+      "hit_next": "n002c32e",
+      "miss_next": "n004914b",
+      "next": "n002c32e"
     }
   },
   "schemaVersion": 4

@@ -38,7 +38,7 @@
   "nodes": {
     "n_升1_Hit": {
       "type": "tpl_click",
-      "x": 46,
+      "x": 46.0,
       "y": 46.0,
       "title": "升1_Hit",
       "props": {
@@ -48,7 +48,7 @@
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
-        "post_delay": 800,
+        "post_delay": 2000,
         "post_wait_freezes": 1200,
         "repeat": 1,
         "repeat_delay": 350,
@@ -68,7 +68,7 @@
         "order_by": "Score",
         "timeout": 4000,
         "rate_limit": 0,
-        "pre_delay": 0,
+        "pre_delay": 1000,
         "post_delay": 800,
         "post_wait_freezes": 1500,
         "repeat": 1,
