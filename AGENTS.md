@@ -351,6 +351,14 @@ python -c "from maa.resource import Resource; r=Resource(); j=r.post_bundle(r'E:
   用 Win32 `SPI_GETWORKAREA` 把"还原后的尺寸"夹进工作区；再靠 `_fit_window_to_workarea()`
   量真实底边（WM 摆放会往下偏，实测 +40），超出就收高/收宽；从最大化「还原」时
   （`<Configure>` 里看到 zoomed→normal）再量一次。
+- ★ **关窗拦截：有未保存改动先弹三选一**（2026-09-16 加）：`_try_close_editor()` 绑在
+  `WM_DELETE_WINDOW` 上，`_dirty()` = 当前 `_flow_text()` 与 `_mark_saved()` 时（打开/新建/
+  保存）的快照对比 —— 整份序列化对比，不靠"哪个操作改了东西"的记忆。`_mark_saved()` 放在
+  `open_flow_file()` 的**自动整理之前**（打开时触发的自动排位也算未保存改动）。
+  ★ 自测这条路有个坑：`on_save()` 开头 `_on_name_change()` 会把**界面名称框**写回流程名再
+  落盘 —— 自测里名称框还停在「测试流程」，"选「是」保存"就把测试数据写进了
+  `flows/测试流程.flow.json`（真发生了，git checkout 单文件救回）。自测前必须
+  `ed7.name_var.set(与流程名一致)`。
 - ★ **工具栏「✖ 删除」右边有「删除免确认」开关**（2026-09-16 加）：开着时点删除或按 Delete
   直接删，不弹 `askyesno`（删错由 `_snapshot()` + Ctrl+Z 兜底）；状态记在 `ui_prefs.json`
   （与 `recent.txt` 同类的本机状态文件，已进 .gitignore）。`load_prefs()` / `save_prefs()`

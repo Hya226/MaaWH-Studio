@@ -3772,6 +3772,8 @@ class FlowEditor:
         self.prop_widgets = {}
         # 属性面板"重建前要提交"的回调（目前是【选择】的选项编辑器：三格里的改动
         # 得先落进 props，再销毁控件）。面板重建时由 build_prop_panel() 调用一次。
+        self._saved_text = self._flow_text()   # 关窗时判断"未保存改动"的基准
+        root.protocol("WM_DELETE_WINDOW", self._try_close_editor)
         self._panel_commit = None
         self._tpl_img_cache = {}   # 模板名 -> (mtime, PhotoImage, dw, dh)
         self._loaded_path = None   # 当前打开的流程文件路径
@@ -4283,6 +4285,7 @@ class FlowEditor:
         #   否则第一次保存时 on_save 会以为这是「改名」，把上次打开的那个流程文件删掉
         #   （2026-09-15 事故：打开 博物研学 → 新建 → 改名 刷活动关 保存 ⇒ 博物研学.flow.json 被删）
         self._loaded_path = None
+        self._mark_saved()      # 新建（还没存过盘）= 没有未保存改动
         self.build_prop_panel()
         self.redraw()
         self.log("已新建空白流程")
@@ -4316,6 +4319,8 @@ class FlowEditor:
                 pass
             self.build_prop_panel()
             self.redraw()
+            self._mark_saved()      # ★ 放在自动整理【之前】：打开时若触发自动排位，
+            #                           那也是"未保存的改动"，关窗时一样要问
             self.canvas.yview_moveto(0)
             self.canvas.xview_moveto(0)
             self.log(f"已打开 {os.path.basename(path)}（{len(self.flow['chain'])} 个节点）")
@@ -4350,6 +4355,7 @@ class FlowEditor:
             pass
         self.flow_combo.config(values=[os.path.basename(p) for p in list_flows()])
         self.flow_combo.set(os.path.basename(path))
+        self._mark_saved()
         self.log("✓ 已保存 " + path, "ok")
 
     # ---------- 节点增删改 ----------
@@ -8088,6 +8094,33 @@ class FlowEditor:
     def _flow_text(self):
         return json.dumps(self.flow, ensure_ascii=False, sort_keys=True)
 
+    def _mark_saved(self):
+        """记下"刚保存/刚打开"时的流程内容 —— 关窗时拿它判断有没有未保存的改动。"""
+        self._saved_text = self._flow_text()
+
+    def _dirty(self):
+        """有没有未保存的改动（当前流程 vs 最近一次保存/打开时的内容）。
+
+        用整份序列化对比，不靠"哪个操作改了东西"的记忆 —— 拖卡片挪位置、画布上
+        拉线、属性面板失焦写回……任何路径改到了流程都算数。"""
+        return self._flow_text() != self._saved_text
+
+    def _try_close_editor(self):
+        """主窗口的关闭拦截：有未保存的改动先问一句，别让用户点错丢一下午的活。
+
+        「是」= 保存并退出；「否」= 不保存直接退；「取消」= 留在编辑器。"""
+        if self._dirty():
+            name = self.flow.get("name") or "未命名"
+            r = messagebox.askyesnocancel(
+                "未保存的改动",
+                f"流程「{name}」有未保存的改动，确定要关闭吗？\n\n"
+                f"「是」= 保存并退出\n「否」= 不保存，直接退出\n「取消」= 留在编辑器")
+            if r is None:
+                return
+            if r:
+                self.on_save()
+        self.root.destroy()
+
     def _snapshot(self, tag=""):
         """改动前存档。
         内容没变就不入栈（选择节点之类的空操作不会污染撤销栈）；
@@ -9462,6 +9495,43 @@ def selftest():
                 assert int(mw) <= wa[0] and int(mh) <= wa[1], (real, wa)
             print(f"初始窗口尺寸自测通过（本机 = {real}，"
                   f"工作区 = {_windows_workarea()}）")
+            # ★ 关窗拦截：有未保存改动时弹三选一（保存并退 / 直接退 / 取消）。
+            #   假弹窗代替真弹窗（真弹窗会卡住等点击），root.destroy 也只记账不真关。
+            ed7._mark_saved()
+            assert not ed7._dirty(), "刚打开的流程不该算脏"
+            ed7.flow["nodes"]["a"]["props"]["x"] = 999      # 随手改一下 = 脏
+            assert ed7._dirty(), "改了内容就该算脏"
+            ed7._mark_saved()
+            assert not ed7._dirty()
+            ed7.flow["nodes"]["a"]["props"]["x"] = 998
+            real_destroy = root.destroy
+            closed = []
+            root.destroy = lambda: closed.append(1)
+            orig_ask = messagebox.askyesnocancel
+            try:
+                messagebox.askyesnocancel = lambda *a, **k: None    # 取消
+                ed7._try_close_editor()
+                assert not closed, "选「取消」应当留在编辑器"
+                messagebox.askyesnocancel = lambda *a, **k: False   # 否
+                ed7._try_close_editor()
+                assert len(closed) == 1, "选「否」应当不保存直接退出"
+                assert ed7.flow["nodes"]["a"]["props"]["x"] == 998, "选「否」不该保存"
+                assert not os.path.isfile(os.path.join(
+                    FLOWS_DIR, "布局自测.flow.json")), "选「否」不该写出文件"
+                messagebox.askyesnocancel = lambda *a, **k: True    # 是
+                # on_save 开头会把界面名称框写回流程名 —— 不设成一致就会按旧名字
+                # 落盘、覆盖别的流程文件（自测第一次跑就把 测试流程.flow.json 写了）
+                ed7.name_var.set("布局自测")
+                ed7._try_close_editor()
+                assert len(closed) == 2, "选「是」应当保存并退出"
+                assert not ed7._dirty(), "选「是」保存后不该再算脏"
+                saved_path = os.path.join(FLOWS_DIR, "布局自测.flow.json")
+                assert os.path.isfile(saved_path), "选「是」应当把流程写到文件"
+                os.remove(saved_path)       # 自测产物，删掉别留在仓库里
+            finally:
+                messagebox.askyesnocancel = orig_ask
+                root.destroy = real_destroy
+            print("关窗未保存提示自测通过")
             root.destroy()
             print("GUI 构建烟测通过")
         except tk.TclError as e:
