@@ -344,6 +344,11 @@ python -c "from maa.resource import Resource; r=Resource(); j=r.post_bundle(r'E:
   【选择】那边还挂着死 id（摘要照旧显示"注入 N 个节点"，生成时往不存在的名字上写覆盖）。
   另外 `normalize_flow()` 读文件时**兜底**再清一次 `targets` 里的死 id（老文件/早先写脏的
   数据里仍有残留；画布上那种 id 没有球可拖、面板里也没有清它的入口）。
+- ★ **主窗口初始尺寸按【工作区】夹**（2026-09-16）：写死 `geometry("1640x960")` 在高缩放屏上
+  （1920x1080 @125% → 逻辑 1536x864）比整个屏幕还大，Windows 把窗口压满全屏、状态栏被任务栏
+  挡住。两层修复：`initial_geometry()` 用 Win32 `SPI_GETWORKAREA` 把尺寸夹进工作区；再靠
+  `_fit_window_to_workarea()`（`after(60)`）量真实底边 —— WM 自己会往下挪窗口（实测 +40），
+  只夹尺寸仍会伸进任务栏，超出就收高/收宽。
 - ★ **工具栏「✖ 删除」右边有「删除免确认」开关**（2026-09-16 加）：开着时点删除或按 Delete
   直接删，不弹 `askyesno`（删错由 `_snapshot()` + Ctrl+Z 兜底）；状态记在 `ui_prefs.json`
   （与 `recent.txt` 同类的本机状态文件，已进 .gitignore）。`load_prefs()` / `save_prefs()`

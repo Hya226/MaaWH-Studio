@@ -3744,7 +3744,7 @@ class FlowEditor:
     def __init__(self, root, load_path=None):
         self.root = root
         root.title("流程编辑器 · MaaWH")
-        root.geometry("1640x960")
+        root.geometry(initial_geometry(root))
         root.configure(bg=THEME["bg"])
         self._setup_style()
 
@@ -3826,8 +3826,32 @@ class FlowEditor:
         self._update_undo_buttons()
         self.root.after(150, lambda: self.log(
             project_paths.describe(), "" if project_paths.PACK_OK else "warn"))
+        # 窗口被 WM 摆出来之后量一次真实底边，伸进任务栏就收掉（见方法注释）
+        self.root.after(60, self._fit_window_to_workarea)
 
     # ---------- 主题 ----------
+
+    def _fit_window_to_workarea(self):
+        """窗口若伸进任务栏，就把高度/宽度收掉超出的部分。
+
+        初始 geometry 已按工作区夹过【尺寸】，但【摆放位置】由 Windows 决定 ——
+        实测它会把窗口放在 y=+40，客户区底边于是又超出工作区（状态栏再被任务栏
+        压住一次）。标题栏多高、WM 爱把窗口放哪，都不用猜：布局完成后量一次
+        真实底边/右边，超出工作区就收掉。"""
+        wa = _windows_workarea()
+        if not wa:
+            return
+        try:
+            self.root.update_idletasks()
+            if self.root.winfo_rootx() <= 1 and self.root.winfo_rooty() <= 1:
+                return                      # 还没被摆出来（没映射），量了也是假的
+            w, h = self.root.winfo_width(), self.root.winfo_height()
+            dy = (self.root.winfo_rooty() + h) - wa[1]
+            dx = (self.root.winfo_rootx() + w) - wa[0]
+            if dy > 0 or dx > 0:
+                self.root.geometry("%dx%d" % (w - max(dx, 0), h - max(dy, 0)))
+        except tk.TclError:
+            pass
 
     def _setup_style(self):
         s = ttk.Style(self.root)
@@ -9382,6 +9406,25 @@ def selftest():
                 save_prefs(**pref_before)
             assert load_prefs() == pref_before, "自测不该改掉用户的偏好"
             print("「删除免确认」开关自测通过")
+            # ★ 初始窗口尺寸不许超出屏幕工作区：写死 1640x960 在高缩放屏上比整个屏幕
+            #   还大，Windows 会把窗口压满全屏、底边（状态栏）被任务栏挡住
+            assert initial_geometry(root, workarea=(4000, 2000)) == "1640x960", \
+                "大屏该维持原尺寸"
+            assert initial_geometry(root, workarea=(1280, 664)) == "1280x664"
+            # workarea=None = 自动探测；探测不出（非 Windows）才走"屏幕高-60"的兜底
+            fallback = "%dx%d" % (min(1640, root.winfo_screenwidth()),
+                                  min(960, max(root.winfo_screenheight() - 60, 400)))
+            assert initial_geometry(root, workarea=None) in (initial_geometry(root),
+                                                             fallback)
+            real = initial_geometry(root)
+            mw, mh = real.split("x")
+            assert int(mw) <= root.winfo_screenwidth(), real
+            assert int(mh) <= root.winfo_screenheight(), real
+            wa = _windows_workarea()
+            if wa:
+                assert int(mw) <= wa[0] and int(mh) <= wa[1], (real, wa)
+            print(f"初始窗口尺寸自测通过（本机 = {real}，"
+                  f"工作区 = {_windows_workarea()}）")
             root.destroy()
             print("GUI 构建烟测通过")
         except tk.TclError as e:
@@ -9389,6 +9432,40 @@ def selftest():
 
 
 # ================= main =================
+
+def _windows_workarea():
+    """主显示器的【工作区】（整个屏幕去掉任务栏后的可用区域）→ (宽, 高)。
+
+    用 Win32 的 SPI_GETWORKAREA 拿精确值；非 Windows 或调用失败返回 None
+    （调用方自己兜底）。DPI 未感知的进程拿到的也是虚拟化后的逻辑像素，
+    和 Tk geometry 用的是同一套坐标，不用换算。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        rect = wintypes.RECT()
+        # SPI_GETWORKAREA = 0x0030
+        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+            return (rect.right - rect.left, rect.bottom - rect.top)
+    except Exception:
+        pass
+    return None
+
+
+def initial_geometry(root, workarea=None):
+    """主窗口的初始尺寸：想要 1640x960，但不能大过屏幕的工作区。
+
+    ★ 直接写死 "1640x960" 在缩放比例高的屏幕上（如 1920x1080 @150% → 逻辑 1280x720）
+      比整个屏幕还大 —— Windows 把窗口压满整屏，底边（状态栏）被任务栏挡住，
+      每次打开都得手动拖。这里把尺寸夹进工作区；屏幕够大时维持原尺寸不变。"""
+    if workarea is None:
+        workarea = _windows_workarea()
+    if not workarea or workarea[0] <= 0 or workarea[1] <= 0:
+        # 拿不到精确工作区（非 Windows 等）：按"屏幕高 - 60"兜底，60 ≈ 常见任务栏高度
+        workarea = (root.winfo_screenwidth(),
+                    max(root.winfo_screenheight() - 60, 400))
+    w, h = min(1640, workarea[0]), min(960, workarea[1])
+    return "%dx%d" % (w, h)
+
 
 def main():
     # pythonw（无控制台）下 stdout/stderr 为 None，print 会崩 → 重定向到日志文件
