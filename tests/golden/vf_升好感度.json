@@ -10,7 +10,7 @@
       "VF_升好感度_08"
     ],
     "order_by": "Score",
-    "post_delay": 800,
+    "post_delay": 2000,
     "post_wait_freezes": 1200,
     "recognition": "TemplateMatch",
     "template": "qizhe.png",
@@ -25,9 +25,10 @@
     "order_by": "Score",
     "post_delay": 800,
     "post_wait_freezes": 1500,
+    "pre_delay": 1000,
     "recognition": "TemplateMatch",
     "template": "蛙锣.png",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "timeout": 4000
   },
   "VF_升好感度_03": {
@@ -107,8 +108,8 @@
       "VF_升好感度_02"
     ],
     "recognition": "TemplateMatch",
-    "template": "蛙锣.png",
-    "threshold": 0.85
+    "template": "冷暖自知印.png",
+    "threshold": 0.75
   },
   "VF_升好感度_09": {
     "action": "Swipe",

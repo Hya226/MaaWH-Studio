@@ -1,191 +1,162 @@
 {
   "VF_启动": {
     "next": [
-      "VF_启动_06_J1"
+      "VF_启动_01"
     ]
   },
   "VF_启动_01": {
+    "action": "StartApp",
+    "next": [
+      "VF_启动_11"
+    ],
+    "package": "com.cipaishe.wuhua.bilibili",
+    "post_delay": 25000
+  },
+  "VF_启动_02": {
     "action": "Click",
     "next": [
-      "VF_启动_06_J1"
+      "VF_启动_03"
     ],
     "post_delay": 800,
     "recognition": "TemplateMatch",
     "roi": [
-      822,
-      20,
-      458,
-      220
+      1135,
+      62,
+      90,
+      62
     ],
-    "template": "cha_x.png",
-    "threshold": 0.6,
+    "template": "ks_cha.png",
+    "threshold": 0.8,
     "timeout": 8000
   },
-  "VF_启动_02": {
+  "VF_启动_03": {
+    "action": "Click",
+    "next": [
+      "VF_启动_05"
+    ],
+    "post_delay": 6000,
+    "target": [
+      611,
+      361
+    ]
+  },
+  "VF_启动_05": {
     "action": "DoNothing",
     "next": [
-      "VF_启动_02_Hit"
+      "VF_启动_05_Hit"
     ],
     "on_error": [
-      "VF_启动_End"
+      "VF_启动_08"
     ],
     "timeout": 3000
   },
-  "VF_启动_02_Hit": {
+  "VF_启动_05_Hit": {
     "action": "DoNothing",
     "next": [
-      "VF_启动_01"
+      "VF_启动_06"
     ],
     "recognition": "TemplateMatch",
-    "template": "cha_x.png",
-    "threshold": 0.6
+    "template": "wu.png",
+    "threshold": 0.7
   },
-  "VF_启动_03": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_03_Hit"
-    ],
-    "on_error": [
-      "VF_启动_End"
-    ],
-    "timeout": 150000
-  },
-  "VF_启动_03_Hit": {
-    "action": "DoNothing",
-    "expected": [
-      "进入游戏",
-      "点击任意处",
-      "任意处进入",
-      "久进",
-      "进斿戈"
-    ],
-    "next": [
-      "VF_启动_04"
-    ],
-    "rate_limit": 800,
-    "recognition": "OCR",
-    "roi": [
-      191,
-      120,
-      1000,
-      480
-    ]
-  },
-  "VF_启动_04": {
+  "VF_启动_06": {
     "action": "Click",
     "next": [
-      "VF_启动_06_J1"
+      "VF_启动_07"
     ],
-    "post_delay": 2500,
-    "pre_delay": 500,
+    "post_delay": 0,
     "target": [
       640,
       360
     ]
   },
-  "VF_启动_05": {
-    "next": [
-      "Common_关弹窗"
-    ]
-  },
-  "VF_启动_06_J1": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_06_J1_Hit"
-    ],
-    "on_error": [
-      "VF_启动_06_J2"
-    ],
-    "timeout": 240000
-  },
-  "VF_启动_06_J1_Hit": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_02"
-    ],
-    "recognition": "TemplateMatch",
-    "template": "cha_x.png",
-    "threshold": 0.6
-  },
-  "VF_启动_06_J2": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_06_J2_Hit"
-    ],
-    "on_error": [
-      "VF_启动_06_J3"
-    ],
-    "timeout": 240000
-  },
-  "VF_启动_06_J2_Hit": {
-    "action": "DoNothing",
-    "expected": [
-      "进入游戏",
-      "点击任意处",
-      "任意处进入",
-      "久进",
-      "进斿戈"
-    ],
-    "next": [
-      "VF_启动_03"
-    ],
-    "recognition": "OCR",
-    "roi": [
-      191,
-      120,
-      1000,
-      480
-    ]
-  },
-  "VF_启动_06_J3": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_06_J3_Hit"
-    ],
-    "on_error": [
-      "VF_启动_End"
-    ],
-    "timeout": 240000
-  },
-  "VF_启动_06_J3_Hit": {
-    "action": "DoNothing",
-    "next": [
-      "VF_启动_07"
-    ],
-    "recognition": "TemplateMatch",
-    "roi": [
-      580,
-      100,
-      700,
-      460
-    ],
-    "template": "yanxun.png",
-    "threshold": 0.5
-  },
   "VF_启动_07": {
+    "action": "Click",
+    "next": [
+      "VF_启动_08"
+    ],
+    "post_delay": 6000,
+    "post_wait_freezes": 100,
+    "recognition": "TemplateMatch",
+    "template": "qd_cha.png",
+    "threshold": 0.85,
+    "timeout": 8000
+  },
+  "VF_启动_08": {
     "action": "DoNothing",
     "next": [
-      "VF_启动_07_Hit"
+      "VF_启动_08_Hit"
     ],
     "on_error": [
       "VF_启动_End"
     ],
     "timeout": 3000
   },
-  "VF_启动_07_Hit": {
+  "VF_启动_08_Hit": {
     "action": "DoNothing",
     "next": [
-      "VF_启动_05"
+      "VF_启动_09"
+    ],
+    "rate_limit": 200,
+    "recognition": "TemplateMatch",
+    "template": "tc_cha.png",
+    "threshold": 0.8
+  },
+  "VF_启动_09": {
+    "action": "Click",
+    "next": [
+      "VF_启动_08"
+    ],
+    "post_delay": 800,
+    "rate_limit": 200,
+    "recognition": "TemplateMatch",
+    "template": "tc_cha.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_启动_10": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_10_Hit"
+    ],
+    "on_error": [
+      "VF_启动_11"
+    ],
+    "timeout": 3000
+  },
+  "VF_启动_10_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_02"
     ],
     "recognition": "TemplateMatch",
     "roi": [
-      580,
-      100,
-      700,
-      460
+      1141,
+      67,
+      68,
+      55
     ],
-    "template": "yanxun.png",
-    "threshold": 0.5
+    "template": "ks_cha.png",
+    "threshold": 0.7
+  },
+  "VF_启动_11": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_11_Hit"
+    ],
+    "on_error": [
+      "VF_启动_10"
+    ],
+    "timeout": 3000
+  },
+  "VF_启动_11_Hit": {
+    "action": "DoNothing",
+    "next": [
+      "VF_启动_10"
+    ],
+    "recognition": "TemplateMatch",
+    "template": "ks_cha.png",
+    "threshold": 0.7
   },
   "VF_启动_End": {
     "action": "DoNothing",

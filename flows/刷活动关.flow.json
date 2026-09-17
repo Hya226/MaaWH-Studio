@@ -148,7 +148,7 @@
     "n009a491": {
       "type": "input",
       "x": 644.0,
-      "y": 690.0,
+      "y": 736.0,
       "title": "输入",
       "props": {
         "option": "刷取次数",
@@ -217,6 +217,42 @@
       },
       "num": 11,
       "next": null
+    },
+    "n003cbb3": {
+      "type": "pick",
+      "x": 598.0,
+      "y": 506.0,
+      "title": "选择(下拉)",
+      "props": {
+        "option": "关卡名",
+        "var_label": "",
+        "default": "",
+        "desc": "",
+        "targets": [
+          "n005119f"
+        ],
+        "cases": [
+          {
+            "name": "07",
+            "node": "",
+            "field": "expected",
+            "value": "07"
+          },
+          {
+            "name": "08",
+            "node": "",
+            "field": "expected",
+            "value": "08"
+          },
+          {
+            "name": "09",
+            "node": "",
+            "field": "expected",
+            "value": "09"
+          }
+        ]
+      },
+      "num": 12
     }
   },
   "schemaVersion": 4

@@ -1,0 +1,145 @@
+{
+  "VF_清体力": {
+    "next": [
+      "VF_清体力_01"
+    ]
+  },
+  "VF_清体力_01": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_02"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "sy_yx.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_02": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_09"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "yx_ksxl.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_06": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_07"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "st.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_07": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_11"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "zd_jia.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_09": {
+    "action": "Click",
+    "expected": [
+      "冬谷币"
+    ],
+    "next": [
+      "VF_清体力_10"
+    ],
+    "post_delay": 600,
+    "recognition": "OCR",
+    "timeout": 8000
+  },
+  "VF_清体力_10": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_06"
+    ],
+    "post_delay": 500,
+    "target": [
+      1097,
+      353
+    ]
+  },
+  "VF_清体力_11": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_12"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "duigou.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_12": {
+    "action": "DoNothing",
+    "next": [
+      "VF_清体力_12_Hit"
+    ],
+    "on_error": [
+      "VF_清体力_15"
+    ],
+    "timeout": 3000
+  },
+  "VF_清体力_12_Hit": {
+    "action": "DoNothing",
+    "expected": [
+      "部分器者好感已满"
+    ],
+    "next": [
+      "VF_清体力_13"
+    ],
+    "recognition": "OCR"
+  },
+  "VF_清体力_13": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_15"
+    ],
+    "post_delay": 800,
+    "recognition": "TemplateMatch",
+    "template": "duigou.png",
+    "threshold": 0.7,
+    "timeout": 8000
+  },
+  "VF_清体力_14": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_16"
+    ],
+    "post_delay": 800,
+    "pre_delay": 500,
+    "recognition": "TemplateMatch",
+    "template": "wancheng.png",
+    "threshold": 0.8,
+    "timeout": 8000
+  },
+  "VF_清体力_15": {
+    "action": "Click",
+    "next": [
+      "VF_清体力_14"
+    ],
+    "post_delay": 500,
+    "pre_delay": 500,
+    "target": [
+      320,
+      247
+    ]
+  },
+  "VF_清体力_16": {
+    "next": [
+      "Common_回主页"
+    ]
+  }
+}

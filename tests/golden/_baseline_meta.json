@@ -1,37 +1,7 @@
 {
   "flowCount": 18,
-  "flowEditorSha256": "7f094e25e54e3bc0b098ee8072691c1f9b89dda99bf4b18e86ae4c73e045eef8",
+  "flowEditorSha256": "ac7793333f58de10c6db94f0650c91b3e63da778e63c363a1a72b355c6350c24",
   "flows": [
-    {
-      "chainLen": 26,
-      "crash": null,
-      "errors": [],
-      "file": "刷冬谷币.flow.json",
-      "name": "刷冬谷币",
-      "pipelineNodes": 48,
-      "stem": "刷冬谷币",
-      "templates": [
-        "cha_x.png",
-        "claim_done.png",
-        "donggubi.png",
-        "duigou.png",
-        "kaishi_xunlian.png",
-        "sutong.png",
-        "sutong_dialog.png",
-        "sutong_minus.png",
-        "sutong_plus.png",
-        "yanxun.png"
-      ],
-      "warnings": [
-        "#3「CloseAnno2?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "#27「DongGuBiTpl?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "#26「DongGuBiOcr?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "#25「FavYes?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "#17「Common_回主页验证」是公共收口节点（进入后流程即终止），放在链中间会导致其后的节点执行不到",
-        "#19「YanXun?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "4 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#1「刷谷段1」、#5「TapToEnter」、#17「Common_回主页验证」、#18「刷谷_返回战前」"
-      ]
-    },
     {
       "chainLen": 10,
       "crash": null,
@@ -83,6 +53,7 @@
       "templates": [
         "qizhe.png",
         "tongxiang.png",
+        "冷暖自知印.png",
         "蛙锣.png"
       ],
       "warnings": [
@@ -135,22 +106,22 @@
       ]
     },
     {
-      "chainLen": 7,
+      "chainLen": 10,
       "crash": null,
       "errors": [],
       "file": "启动.flow.json",
       "name": "启动",
-      "pipelineNodes": 18,
+      "pipelineNodes": 17,
       "stem": "启动",
       "templates": [
-        "cha_x.png",
-        "yanxun.png"
+        "ks_cha.png",
+        "qd_cha.png",
+        "tc_cha.png",
+        "wu.png"
       ],
       "warnings": [
-        "#2「CloseAnno2H?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "#5「Common_关弹窗」是公共收口节点（进入后流程即终止），放在链中间会导致其后的节点执行不到",
-        "#7「YanXunDone?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
-        "2 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#4「TapToEnterH」、#5「Common_关弹窗」"
+        "#10「分支」✗未命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
+        "3 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#1「启动游戏」、#3「固定坐标点击」、#6「固定坐标点击」"
       ]
     },
     {
@@ -298,12 +269,12 @@
       ]
     },
     {
-      "chainLen": 40,
+      "chainLen": 43,
       "crash": null,
       "errors": [],
       "file": "派遣公司事务.flow.json",
       "name": "派遣公司事务",
-      "pipelineNodes": 52,
+      "pipelineNodes": 58,
       "stem": "派遣公司事务",
       "templates": [
         "bangongshi.png",
@@ -312,8 +283,8 @@
         "chashi_tuichu.png",
         "dianjitoubi.png",
         "duihua_maohao.png",
-        "huoquganying.png",
         "paiqiangongsi.png",
+        "pinming_tuichu.png",
         "shouquziyuan.png",
         "tea_0.png",
         "tea_max.png",
@@ -332,6 +303,7 @@
         "#27「分支」✗未命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
         "#30「分支」✗未命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
         "#33「分支」✗未命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
+        "#45「分支」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
         "#39「退出派遣公司按钮还在?」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
         "15 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#3「感应操作1」、#5「感应操作2」、#11「点中央关闭」、#16「固定坐标点击」、#23「固定坐标点击」、#25「固定坐标点击」 等"
       ]
@@ -346,6 +318,27 @@
       "stem": "测试流程",
       "templates": [],
       "warnings": []
+    },
+    {
+      "chainLen": 12,
+      "crash": null,
+      "errors": [],
+      "file": "清体力.flow.json",
+      "name": "清体力",
+      "pipelineNodes": 15,
+      "stem": "清体力",
+      "templates": [
+        "duigou.png",
+        "st.png",
+        "sy_yx.png",
+        "wancheng.png",
+        "yx_ksxl.png",
+        "zd_jia.png"
+      ],
+      "warnings": [
+        "#16「公共节点(收口)」是公共收口节点（进入后流程即终止），放在链中间会导致其后的节点执行不到",
+        "3 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#10「固定坐标点击」、#16「公共节点(收口)」、#15「固定坐标点击」"
+      ]
     },
     {
       "chainLen": 2,
@@ -452,7 +445,7 @@
     1280,
     720
   ],
-  "generatedAt": "2026-09-15T22:14:36+08:00",
+  "generatedAt": "2026-09-17T08:34:16+08:00",
   "platform": "Windows-11-10.0.26200-SP0",
   "problems": [],
   "python": "3.12.5"
