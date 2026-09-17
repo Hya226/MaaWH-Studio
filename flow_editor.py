@@ -2925,6 +2925,16 @@ def list_flows():
     return sorted(glob.glob(os.path.join(FLOWS_DIR, "*.flow.json")))
 
 
+def flow_name_of(path):
+    """flows/*.flow.json 路径 → 流程名。
+
+    ★ 剥的是 `.flow.json` 双后缀：单层 splitext 会留下 ".flow"，
+      拿它去查注册清单/拼 vf_ 文件名全部对不上（注册对话框首版就栽在这）。"""
+    base = os.path.basename(path)
+    return base[:-len(".flow.json")] if base.endswith(".flow.json") \
+        else os.path.splitext(base)[0]
+
+
 def list_templates():
     files = glob.glob(os.path.join(IMG_DIR, "*.png"))
     files.sort(key=os.path.getmtime, reverse=True)   # 越晚存入越靠前
@@ -3593,6 +3603,57 @@ def register_on_phone(flow_name, log, options=None):
         f"（原清单已备份为 interface.json.bak）")
 
 
+def local_interface_tasks(path=None):
+    """读本地任务包 interface.json → {任务名: entry}，供「注册到任务包」对话框
+    标注哪些流程已经写进去过。文件缺失/解析失败都返回空 dict（不影响打开对话框）。"""
+    if path is None:
+        path = os.path.join(ROOT, "whmx", "interface.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = jsonc_loads(f.read())
+        return {t.get("name"): t.get("entry") for t in data.get("task", [])
+                if isinstance(t, dict) and t.get("name")}
+    except Exception:
+        return {}
+
+
+def register_local_interface(flow_name, log=None, options=None, path=None):
+    """把流程注册进本地任务包 whmx/interface.json（与手机同一个 upsert_flow_task 口径）。
+
+    ★ 必须回写这一份：打 APK 时 assets 装的就是本地任务包，只注册到手机运行副本的话，
+      新设备装包看不到这个流程（清体力 2026-09-17 就是这样丢的）。
+    子流程不用注册：注册只影响清单显示，执行是整目录加载 pipeline，不查清单。
+    文件是带 // 注释的 JSONC：`{` 后面的头部注释块原样保留（App 解析器兼容注释），
+    其余注释随重排丢弃——与手机副本同一处理；改前备份 interface.json.bak。"""
+    if path is None:
+        path = os.path.join(ROOT, "whmx", "interface.json")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    lines = text.splitlines()
+    comments = []
+    if lines and lines[0].strip() == "{":
+        for ln in lines[1:]:
+            if ln.strip().startswith("//"):
+                comments.append(ln.strip())
+            else:
+                break
+    data = jsonc_loads(text)
+    upsert_flow_task(data, flow_name, log, options=options)
+    if os.path.isfile(path):
+        shutil.copy2(path, path + ".bak")
+    body = json.dumps(data, ensure_ascii=False, indent=2)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("{\n")
+        for ln in comments:
+            f.write("    " + ln + "\n")
+        f.write(body[1:] + "\n")
+    if log:
+        log(f"已注册到本地任务包 whmx/interface.json: {flow_name} → entry VF_{flow_name}"
+            "（原文件已备份 interface.json.bak）")
+
+
 def grab_frame_to(path):
     """FrameSave 三步抓帧 → 存到 path；返回错误信息或 None"""
     import time as _t
@@ -3741,6 +3802,137 @@ class SyncDialog(tk.Toplevel):
     def _try_close(self):
         if self._done:
             self.destroy()
+
+
+class InterfaceSyncDialog(tk.Toplevel):
+    """「⤴ 注册到任务包」选择窗：把流程注册写进本地 whmx/interface.json。
+
+    ★ 打 APK 时 assets 装的就是本地任务包——只注册到手机运行副本的话，
+      新设备装包看不到该流程（清体力 2026-09-17 就是这样丢的）。
+    每行标注当前状态（已注册 / 未注册 / 旧入口→转正 / 未同步过），
+    默认勾上未注册的；子流程不需要勾（注册只影响清单显示，不影响执行）。"""
+
+    def __init__(self, parent, ed):
+        super().__init__(parent)
+        self.ed = ed
+        self.title("注册到任务包 · whmx/interface.json")
+        self.configure(bg=THEME["panel"])
+        self.resizable(False, False)
+        self.transient(parent)
+        self.attributes("-topmost", True)
+        ttk.Label(self, text="勾选要写进 whmx/interface.json 的流程",
+                  style="Title.TLabel").pack(pady=(12, 2))
+        ttk.Label(self, text="未同步过 = 任务包里还没有它的 pipeline 文件，勾了也先要同步一次才能跑",
+                  style="Dim.TLabel").pack()
+        self._build_rows()
+        btns = ttk.Frame(self)
+        btns.pack(pady=(2, 4))
+        ttk.Button(btns, text="只勾未注册", command=self._only_new).pack(side="left", padx=4)
+        ttk.Button(btns, text="全选",
+                   command=lambda: self._set_all(True)).pack(side="left", padx=4)
+        ttk.Button(btns, text="全不选",
+                   command=lambda: self._set_all(False)).pack(side="left", padx=4)
+        ttk.Button(btns, text="✔ 写入所勾流程", command=self._apply).pack(side="left", padx=4)
+        self.geometry("+%d+%d" % (parent.winfo_rootx() + parent.winfo_width() // 2 - 260,
+                                  parent.winfo_rooty() + parent.winfo_height() // 2 - 200))
+        self.lift()
+        self.focus_force()
+
+    @staticmethod
+    def _status_of(name, tasks):
+        """（显示状态, 是否视为已注册）。
+
+        ★ 按 entry 判断而不是只按任务名：清单里可能有手写任务名挂着同一入口
+          （如「每日免费礼包购买」→ VF_每日免费礼包），按名字查不到会误判未注册，
+          勾了写入就会冒出重复条目。"""
+        entry = tasks.get(name)
+        if entry == "VF_" + name:
+            return "已注册", True
+        if "VF_" + name in tasks.values():
+            alias = next(n for n, e in tasks.items() if e == "VF_" + name)
+            return f"已注册（清单名：{alias}）", True
+        if entry:
+            return "旧入口→转正", False
+        return "未注册", False
+
+    def _build_rows(self):
+        """按当前 whmx/interface.json 的注册状态铺勾选行（两列）"""
+        tasks = local_interface_tasks()
+        self.vars = {}
+        self.paths = {}
+        body = ttk.Frame(self)
+        body.pack(padx=14, pady=10)
+        r = c = 0
+        for p in sorted(list_flows(), key=lambda p: os.path.basename(p)):
+            name = flow_name_of(p)
+            status, reg = self._status_of(name, tasks)
+            if not os.path.isfile(os.path.join(ROOT, "whmx", "pipeline",
+                                               "vf_" + name + ".json")):
+                status += " ·未同步过"
+            # 默认只勾「未注册」的；「测试流程」是自测数据，再未注册也不默认勾
+            var = tk.BooleanVar(value=(not reg and not name.startswith("测试")))
+            self.vars[name] = var
+            self.paths[name] = p
+            # 勾选用项目统一的 ✓/✗ 文字开关（clam 的 ttk.Checkbutton 指示器像 ✗，语义反读）
+            self.ed._make_toggle(body, var,
+                                 text=f"{name}（{status}）").grid(
+                row=r, column=c, sticky="w", padx=10, pady=2)
+            c += 1
+            if c >= 2:
+                c = 0
+                r += 1
+
+    def _set_all(self, val):
+        for v in self.vars.values():
+            v.set(val)
+
+    def _only_new(self):
+        tasks = local_interface_tasks()
+        for name, v in self.vars.items():
+            _, reg = self._status_of(name, tasks)
+            v.set(not reg and not name.startswith("测试"))
+
+    def _apply(self):
+        picked = [n for n, v in self.vars.items() if v.get()]
+        if not picked:
+            messagebox.showinfo("注册到任务包", "没有勾选任何流程。")
+            return
+        # 入口已被清单里别的任务名占用 → 再写会冒出重复条目，拦下（重写同名的不拦，
+        # upsert 幂等，勾它就是想刷新参数）
+        tasks = local_interface_tasks()
+        clash = [n for n in picked
+                 if tasks.get(n) != "VF_" + n and "VF_" + n in tasks.values()]
+        if clash:
+            if not messagebox.askyesno(
+                    "注册到任务包",
+                    "这些流程的入口已被清单里的别的任务名占用：\n\n    "
+                    + "、".join(clash) +
+                    "\n\n将跳过它们（其余照常写入）。继续？"):
+                return
+            picked = [n for n in picked if n not in clash]
+            if not picked:
+                return
+        unsynced = [n for n in picked
+                    if not os.path.isfile(os.path.join(ROOT, "whmx", "pipeline",
+                                                       "vf_" + n + ".json"))]
+        if unsynced and not messagebox.askyesno(
+                "注册到任务包",
+                "这些流程还没同步过、任务包里没有它们的 pipeline 文件：\n\n    "
+                + "、".join(unsynced) +
+                "\n\n注册后清单可见但跑不起来（引擎整包校验会因引用缺失拒绝）。"
+                "仍要写入吗？"):
+            return
+        for name in picked:
+            with open(self.paths[name], encoding="utf-8") as f:
+                flow = normalize_flow(json.load(f))
+            register_local_interface(name, self.ed.log,
+                                     options=flow_input_options(flow))
+        self.ed.log(f"✓ 已把 {len(picked)} 个流程注册进本地 whmx/interface.json："
+                    + "、".join(picked))
+        messagebox.showinfo("注册到任务包",
+                            "已写入 " + str(len(picked)) + " 个流程。\n"
+                            "重新打包 APK 后新设备即可看到它们（原文件已备份 .bak）。")
+        self.destroy()
 
 
 class FlowEditor:
@@ -3984,6 +4176,7 @@ class FlowEditor:
         self._vsep(bar)
         self._flat_btn(bar, "✓ 校验", self.on_validate).pack(side="left", padx=3)
         self._flat_btn(bar, "⤓ 生成 JSON", self.on_build).pack(side="left", padx=3)
+        self._flat_btn(bar, "⤴ 注册到任务包", self.on_register_local).pack(side="left", padx=3)
 
         self._vsep(bar)
         self._btn_sync = self._flat_btn(
@@ -4381,6 +4574,13 @@ class FlowEditor:
         self.flow_combo.config(values=[os.path.basename(p) for p in list_flows()])
         self.flow_combo.set(os.path.basename(path))
         self._mark_saved()
+
+    def on_register_local(self):
+        """「⤴ 注册到任务包」：选择流程写进本地 whmx/interface.json。
+
+        同步到手机只注册运行副本，打 APK 进 assets 的是本地这一份——
+        不回写它，新设备装包就看不到流程（清体力 2026-09-17 的教训）。"""
+        InterfaceSyncDialog(self.root, self)
         self.log("✓ 已保存 " + path, "ok")
 
     # ---------- 节点增删改 ----------
@@ -8935,6 +9135,44 @@ def selftest():
     assert [t["name"] for t in udata["task"]].count("查找器者") == 1, udata
     assert udata["task"][0]["group"] == ["daily"], udata   # 留下的是正式任务、位置不动
     print("清单同步幂等自测通过")
+
+    # ★ 「⤴ 注册到任务包」回写本地 whmx/interface.json：打 APK 进 assets 的是本地这一份，
+    #   只注册到手机运行副本的话新设备看不到流程（清体力 2026-09-17 的教训）。
+    #   文件是带 // 注释的 JSONC：头部注释必须原样保留，写回幂等、不破坏既有条目。
+    _ip = os.path.join(_tf.gettempdir(), "maa_local_interface_selftest.json")
+    with open(_ip, "w", encoding="utf-8") as f:
+        f.write('{\n'
+                '    // 头部注释要活着\n'
+                '    "interface_version": 2,\n'
+                '    "name": "whmx",\n'
+                '    "task": [\n'
+                '        {"name": "查找器者", "label": "查找器者", "entry": "VF_查找器者",\n'
+                '         "group": ["tools"]},\n'
+                '        {"name": "手写任务", "label": "手写任务", "entry": "手写_入口"}\n'
+                '    ]\n'
+                '}\n')
+    register_local_interface("自测流程", options={"参数": {"type": "input"}}, path=_ip)
+    itasks = local_interface_tasks(_ip)
+    assert itasks.get("自测流程") == "VF_自测流程", itasks
+    assert itasks.get("查找器者") == "VF_查找器者", itasks   # 既有 tools 条目不破坏
+    assert itasks.get("手写任务") == "手写_入口", itasks     # 手写条目不动
+    _itxt = open(_ip, encoding="utf-8").read()
+    assert "// 头部注释要活着" in _itxt, "头部注释丢了"
+    assert os.path.isfile(_ip + ".bak"), "回写前应备份 .bak"
+    register_local_interface("自测流程", path=_ip)           # 再跑一遍：幂等不重复
+    idata = jsonc_loads(open(_ip, encoding="utf-8").read())
+    assert len([t for t in idata["task"] if t["name"] == "自测流程"]) == 1
+    assert idata["option"]["参数"]["type"] == "input"        # 参数写入顶层 option
+    os.remove(_ip)
+    os.remove(_ip + ".bak")
+    print("本地任务包注册回写自测通过")
+
+    # ★ 流程文件名 → 流程名必须剥 `.flow.json` 双后缀：单层 splitext 留下 ".flow"，
+    #   注册对话框拿它查清单/拼 vf 文件名全部对不上（首版全显示成"未注册·未同步过"）
+    assert flow_name_of(r"E:\x\清体力.flow.json") == "清体力"
+    assert flow_name_of(r"E:\x\abc.flow.json") == "abc"
+    assert flow_name_of(r"E:\x\没有后缀") == "没有后缀"
+    print("流程名提取（.flow.json 双后缀）自测通过")
 
     # ★ 从入口走不到的节点必须能报出来（2026-09-15 的教训：重建流程时把链上的 next 整片丢了，
     #   任务跑完**第一个节点**就 task end [ret=true] —— 不报错不失败，引擎 loaded 还是 True，
