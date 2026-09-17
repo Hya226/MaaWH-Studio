@@ -11,7 +11,7 @@
 同步时只向手机 files/taskpacks/whmx/pipeline/ 新增 vf_*.json；
 测试运行走宿主直达入口 `--es entry VF_<流程名> --ez vd true`（自动建虚拟屏后跑该入口）。
 
-本工具已独立于 MaaWH 仓库（本目录 = E:/MaaWH Stdio），任务包工程根由 project_paths.py
+本工具已独立于 MaaWH 仓库（本目录 = E:/MaaWH Studio），任务包工程根由 project_paths.py
 探测（环境变量 MAAWH_ROOT → project_root.txt → 兄弟/上级目录 → 默认位置），
 模板图仍写进 MaaWH 的 whmx/image，生成物仍回写 whmx/pipeline。
 

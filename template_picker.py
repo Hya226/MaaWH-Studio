@@ -14,7 +14,7 @@
   python template_picker.py [帧图路径]
   python template_picker.py [帧图路径] --neg 负样本目录
 
-本工具已独立于 MaaWH 仓库（本目录 = E:/MaaWH Stdio）：保存的模板图仍写进 MaaWH 的
+本工具已独立于 MaaWH 仓库（本目录 = E:/MaaWH Studio）：保存的模板图仍写进 MaaWH 的
 whmx/image，负样本沿用 MaaWH/_tools/neg_frames；工程根由 project_paths.py 探测。
 """
 import os

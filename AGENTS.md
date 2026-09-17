@@ -1,8 +1,8 @@
-# MaaWH Stdio（流程编辑器工作区）— 交接与操作约定
+# MaaWH Studio（流程编辑器工作区）— 交接与操作约定
 
 **给后续 AI / 开发者的对照文档。开工前先看这一份，改完对着检查。**
 
-工作区：`E:\MaaWH Stdio`（独立目录，**不属 MaaWH 仓库**）。
+工作区：`E:\MaaWH Studio`（独立目录，**不属 MaaWH 仓库**）。
 本目录只负责「可视化流程编辑器 + 模板框选工具」；App（`app/`）与任务包（`whmx/`）在 `E:\MaaWH`，
 那边的交接文档是 `E:\MaaWH\AGENTS.md`（任务包结构、interface.json 协议、App 侧行为看它）。
 两边**交界只有四处**：读负样本 `_tools/neg_frames/`、写模板图 `whmx/image/`、

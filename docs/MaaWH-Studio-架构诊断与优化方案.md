@@ -1,6 +1,6 @@
 # MaaWH Studio 架构诊断与优化方案
 
-> 对象：`E:\MaaWH Stdio`（PC 端可视化流程编辑器 / 模板框选工具 / 流程定义）
+> 对象：`E:\MaaWH Studio`（PC 端可视化流程编辑器 / 模板框选工具 / 流程定义）
 > 关联：`E:\MaaWH`（安卓端 App + 任务包 `whmx/`，本次**只读不改**）
 > 日期：2026-09-14
 > 原则：先读代码后评估；每条结论标注证据来源；不确定处标注「未确认」，不编造。
@@ -80,7 +80,7 @@ flows/*.flow.json  ──(validate_flow)──> 校验
 ### 1.2 目录结构与模块划分
 
 ```
-E:\MaaWH Stdio\
+E:\MaaWH Studio\
 ├─ flow_editor.py          # 主程序（节点模型 + 校验/生成 + GUI + adb 同步）  ← 唯一需要大改的文件
 ├─ template_picker.py      # 模板框选（负样本校验、建议阈值）
 ├─ import_pipelines.py     # 手写 pipeline → .flow.json 反向导入（一次性迁移工具）
@@ -625,7 +625,7 @@ files/maa_logs/maafw.log
 
 ### 4.0 范围与三条硬约束
 
-**范围**：只改 `E:\MaaWH Stdio\flow_editor.py`。不改 `E:\MaaWH`（App / 任务包 / `whmx/*.json`），不改 `flows/*.flow.json` 的**语义**，不改同步通道的协议、路径、触发方式。`template_picker.py` / `import_pipelines.py` 只在「共享配置读取」这一处做**可选**跟进，不在本方案的必要路径上。
+**范围**：只改 `E:\MaaWH Studio\flow_editor.py`。不改 `E:\MaaWH`（App / 任务包 / `whmx/*.json`），不改 `flows/*.flow.json` 的**语义**，不改同步通道的协议、路径、触发方式。`template_picker.py` / `import_pipelines.py` 只在「共享配置读取」这一处做**可选**跟进，不在本方案的必要路径上。
 
 **三条硬约束**（来自你的原始要求，逐条落实）：
 
@@ -1122,7 +1122,7 @@ def jname(flow, nid):
 }
 ```
 
-**落地动作**：把 `E:\MaaWH\MaaFramework\tools\pipeline.schema.json` 复制到 `E:\MaaWH Stdio\docs\schema\vendor\pipeline.schema.json`（只读副本，`vendor/README.md` 记录来源提交号 `96b046d` 与日期），**不跨仓库引用**，避免 MaaWH 搬家后 schema 失效。
+**落地动作**：把 `E:\MaaWH\MaaFramework\tools\pipeline.schema.json` 复制到 `E:\MaaWH Studio\docs\schema\vendor\pipeline.schema.json`（只读副本，`vendor/README.md` 记录来源提交号 `96b046d` 与日期），**不跨仓库引用**，避免 MaaWH 搬家后 schema 失效。
 
 #### 4.3.7 版本迁移策略（总结）
 
@@ -1590,7 +1590,7 @@ sequenceDiagram
 **配置**：读同目录 `editor_config.json`（不存在则用内置默认值，**不自动创建**，避免污染仓库）：
 
 ```jsonc
-// E:\MaaWH Stdio\editor_config.json（新增，可入库；含机器相关值时请自行决定是否 .gitignore）
+// E:\MaaWH Studio\editor_config.json（新增，可入库；含机器相关值时请自行决定是否 .gitignore）
 {
   "adb": "D:\\android-studio\\Sdk\\platform-tools\\adb.exe",
   "device": "2c92e197",
@@ -1901,7 +1901,7 @@ def test_pipeline_matches_golden(path):
 ### A.1 复现 E8：`switch` 候选内容节点被剥离 `next`（branch 保留）
 
 ```bash
-cd "/e/MaaWH Stdio"
+cd "/e/MaaWH Studio"
 python - <<'PY'
 import json, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -1936,7 +1936,7 @@ PY
 ### A.2 复现 E9：占位符模板被当成缺失模板
 
 ```bash
-cd "/e/MaaWH Stdio"
+cd "/e/MaaWH Studio"
 python - <<'PY'
 import io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -1954,7 +1954,7 @@ PY
 ### A.3 复现 E10：节点名位置化，重排即改语义
 
 ```bash
-cd "/e/MaaWH Stdio"
+cd "/e/MaaWH Studio"
 python - <<'PY'
 import json, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -1973,7 +1973,7 @@ PY
 ### A.4 复现 E11：4 类节点不写 `timeout`，继承 90000 ms
 
 ```bash
-cd "/e/MaaWH Stdio"
+cd "/e/MaaWH Studio"
 python - <<'PY'
 import json, io, sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -2006,7 +2006,7 @@ grep -a "Task timeout" /tmp/maafw.log | tail -3
 ### A.5 复现 E12：重绘性能基准
 
 ```bash
-cd "/e/MaaWH Stdio"
+cd "/e/MaaWH Studio"
 python - <<'PY'
 import io, sys, time, json, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -2068,10 +2068,10 @@ grep -n -B3 -A6 '"text"' "E:/MaaWH/MaaFramework/source/MaaFramework/Resource/Pip
 grep -n "kDefaultThreshold" "E:/MaaWH/MaaFramework/source/MaaFramework/Vision/VisionTypes.h"
 
 # E13 快捷键只有 3 个
-cd "/e/MaaWH Stdio" && grep -n "bind(" flow_editor.py | grep -iE "Control|Delete|F5|Escape"
+cd "/e/MaaWH Studio" && grep -n "bind(" flow_editor.py | grep -iE "Control|Delete|F5|Escape"
 
 # E14 无横向滚动
-cd "/e/MaaWH Stdio" && grep -n "xscroll\|xview" flow_editor.py
+cd "/e/MaaWH Studio" && grep -n "xscroll\|xview" flow_editor.py
 ```
 
 ### A.7 观察到的「已发生过的事故」痕迹（供参考，非复现）
