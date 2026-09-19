@@ -7,6 +7,8 @@
     "n0025b1f",
     "n008d2db",
     "n0039839",
+    "n001b2ec",
+    "n002fa0d",
     "n002c99b",
     "n004ec14",
     "n0123e4f",
@@ -111,7 +113,7 @@
     "n0123e4f": {
       "type": "common",
       "x": 230.0,
-      "y": 1334.0,
+      "y": 1472.0,
       "title": "公共节点(收口)",
       "props": {
         "node": "Common_回主页"
@@ -208,12 +210,12 @@
         "template": "duigou.png"
       },
       "num": 15,
-      "next": "n002c99b"
+      "next": "n001b2ec"
     },
     "n004ec14": {
       "type": "detect_click",
       "x": 230.0,
-      "y": 1150.0,
+      "y": 1380.0,
       "title": "循环检测点击",
       "props": {
         "threshold": 0.8,
@@ -249,7 +251,7 @@
     "n002c99b": {
       "type": "tap",
       "x": 230.0,
-      "y": 966.0,
+      "y": 1242.0,
       "title": "固定坐标点击",
       "props": {
         "x": 282,
@@ -262,6 +264,44 @@
       },
       "num": 18,
       "next": "n004ec14"
+    },
+    "n001b2ec": {
+      "type": "branch",
+      "x": 230.0,
+      "y": 920.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duigou.png"
+      },
+      "num": 19,
+      "hit_next": "n002fa0d",
+      "miss_next": "n002c99b",
+      "next": "n002c99b"
+    },
+    "n002fa0d": {
+      "type": "detect_click",
+      "x": 230.0,
+      "y": 1058.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 2000,
+        "template": "duigou.png"
+      },
+      "num": 20,
+      "next": "n002c99b",
+      "hit_next": null,
+      "miss_next": null
     }
   },
   "schemaVersion": 4,

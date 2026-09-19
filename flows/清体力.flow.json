@@ -7,6 +7,8 @@
     "n0038fa7",
     "n0040f60",
     "n00313b8",
+    "n0035fcb",
+    "n0043c70",
     "n0051d2d",
     "n00404ed",
     "n001eb69"
@@ -114,6 +116,12 @@
             "name": "教材",
             "node": "",
             "value": "教材"
+          },
+          {
+            "name": "场域",
+            "node": "",
+            "field": "expected",
+            "value": "场域"
           }
         ],
         "default": "",
@@ -252,12 +260,12 @@
         "template": "duigou.png"
       },
       "num": 11,
-      "next": "n00404ed"
+      "next": "n0035fcb"
     },
     "n00404ed": {
       "type": "tap",
       "x": 184.0,
-      "y": 1058.0,
+      "y": 1150.0,
       "title": "固定坐标点击",
       "props": {
         "x": 320,
@@ -274,7 +282,7 @@
     "n0051d2d": {
       "type": "common",
       "x": 184.0,
-      "y": 1472.0,
+      "y": 1564.0,
       "title": "公共节点(收口)",
       "props": {
         "node": "Common_回主页"
@@ -285,7 +293,7 @@
     "n001eb69": {
       "type": "detect_click",
       "x": 184.0,
-      "y": 1196.0,
+      "y": 1288.0,
       "title": "循环检测点击",
       "props": {
         "threshold": 0.8,
@@ -299,6 +307,42 @@
       },
       "num": 18,
       "next": "n0051d2d"
+    },
+    "n0035fcb": {
+      "type": "branch",
+      "x": 184.0,
+      "y": 874.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duigou.png"
+      },
+      "num": 19,
+      "hit_next": "n0043c70",
+      "miss_next": "n00404ed",
+      "next": "n00404ed"
+    },
+    "n0043c70": {
+      "type": "detect_click",
+      "x": 184.0,
+      "y": 966.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "duigou.png"
+      },
+      "num": 20,
+      "next": "n00404ed"
     }
   },
   "schemaVersion": 4
