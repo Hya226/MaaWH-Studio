@@ -1,42 +1,16 @@
 {
   "name": "装卸装备",
   "chain": [
-    "n_CDZB1",
     "n_CDZB1_Hit",
-    "n_CDZB2_Hit",
-    "n_CDZB3_Hit",
+    "n0024893",
+    "n0091aa6",
+    "n004c3f0",
     "n_CDZB4_Hit",
-    "n_CDZB5_Hit",
-    "n_CDZB6_Hit",
-    "c_Common_回主页",
-    "n_CDZB6",
-    "n_CDZB5",
-    "n_CDZB3",
-    "n_CDZB2",
-    "n_CDZB2_S0",
-    "n_CDZB2_G1",
-    "n_CDZB2_S1",
-    "n_CDZB2_G2",
-    "n_CDZB2_S2",
-    "n_CDZB2_G3",
-    "n_CDZB2_S3",
-    "n_CDZB2_G4",
-    "n_CDZB2_S4",
-    "n_CDZB2_G5",
-    "n_CDZB2_S5",
-    "n_CDZB2_G6",
-    "n_CDZB2_S6",
-    "n_CDZB2_G7",
-    "n_CDZB2_S7",
-    "n_CDZB2_G8",
-    "n_CDZB2_S8",
-    "n_CDZB2_G9",
-    "n_CDZB2_S9",
-    "n_CDZB2_G10",
-    "n_CDZB2_S10",
-    "n_CDZB2_G11",
-    "n_CDZB2_S11",
-    "n_CDZB2_G12"
+    "n010a5ae",
+    "n0057aaf",
+    "n011a4f3",
+    "n006f7e3",
+    "c_Common_回主页"
   ],
   "nodes": {
     "n_CDZB1_Hit": {
@@ -58,54 +32,12 @@
         "template": "qizhe.png"
       },
       "num": 1,
-      "next": "n_CDZB2"
-    },
-    "n_CDZB2_Hit": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 138.0,
-      "title": "CDZB2_Hit",
-      "props": {
-        "threshold": 0.85,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 4000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 1500,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "蛙锣.png"
-      },
-      "num": 2,
-      "next": "n_CDZB3"
-    },
-    "n_CDZB3_Hit": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 230.0,
-      "title": "CDZB3_Hit",
-      "props": {
-        "threshold": 0.72,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 5000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 1200,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "wuqizhuangbei.png"
-      },
-      "num": 3,
-      "next": "n_CDZB4_Hit"
+      "next": "n0024893"
     },
     "n_CDZB4_Hit": {
       "type": "tap",
-      "x": 46,
-      "y": 322.0,
+      "x": 46.0,
+      "y": 460.0,
       "title": "CDZB4_Hit",
       "props": {
         "x": 316,
@@ -118,624 +50,136 @@
         "timeout": 3000
       },
       "num": 4,
-      "next": "n_CDZB5"
-    },
-    "n_CDZB5_Hit": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 414.0,
-      "title": "CDZB5_Hit",
-      "props": {
-        "threshold": 0.55,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 5000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 1200,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "chuandai.png"
-      },
-      "num": 5,
-      "next": "n_CDZB6"
-    },
-    "n_CDZB6_Hit": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 506.0,
-      "title": "CDZB6_Hit",
-      "props": {
-        "threshold": 0.65,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 5000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 1200,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "xiexia.png"
-      },
-      "num": 6,
-      "next": "c_Common_回主页"
+      "next": "n010a5ae"
     },
     "c_Common_回主页": {
       "type": "common",
-      "x": 46,
-      "y": 598.0,
+      "x": 46.0,
+      "y": 1104.0,
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
       },
       "num": 7
     },
-    "n_CDZB6": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 506.0,
-      "title": "CDZB6?",
+    "n0091aa6": {
+      "type": "detect_click",
+      "x": 46.0,
+      "y": 276.0,
+      "title": "循环检测点击",
       "props": {
-        "threshold": 0.65,
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "1124,453,98,90",
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "kong.png"
+      },
+      "num": 9,
+      "next": "n004c3f0"
+    },
+    "n010a5ae": {
+      "type": "detect_click",
+      "x": 46.0,
+      "y": 552.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
         "ocr_text": "",
         "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "chuandai.png"
+      },
+      "num": 10,
+      "next": "n0057aaf"
+    },
+    "n011a4f3": {
+      "type": "detect_click",
+      "x": 46.0,
+      "y": 782.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
         "template": "xiexia.png"
       },
-      "hit_next": "n_CDZB6_Hit",
-      "miss_next": "c_Common_回主页",
-      "num": 8
+      "num": 11,
+      "next": "n006f7e3"
     },
-    "n_CDZB5": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 414.0,
-      "title": "CDZB5?",
+    "n0024893": {
+      "type": "subflow",
+      "x": 46.0,
+      "y": 138.0,
+      "title": "子流程(内联)",
       "props": {
-        "threshold": 0.55,
+        "flow": "查找器者"
+      },
+      "num": 12,
+      "next": "n0091aa6"
+    },
+    "n004c3f0": {
+      "type": "branch",
+      "x": 46.0,
+      "y": 368.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "1124,456,98,90",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "kong.png"
+      },
+      "num": 13,
+      "hit_next": "n0091aa6",
+      "miss_next": "n_CDZB4_Hit",
+      "next": "n_CDZB4_Hit"
+    },
+    "n0057aaf": {
+      "type": "branch",
+      "x": 230.0,
+      "y": 644.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
         "ocr_text": "",
         "roi": "",
-        "timeout": 8000,
+        "timeout": 3000,
         "rate_limit": 0,
         "template": "chuandai.png"
       },
-      "hit_next": "n_CDZB5_Hit",
-      "miss_next": "n_CDZB6",
-      "num": 9
-    },
-    "n_CDZB3": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 230.0,
-      "title": "CDZB3?",
-      "props": {
-        "threshold": 0.72,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "template": "wuqizhuangbei.png"
-      },
-      "hit_next": "n_CDZB3_Hit",
-      "miss_next": "n_CDZB4_Hit",
-      "num": 10
-    },
-    "n_CDZB2": {
-      "type": "branch",
-      "x": 46,
-      "y": 966.0,
-      "title": "CDZB2?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S0",
-      "num": 11
-    },
-    "n_CDZB2_S0": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1058.0,
-      "title": "CDZB2_S0",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 12,
-      "next": "n_CDZB2_G1"
-    },
-    "n_CDZB2_G1": {
-      "type": "branch",
-      "x": 46,
-      "y": 1150.0,
-      "title": "CDZB2_G1?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S1",
-      "num": 13
-    },
-    "n_CDZB2_S1": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1242.0,
-      "title": "CDZB2_S1",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
       "num": 14,
-      "next": "n_CDZB2_G2"
+      "hit_next": "n010a5ae",
+      "miss_next": "n011a4f3",
+      "next": "n011a4f3"
     },
-    "n_CDZB2_G2": {
+    "n006f7e3": {
       "type": "branch",
-      "x": 46,
-      "y": 1334.0,
-      "title": "CDZB2_G2?",
+      "x": 46.0,
+      "y": 920.0,
+      "title": "分支",
       "props": {
-        "threshold": 0.85,
+        "threshold": 0.7,
         "ocr_text": "",
         "roi": "",
         "timeout": 3000,
         "rate_limit": 0,
-        "template": "蛙锣.png"
+        "template": "xiexia.png"
       },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S2",
-      "num": 15
-    },
-    "n_CDZB2_S2": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1426.0,
-      "title": "CDZB2_S2",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 16,
-      "next": "n_CDZB2_G3"
-    },
-    "n_CDZB2_G3": {
-      "type": "branch",
-      "x": 46,
-      "y": 1518.0,
-      "title": "CDZB2_G3?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S3",
-      "num": 17
-    },
-    "n_CDZB2_S3": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1610.0,
-      "title": "CDZB2_S3",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 18,
-      "next": "n_CDZB2_G4"
-    },
-    "n_CDZB2_G4": {
-      "type": "branch",
-      "x": 46,
-      "y": 1702.0,
-      "title": "CDZB2_G4?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S4",
-      "num": 19
-    },
-    "n_CDZB2_S4": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1794.0,
-      "title": "CDZB2_S4",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 20,
-      "next": "n_CDZB2_G5"
-    },
-    "n_CDZB2_G5": {
-      "type": "branch",
-      "x": 46,
-      "y": 1886.0,
-      "title": "CDZB2_G5?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S5",
-      "num": 21
-    },
-    "n_CDZB2_S5": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1978.0,
-      "title": "CDZB2_S5",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 22,
-      "next": "n_CDZB2_G6"
-    },
-    "n_CDZB2_G6": {
-      "type": "branch",
-      "x": 46,
-      "y": 2070.0,
-      "title": "CDZB2_G6?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S6",
-      "num": 23
-    },
-    "n_CDZB2_S6": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2162.0,
-      "title": "CDZB2_S6",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 24,
-      "next": "n_CDZB2_G7"
-    },
-    "n_CDZB2_G7": {
-      "type": "branch",
-      "x": 46,
-      "y": 2254.0,
-      "title": "CDZB2_G7?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S7",
-      "num": 25
-    },
-    "n_CDZB2_S7": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2346.0,
-      "title": "CDZB2_S7",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 26,
-      "next": "n_CDZB2_G8"
-    },
-    "n_CDZB2_G8": {
-      "type": "branch",
-      "x": 46,
-      "y": 2438.0,
-      "title": "CDZB2_G8?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S8",
-      "num": 27
-    },
-    "n_CDZB2_S8": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2530.0,
-      "title": "CDZB2_S8",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 28,
-      "next": "n_CDZB2_G9"
-    },
-    "n_CDZB2_G9": {
-      "type": "branch",
-      "x": 46,
-      "y": 2622.0,
-      "title": "CDZB2_G9?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S9",
-      "num": 29
-    },
-    "n_CDZB2_S9": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2714.0,
-      "title": "CDZB2_S9",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 30,
-      "next": "n_CDZB2_G10"
-    },
-    "n_CDZB2_G10": {
-      "type": "branch",
-      "x": 46,
-      "y": 2806.0,
-      "title": "CDZB2_G10?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S10",
-      "num": 31
-    },
-    "n_CDZB2_S10": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2898.0,
-      "title": "CDZB2_S10",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 32,
-      "next": "n_CDZB2_G11"
-    },
-    "n_CDZB2_G11": {
-      "type": "branch",
-      "x": 46,
-      "y": 2990.0,
-      "title": "CDZB2_G11?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB2_S11",
-      "num": 33
-    },
-    "n_CDZB2_S11": {
-      "type": "swipe",
-      "x": 46,
-      "y": 3082.0,
-      "title": "CDZB2_S11",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 34,
-      "next": "n_CDZB2_G12"
-    },
-    "n_CDZB2_G12": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 138.0,
-      "title": "CDZB2_G12?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_CDZB2_Hit",
-      "miss_next": "n_CDZB3",
-      "num": 35
-    },
-    "n_CDZB1": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 46.0,
-      "title": "CDZB1?",
-      "props": {
-        "threshold": 0.72,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "template": "qizhe.png"
-      },
-      "hit_next": "n_CDZB1_Hit",
-      "miss_next": "n_CDZB2",
-      "num": 36
-    },
-    "n_opt_装卸装备_目标角色": {
-      "type": "input",
-      "x": 736.0,
-      "y": 138.0,
-      "title": "输入",
-      "num": 37,
-      "props": {
-        "option": "目标角色",
-        "var": "角色",
-        "var_label": "角色名",
-        "kind": "文本",
-        "default": "蛙锣",
-        "desc": "选择要操作的角色，需与 image/ 下 <角色名>.png 模板一致",
-        "raw": "VF_升好感度_08_Hit, VF_升好感度_02, VF_查找器者_03_Hit, VF_查找器者_02",
-        "field": "template",
-        "value": "",
-        "verify": "",
-        "pattern_msg": "",
-        "targets": [
-          "n_CDZB2",
-          "n_CDZB2_Hit"
-        ]
-      }
+      "num": 15,
+      "hit_next": "n011a4f3",
+      "miss_next": "c_Common_回主页",
+      "next": "c_Common_回主页"
     }
   },
   "schemaVersion": 4

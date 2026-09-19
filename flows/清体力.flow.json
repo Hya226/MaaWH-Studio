@@ -7,11 +7,9 @@
     "n0038fa7",
     "n0040f60",
     "n00313b8",
-    "n004adb2",
-    "n0023c04",
     "n0051d2d",
-    "n001a694",
-    "n00404ed"
+    "n00404ed",
+    "n001eb69"
   ],
   "name": "清体力",
   "nodes": {
@@ -247,72 +245,14 @@
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
-        "post_delay": 800,
+        "post_delay": 2000,
         "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "duigou.png"
       },
       "num": 11,
-      "next": "n004adb2"
-    },
-    "n004adb2": {
-      "type": "branch",
-      "x": 184.0,
-      "y": 920.0,
-      "title": "分支",
-      "props": {
-        "threshold": 0.7,
-        "ocr_text": "部分器者好感已满",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0
-      },
-      "num": 12,
-      "hit_next": "n001a694",
-      "miss_next": "n00404ed"
-    },
-    "n001a694": {
-      "type": "tpl_click",
-      "x": 598.0,
-      "y": 920.0,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.7,
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 0,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "duigou.png"
-      },
-      "num": 13,
-      "next": "n00404ed",
-      "hit_next": null,
-      "miss_next": null
-    },
-    "n0023c04": {
-      "type": "tpl_click",
-      "x": 184.0,
-      "y": 1196.0,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 500,
-        "post_delay": 800,
-        "post_wait_freezes": 0,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "wancheng.png"
-      },
-      "num": 14,
-      "next": "n0051d2d"
+      "next": "n00404ed"
     },
     "n00404ed": {
       "type": "tap",
@@ -329,18 +269,36 @@
         "repeat_delay": 350
       },
       "num": 15,
-      "next": "n0023c04"
+      "next": "n001eb69"
     },
     "n0051d2d": {
       "type": "common",
       "x": 184.0,
-      "y": 1288.0,
+      "y": 1472.0,
       "title": "公共节点(收口)",
       "props": {
         "node": "Common_回主页"
       },
       "num": 16,
       "next": null
+    },
+    "n001eb69": {
+      "type": "detect_click",
+      "x": 184.0,
+      "y": 1196.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "完成",
+        "roi": "988,589,248,95",
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "wancheng.png"
+      },
+      "num": 18,
+      "next": "n0051d2d"
     }
   },
   "schemaVersion": 4

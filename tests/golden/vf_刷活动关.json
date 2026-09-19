@@ -1,30 +1,8 @@
 {
   "VF_刷活动关": {
     "next": [
-      "VF_刷活动关_01"
+      "VF_刷活动关_13"
     ]
-  },
-  "VF_刷活动关_01": {
-    "action": "Click",
-    "next": [
-      "VF_刷活动关_02"
-    ],
-    "post_delay": 800,
-    "recognition": "TemplateMatch",
-    "template": "wjwy.png",
-    "threshold": 0.8,
-    "timeout": 8000
-  },
-  "VF_刷活动关_02": {
-    "action": "Click",
-    "next": [
-      "VF_刷活动关_03"
-    ],
-    "post_delay": 800,
-    "recognition": "TemplateMatch",
-    "template": "jhft.png",
-    "threshold": 0.8,
-    "timeout": 8000
   },
   "VF_刷活动关_03": {
     "action": "DoNothing",
@@ -52,7 +30,7 @@
       "09"
     ],
     "next": [
-      "VF_刷活动关_06"
+      "VF_刷活动关_14"
     ],
     "post_delay": 600,
     "recognition": "OCR",
@@ -74,21 +52,10 @@
     ],
     "post_delay": 600
   },
-  "VF_刷活动关_06": {
-    "action": "Click",
-    "next": [
-      "VF_刷活动关_07"
-    ],
-    "post_delay": 800,
-    "recognition": "TemplateMatch",
-    "template": "sutong.png",
-    "threshold": 0.8,
-    "timeout": 8000
-  },
   "VF_刷活动关_07": {
     "action": "Click",
     "next": [
-      "VF_刷活动关_09"
+      "VF_刷活动关_15"
     ],
     "post_delay": 800,
     "recognition": "TemplateMatch",
@@ -96,31 +63,99 @@
     "threshold": 0.8,
     "timeout": 8000
   },
-  "VF_刷活动关_09": {
-    "action": "Click",
-    "next": [
-      "VF_刷活动关_10"
-    ],
-    "post_delay": 800,
-    "recognition": "TemplateMatch",
-    "template": "duigou.png",
-    "threshold": 0.8,
-    "timeout": 8000
-  },
-  "VF_刷活动关_10": {
-    "action": "Click",
-    "next": [
-      "VF_刷活动关_11"
-    ],
-    "post_delay": 800,
-    "recognition": "TemplateMatch",
-    "template": "wancheng.png",
-    "threshold": 0.8,
-    "timeout": 8000
-  },
   "VF_刷活动关_11": {
     "next": [
       "Common_回主页"
     ]
+  },
+  "VF_刷活动关_13": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_13_Hit"
+    ],
+    "timeout": 30000
+  },
+  "VF_刷活动关_13_Hit": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_17"
+    ],
+    "post_delay": 600,
+    "rate_limit": 600,
+    "recognition": "TemplateMatch",
+    "template": "wjwy.png",
+    "threshold": 0.8
+  },
+  "VF_刷活动关_14": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_14_Hit"
+    ],
+    "timeout": 30000
+  },
+  "VF_刷活动关_14_Hit": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_07"
+    ],
+    "post_delay": 600,
+    "rate_limit": 600,
+    "recognition": "TemplateMatch",
+    "template": "sutong.png",
+    "threshold": 0.8
+  },
+  "VF_刷活动关_15": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_15_Hit"
+    ],
+    "timeout": 30000
+  },
+  "VF_刷活动关_15_Hit": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_16"
+    ],
+    "post_delay": 600,
+    "rate_limit": 600,
+    "recognition": "TemplateMatch",
+    "template": "duigou.png",
+    "threshold": 0.8
+  },
+  "VF_刷活动关_16": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_16_Hit"
+    ],
+    "timeout": 30000
+  },
+  "VF_刷活动关_16_Hit": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_11"
+    ],
+    "post_delay": 600,
+    "rate_limit": 600,
+    "recognition": "TemplateMatch",
+    "template": "wancheng.png",
+    "threshold": 0.8
+  },
+  "VF_刷活动关_17": {
+    "action": "DoNothing",
+    "next": [
+      "VF_刷活动关_17_Hit"
+    ],
+    "timeout": 30000
+  },
+  "VF_刷活动关_17_Hit": {
+    "action": "Click",
+    "next": [
+      "VF_刷活动关_03"
+    ],
+    "post_delay": 600,
+    "rate_limit": 600,
+    "recognition": "TemplateMatch",
+    "template": "jhft.png",
+    "threshold": 0.8
   }
 }

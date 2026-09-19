@@ -1,590 +1,91 @@
 {
-  "name": "查找器者",
   "chain": [
-    "n_查1",
-    "n_查1_Hit",
-    "n_查2_Hit",
-    "n_查2",
-    "n_查2_S0",
-    "n_查2_G1",
-    "n_查2_S1",
-    "n_查2_G2",
-    "n_查2_S2",
-    "n_查2_G3",
-    "n_查2_S3",
-    "n_查2_G4",
-    "n_查2_S4",
-    "n_查2_G5",
-    "n_查2_S5",
-    "n_查2_G6",
-    "n_查2_S6",
-    "n_查2_G7",
-    "n_查2_S7",
-    "n_查2_G8",
-    "n_查2_S8",
-    "n_查2_G9",
-    "n_查2_S9",
-    "n_查2_G10",
-    "n_查2_S10",
-    "n_查2_G11",
-    "n_查2_S11",
-    "n_查2_G12"
+    "n01315ee",
+    "n0126971",
+    "n01191d0"
   ],
+  "name": "查找器者",
   "nodes": {
-    "n_查1_Hit": {
+    "n01191d0": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 46.0,
-      "title": "查1_Hit",
+      "x": 184.0,
+      "y": 230.0,
+      "title": "找模板点击",
       "props": {
-        "threshold": 0.72,
+        "threshold": 0.75,
         "roi": "",
         "order_by": "Score",
         "timeout": 5000,
         "rate_limit": 0,
         "pre_delay": 0,
         "post_delay": 800,
-        "post_wait_freezes": 1200,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "qizhe.png"
-      },
-      "num": 1,
-      "next": "n_查2"
-    },
-    "n_查2_Hit": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 138.0,
-      "title": "查2_Hit",
-      "props": {
-        "threshold": 0.85,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 4000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 1500,
+        "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "蛙锣.png"
       },
-      "num": 2
+      "num": 1
     },
-    "n_查2": {
-      "type": "branch",
-      "x": 46,
-      "y": 230.0,
-      "title": "查2?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S0",
-      "num": 3
-    },
-    "n_查2_S0": {
+    "n0126971": {
       "type": "swipe",
-      "x": 46,
-      "y": 322.0,
-      "title": "查2_S0",
+      "x": 230.0,
+      "y": 368.0,
+      "title": "滑动",
       "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
+        "x1": 1219,
+        "y1": 377,
+        "x2": 59,
+        "y2": 364,
         "duration": 900,
         "repeat": 1,
         "repeat_delay": 350,
         "pre_wait_freezes": 0,
         "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
+        "post_delay": 600
       },
-      "num": 4,
-      "next": "n_查2_G1"
+      "num": 2,
+      "next": "n01315ee"
     },
-    "n_查2_G1": {
+    "n01315ee": {
       "type": "branch",
-      "x": 46,
-      "y": 414.0,
-      "title": "查2_G1?",
+      "x": 184.0,
+      "y": 92.0,
+      "title": "分支",
       "props": {
-        "threshold": 0.85,
+        "threshold": 0.75,
         "ocr_text": "",
         "roi": "",
-        "timeout": 3000,
+        "timeout": 5000,
         "rate_limit": 0,
         "template": "蛙锣.png"
       },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S1",
-      "num": 5
+      "num": 3,
+      "hit_next": "n01191d0",
+      "miss_next": "n0126971"
     },
-    "n_查2_S1": {
-      "type": "swipe",
-      "x": 46,
-      "y": 506.0,
-      "title": "查2_S1",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 6,
-      "next": "n_查2_G2"
-    },
-    "n_查2_G2": {
-      "type": "branch",
-      "x": 46,
-      "y": 598.0,
-      "title": "查2_G2?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S2",
-      "num": 7
-    },
-    "n_查2_S2": {
-      "type": "swipe",
-      "x": 46,
-      "y": 690.0,
-      "title": "查2_S2",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 8,
-      "next": "n_查2_G3"
-    },
-    "n_查2_G3": {
-      "type": "branch",
-      "x": 46,
-      "y": 782.0,
-      "title": "查2_G3?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S3",
-      "num": 9
-    },
-    "n_查2_S3": {
-      "type": "swipe",
-      "x": 46,
-      "y": 874.0,
-      "title": "查2_S3",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 10,
-      "next": "n_查2_G4"
-    },
-    "n_查2_G4": {
-      "type": "branch",
-      "x": 46,
-      "y": 966.0,
-      "title": "查2_G4?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S4",
-      "num": 11
-    },
-    "n_查2_S4": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1058.0,
-      "title": "查2_S4",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 12,
-      "next": "n_查2_G5"
-    },
-    "n_查2_G5": {
-      "type": "branch",
-      "x": 46,
-      "y": 1150.0,
-      "title": "查2_G5?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S5",
-      "num": 13
-    },
-    "n_查2_S5": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1242.0,
-      "title": "查2_S5",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 14,
-      "next": "n_查2_G6"
-    },
-    "n_查2_G6": {
-      "type": "branch",
-      "x": 46,
-      "y": 1334.0,
-      "title": "查2_G6?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S6",
-      "num": 15
-    },
-    "n_查2_S6": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1426.0,
-      "title": "查2_S6",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 16,
-      "next": "n_查2_G7"
-    },
-    "n_查2_G7": {
-      "type": "branch",
-      "x": 46,
-      "y": 1518.0,
-      "title": "查2_G7?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S7",
-      "num": 17
-    },
-    "n_查2_S7": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1610.0,
-      "title": "查2_S7",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 18,
-      "next": "n_查2_G8"
-    },
-    "n_查2_G8": {
-      "type": "branch",
-      "x": 46,
-      "y": 1702.0,
-      "title": "查2_G8?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S8",
-      "num": 19
-    },
-    "n_查2_S8": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1794.0,
-      "title": "查2_S8",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 20,
-      "next": "n_查2_G9"
-    },
-    "n_查2_G9": {
-      "type": "branch",
-      "x": 46,
-      "y": 1886.0,
-      "title": "查2_G9?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S9",
-      "num": 21
-    },
-    "n_查2_S9": {
-      "type": "swipe",
-      "x": 46,
-      "y": 1978.0,
-      "title": "查2_S9",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 22,
-      "next": "n_查2_G10"
-    },
-    "n_查2_G10": {
-      "type": "branch",
-      "x": 46,
-      "y": 2070.0,
-      "title": "查2_G10?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S10",
-      "num": 23
-    },
-    "n_查2_S10": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2162.0,
-      "title": "查2_S10",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 24,
-      "next": "n_查2_G11"
-    },
-    "n_查2_G11": {
-      "type": "branch",
-      "x": 46,
-      "y": 2254.0,
-      "title": "查2_G11?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": "n_查2_S11",
-      "num": 25
-    },
-    "n_查2_S11": {
-      "type": "swipe",
-      "x": 46,
-      "y": 2346.0,
-      "title": "查2_S11",
-      "props": {
-        "x1": 1000,
-        "y1": 650,
-        "x2": 200,
-        "y2": 650,
-        "duration": 900,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "pre_wait_freezes": 0,
-        "post_wait_freezes": 0,
-        "post_delay": 600,
-        "timeout": 2000
-      },
-      "num": 26,
-      "next": "n_查2_G12"
-    },
-    "n_查2_G12": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 138.0,
-      "title": "查2_G12?",
-      "props": {
-        "threshold": 0.85,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
-        "rate_limit": 0,
-        "template": "蛙锣.png"
-      },
-      "hit_next": "n_查2_Hit",
-      "miss_next": null,
-      "num": 27
-    },
-    "n_查1": {
-      "type": "branch",
-      "x": 368.0,
-      "y": 46.0,
-      "title": "查1?",
-      "props": {
-        "threshold": 0.72,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "template": "qizhe.png"
-      },
-      "hit_next": "n_查1_Hit",
-      "miss_next": "n_查2",
-      "num": 28
-    },
-    "n_opt_查找器者_目标角色": {
+    "n006d49b": {
       "type": "input",
-      "x": 736.0,
+      "x": 690.0,
       "y": 138.0,
       "title": "输入",
-      "num": 29,
       "props": {
-        "option": "目标角色",
-        "var": "角色",
-        "var_label": "角色名",
+        "option": "角色名",
+        "var": "",
+        "var_label": "",
         "kind": "文本",
-        "default": "蛙锣",
-        "desc": "选择要操作的角色，需与 image/ 下 <角色名>.png 模板一致",
-        "raw": "VF_装卸装备_11_Hit, VF_装卸装备_02, VF_升好感度_08_Hit, VF_升好感度_02",
-        "field": "template",
+        "default": "",
+        "desc": "",
+        "raw": "",
+        "field": "模板图 (template)",
         "value": "",
         "verify": "",
         "pattern_msg": "",
         "targets": [
-          "n_查2",
-          "n_查2_Hit"
+          "n01315ee",
+          "n01191d0"
         ]
-      }
+      },
+      "num": 5
     }
   },
   "schemaVersion": 4

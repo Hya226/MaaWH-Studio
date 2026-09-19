@@ -1,6 +1,6 @@
 {
   "flowCount": 18,
-  "flowEditorSha256": "ac7793333f58de10c6db94f0650c91b3e63da778e63c363a1a72b355c6350c24",
+  "flowEditorSha256": "3e1dc7c1485bf953c4e8fb5d897ea4336f98e15748934141ce936135ca9bbf56",
   "flows": [
     {
       "chainLen": 10,
@@ -8,17 +8,13 @@
       "errors": [],
       "file": "刷活动关.flow.json",
       "name": "刷活动关",
-      "pipelineNodes": 13,
+      "pipelineNodes": 18,
       "stem": "刷活动关",
       "templates": [
-        "duigou.png",
-        "jhft.png",
-        "jiahao.png",
-        "sutong.png",
-        "wancheng.png",
-        "wjwy.png"
+        "jiahao.png"
       ],
       "warnings": [
+        "#11「公共节点(收口)」是公共收口节点（进入后流程即终止），放在链中间会导致其后的节点执行不到",
         "2 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#5「滑动」、#11「公共节点(收口)」"
       ]
     },
@@ -320,12 +316,12 @@
       "warnings": []
     },
     {
-      "chainLen": 12,
+      "chainLen": 13,
       "crash": null,
       "errors": [],
       "file": "清体力.flow.json",
       "name": "清体力",
-      "pipelineNodes": 15,
+      "pipelineNodes": 17,
       "stem": "清体力",
       "templates": [
         "duigou.png",
@@ -337,6 +333,8 @@
       ],
       "warnings": [
         "#16「公共节点(收口)」是公共收口节点（进入后流程即终止），放在链中间会导致其后的节点执行不到",
+        "#17「分支」✓命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
+        "#17「分支」✗未命中出口跳回前面的节点（构成循环），请确保循环内有终止条件（如分支/收口节点）",
         "3 个节点未设置 timeout，将继承全局 90000ms（点完之后等下一个节点出现，最长空转 90 秒）：#10「固定坐标点击」、#16「公共节点(收口)」、#15「固定坐标点击」"
       ]
     },
@@ -445,7 +443,7 @@
     1280,
     720
   ],
-  "generatedAt": "2026-09-17T08:34:16+08:00",
+  "generatedAt": "2026-09-17T17:49:30+08:00",
   "platform": "Windows-11-10.0.26200-SP0",
   "problems": [],
   "python": "3.12.5"

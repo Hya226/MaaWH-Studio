@@ -81,6 +81,16 @@ CARD_MARGIN = 5 * GRID      # 画布滚动区在内容之外至少留 5 格（�
 SCHEMA_VERSION = 4
 TIDY_X = GRID               # 「整理布局」时主链的 x（贴左边一格，保证点完就能看见）
 
+# 任务队列分类：注册/同步时写进清单条目的 group（App 按它决定任务出现在哪个标签页，
+# 见 MainActivity.taskHome：group 含 "tools" → 小工具栏，否则 → 一键长草主队列）。
+# 流程文件缺这个键 = 未指定：已有清单条目的分组不动，新追加的落【小工具】（老行为）。
+QUEUE_NAMES = {"daily": "一键长草", "tools": "小工具"}
+
+
+def queue_label(queue):
+    """queue 值 → 中文名；None/未知 = 未指定（跟随清单现状）"""
+    return QUEUE_NAMES.get(queue, "未指定")
+
 
 def regex_error(text):
     """把文本当正则编译，合法返回 None，否则返回引擎那句报错。
@@ -399,6 +409,13 @@ def target_name_of(flow, token):
     return token
 
 
+# 【选择】/【输入】选项里值保持字符串的字段：expected 是【正则文本】，引擎按
+# 字符串/字符串数组解析；template/roi/order_by 同为文本。这些字段纯数字也不转 int
+# ——塞个数字进去，引擎 override_pipeline 直接 parse_task failed，任务一下发就死
+# （刷活动关「关卡名」"07"→7 炸的就是这个，2026-09-17）。
+_CASE_TEXT_FIELDS = ("expected", "template", "roi", "order_by")
+
+
 def case_value(field, raw, flow=None):
     """选项里那一格"值"文本 → 写进 pipeline_override 的值。
     `next` 是节点名列表（多个用逗号分隔）；`[..]` 开头按 JSON 解析；纯数字认成 int；
@@ -419,7 +436,7 @@ def case_value(field, raw, flow=None):
         if flow is None:
             return items
         return [target_name_of(flow, v) for v in items]
-    if re.fullmatch(r"-?\d+", text):
+    if field not in _CASE_TEXT_FIELDS and re.fullmatch(r"-?\d+", text):
         return int(text)
     if text in ("true", "false"):
         return text == "true"
@@ -485,12 +502,13 @@ def cand_target(flow, c):
 
 
 def branch_hit_block(flow, nid):
-    """【分支】节点的判定块：recognition + 期望文本/模板图(+threshold) + action + roi。
-    branch 自己生成的 *_Hit 用它，枝干候选的判定也用它 —— 条件只有一处定义，
-    两处不可能算出不同结论（以前枝干候选另配一份，还会漏掉 threshold/roi）。
-    条件还没配好（既没填 OCR 文字也没选模板图）返回 None。"""
+    """【分支】/【循环检测点击】节点的判定块：recognition + 期望文本/模板图(+threshold)
+    + action + roi。branch 自己生成的 *_Hit 用它，枝干候选的判定也用它 —— 条件只有
+    一处定义，两处不可能算出不同结论（以前枝干候选另配一份，还会漏掉 threshold/roi）。
+    条件还没配好（既没填 OCR 文字也没选模板图）返回 None。
+    ★ 返回的块 action 固定 DoNothing：调用方按需覆盖（循环检测点击会改成 Click）。"""
     nd = (flow.get("nodes") or {}).get(nid) or {}
-    if nd.get("type") != "branch":
+    if nd.get("type") not in ("branch", "detect_click"):
         return None
     p = nd.get("props") or {}
     texts = split_ocr_texts(p.get("ocr_text", ""))
@@ -660,6 +678,25 @@ NODE_TYPES = {
         "defaults": {"threshold": 0.7, "ocr_text": "", "roi": "", "timeout": 3000,
                      "rate_limit": 0},
     },
+    "detect_click": {
+        "label": "循环检测点击", "icon": "⊙", "color": "#3e8a8c", "light": "#8fd0d2",
+        "summary": tpl_summary,
+        # 判定窗口内反复识别（模板图组任一命中，或 OCR），命中即点击命中处并走
+        # 「下一个」；窗口耗尽仍未命中 = 节点超时失败（任务失败）。
+        # "没检测到就重新执行这个节点"的循环由引擎在窗口内的重试承担（识别间隔即重试节奏）。
+        "fields": [
+            ("template", "模板图组(逗号分隔,任一命中)", "tpl_multi"),
+            ("threshold", "阈值", "float"),
+            ("ocr_text", "OCR文本(填则忽略模板图)", "str"),
+            ("roi", "ROI x,y,w,h (空=全屏)", "roi"),
+            ("rate_limit", "识别间隔ms(重试节奏)", "int"),
+            ("timeout", "判定窗口ms(窗口内反复识别)", "int"),
+            ("pre_delay", "点击前延时ms", "int"),
+            ("post_delay", "点击后延时ms", "int"),
+        ],
+        "defaults": {"threshold": 0.8, "ocr_text": "", "roi": "", "rate_limit": 600,
+                     "timeout": 30000, "pre_delay": 0, "post_delay": 600},
+    },
     "loop": {
         "label": "循环(展开)", "icon": "↻", "color": "#b07d3e", "light": "#f0c48a",
         "summary": lambda p: f"×{p.get('times', 1)}",
@@ -766,8 +803,8 @@ NODE_TYPES = {
 }
 
 TYPE_ORDER = ["ocr_click", "tpl_click", "tap", "swipe", "wait_tpl", "branch",
-              "switch", "loop", "subflow", "common", "startapp", "input", "pick",
-              "pass"]
+              "detect_click", "switch", "loop", "subflow", "common", "startapp",
+              "input", "pick", "pass"]
 
 # 所有节点类型共用的可选字段（属性面板在类型专属字段之后追加渲染）。
 # notes 只是编辑器便签，不进生成物；enabled/max_hit 见 _put_common_fields。
@@ -1004,6 +1041,10 @@ def normalize_flow(flow):
     """
     chain = flow.get("chain") or []
     nodes = flow.get("nodes") or {}
+    # ★ 队列分类只认两个值：手滑写出的别的值（"battle"…）在 schema 层会被拒，
+    #   读文件时直接摘掉视为未指定（注册时保持清单原分组，不会写坏 interface.json）
+    if flow.get("queue") not in QUEUE_NAMES:
+        flow.pop("queue", None)
     flow["chain"] = [n for n in chain
                      if (nodes.get(n) or {}).get("type") not in ("input", "pick")]
     for nd in nodes.values():
@@ -1588,7 +1629,7 @@ def _check_ocr_regex(flow, issues):
         t, p = nd.get("type"), nd.get("props") or {}
         if t == "ocr_click":
             texts, repl = _ocr_expected(p), _ocr_replace(p)
-        elif t == "branch" and str(p.get("ocr_text", "")).strip():
+        elif t in ("branch", "detect_click") and str(p.get("ocr_text", "")).strip():
             texts, repl = split_ocr_texts(p["ocr_text"]), None
         elif t == "switch":
             # 枝干候选的判定块取自它连到的分支，文本也会进 expected，
@@ -1839,9 +1880,9 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
             continue
         t, p = nd["type"], nd.get("props", {})
         no = f"#{node_no(flow, nid, i + 1)}"
-        if t == "branch" and str(p.get("ocr_text", "")).strip():
-            pass   # OCR 文字判定分支无需模板图
-        elif t in ("tpl_click", "wait_tpl", "branch"):
+        if t in ("branch", "detect_click") and str(p.get("ocr_text", "")).strip():
+            pass   # OCR 判定（分支/循环检测）无需模板图
+        elif t in ("tpl_click", "wait_tpl", "branch", "detect_click"):
             tpls = split_tpls(p.get("template", ""))
             if not tpls:
                 # 字段被【输入】参数覆盖时，这里也要填一个默认模板：参数是运行期替换，
@@ -1858,7 +1899,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                         issues.append(Issue(
                             "error", "TPL_MISSING",
                             f"{no}{title(nd)}模板不存在: whmx/image/{tpl}", nid))
-        if t in ("tpl_click", "wait_tpl", "branch", "ocr_click") and p.get("roi"):
+        if t in ("tpl_click", "wait_tpl", "branch", "detect_click", "ocr_click") and p.get("roi"):
             roi = parse_roi(p["roi"])
             if roi is None:
                 issues.append(Issue("error", "ROI_FMT",
@@ -1882,7 +1923,7 @@ def collect_issues(flow, frame_wh=(FRAME_W, FRAME_H), root=None, check_namespace
                         "error", "SWIPE_OOB",
                         f"{no}{title(nd)}滑动坐标 {k}={p.get(k)} "
                         f"非法或超出画面 {W}x{H}", nid))
-        if t in ("tpl_click", "wait_tpl", "branch"):
+        if t in ("tpl_click", "wait_tpl", "branch", "detect_click"):
             try:
                 th = float(p.get("threshold", 0))
                 if not (0.3 <= th <= 0.99):
@@ -2013,6 +2054,36 @@ def _inject_meta(out, flow, frame_wh):
 def entry_name(flow):
     """流程的命名空间前缀：VF_<流程名>"""
     return f"VF_{flow['name']}"
+
+
+def entry_node_id(flow):
+    """流程执行入口 = 链上【没有任何出口指向】的那个节点（连线图的根）；链上全部
+    被指向（收口回环把首尾都指了）时回退链首。
+
+    ★ 链序和画布位置都只是显示：起点卡片摆在最顶、排在链最前面都不影响执行——
+      真正决定从哪开始的是连线。把「循环检测」这类起点节点用「下一个」连到
+      原来的链首上，它就是没人指向的根，入口自动变成它（2026-09-17 用户定的语义，
+      替代以前的"链首即入口"）。"""
+    chain = flow.get("chain") or []
+    if not chain:
+        return None
+    nodes = flow.get("nodes") or {}
+    chain_set = set(chain)
+    pointed = set()
+    for nd in nodes.values():
+        if not isinstance(nd, dict):
+            continue
+        p = nd.get("props") or {}
+        tgts = [nd.get("next"), nd.get("hit_next"), nd.get("miss_next")]
+        if nd.get("type") == "switch":
+            tgts += [c.get("next") for c in parse_switch_cands(p.get("candidates"))]
+        if nd.get("type") == "loop" and p.get("body_end"):
+            tgts.append(p["body_end"])
+        pointed.update(t for t in tgts if t in chain_set)
+    for nid in chain:
+        if nid not in pointed:
+            return nid
+    return chain[0]
 
 
 def node_no(flow, nid, fallback=0):
@@ -2332,6 +2403,34 @@ def _emit_branch(flow, out, nid, name, p, nxt):
     return end_needed
 
 
+def _emit_detect_click(flow, out, nid, name, p, nxt):
+    """【循环检测点击】：判定窗口内反复识别（模板图组任一命中 / OCR），命中即点击
+    命中处并走「下一个」；窗口耗尽仍未命中 = 节点超时失败（任务失败）。
+
+    结构与分支同源（容器 + _Hit）：容器 DoNothing 挂判定窗口，引擎在窗口内按
+    识别间隔反复重试 _Hit 的识别 —— "没检测到就重新执行这个节点，一直循环"
+    由引擎窗口重试承担；命中才执行 _Hit 的点击。容器不挂 on_error：等不到就是
+    该等等不到的场景，任务失败比静默跳过更诚实（要"超时走另一条路"用【分支】）。"""
+    out[name] = {
+        "action": "DoNothing",
+        "timeout": int(p["timeout"]),
+        "next": [name + "_Hit"],
+    }
+    hd = branch_hit_block(flow, nid)
+    if hd is None:
+        raise FlowValidationError(
+            [f"循环检测节点未配置判定条件（模板图或 OCR 文字）: {name}"])
+    hd["action"] = "Click"                     # 命中即点击命中处（分支是 DoNothing）
+    if int(p.get("rate_limit", 0) or 0) > 0:
+        hd["rate_limit"] = int(p["rate_limit"])
+    if int(p.get("pre_delay", 0) or 0):
+        hd["pre_delay"] = int(p["pre_delay"])
+    hd["post_delay"] = int(p.get("post_delay", 600))
+    if nxt:
+        hd["next"] = list(nxt)
+    out[name + "_Hit"] = hd
+
+
 def _emit_common(out, name, p):
     d = {"next": [p["node"]]}
     _put_timeout(d, p)
@@ -2492,6 +2591,8 @@ def _emit_one(flow, out, nid, name, nxt, stack=()):
         _emit_wait_tpl(out, name, p, nxt)
     elif t == "branch":
         return _emit_branch(flow, out, nid, name, p, nxt)
+    elif t == "detect_click":
+        _emit_detect_click(flow, out, nid, name, p, nxt)
     elif t == "common":
         _emit_common(out, name, p)
     elif t == "pass":
@@ -2569,7 +2670,7 @@ def _build_nodes(flow, stack=()):
     nodes = flow["nodes"]
     E = entry_name(flow)
 
-    out = {E: {"next": [jname(flow, chain[0])] if chain else []}}
+    out = {E: {"next": [jname(flow, entry_node_id(flow))] if chain else []}}
     end_needed = False
     body_nodes = loop_body_nodes(flow)      # 循环体节点由展开阶段逐份发射
 
@@ -2803,6 +2904,14 @@ def collect_pipeline_issues(flow, out, frame_wh=(FRAME_W, FRAME_H), root=None):
             expect["miss"] = {("node", ex["miss"])} if ex["miss"] else {("end", None)}
             actual["miss"] = gen_targets(names, "on_error")
             actual["hit"] = gen_targets([f"{nm}_Hit" for nm in names], "next")
+        elif t == "detect_click":
+            # 容器 + _Hit（同分支）：容器 next 固定指向自己的 _Hit，真实出口是
+            # _Hit.next = 链上后继。不能走通用分支 —— 那会把容器→_Hit 当成
+            # 「next 连到自己」误报出口不一致（VF_刷活动关_17 实锤）。
+            # 链尾期望=空集（生成器对"到此结束"就是不写 next，不落 End 坞节点）；
+            # 写成 {("end",None)} 会永远对不上（每日免费礼包_11 实锤误报）。
+            expect["next"] = {("node", ex["linear"])} if ex["linear"] else set()
+            actual["next"] = gen_targets([f"{nm}_Hit" for nm in names], "next")
         elif t == "switch":
             cands = ex["candidates"]
             if not cands:
@@ -3307,7 +3416,7 @@ def input_override_pairs(flow, nd):
         if not isinstance(tnd, dict):
             continue
         name = emit_name_of(flow, tgt) or jname(flow, tgt)
-        if tnd.get("type") == "branch" and field in RECO_FIELDS:
+        if tnd.get("type") in ("branch", "detect_click") and field in RECO_FIELDS:
             name += "_Hit"
         out.append((name, field))
     # ★ 手写管线上的节点名（老流程：cdzb.json / zhengji.json 那批）。
@@ -3457,15 +3566,18 @@ def input_value_expr(p):
     return f"{{{var}}}"
 
 
-def flow_input_options(flow):
+def flow_input_options(flow, _stack=()):
     """流程里全部【输入】节点 → interface.json 顶层 option 定义。
 
-    ★ 一个参数可以注入多个节点：右侧小球往每个目标各拉一条线，每个目标一条
-      override（手写的『目标角色』就是这样同时覆盖 CDZB2_Hit / 升2_Hit / 查2_Hit）。
+    ★ 一个参数可以注入多个节点：右侧小球往每个目标各拉一条线，每个目标一条 override。
     ★ 同名参数自动【合并】：拆成多个【输入】节点、参数名写成一样也可以，
       合并时以第一个节点为准取 label/inputs/说明，pipeline_override 逐个并入。
+    ★ 【子流程(内联)】引用的流程也会被递归收集：子流程内部的【输入】/【选择】
+      同样进本流程的注册，override 的键直接按内联后的生成名算（VF_<本流程>_<key>_…，
+      与 _emit_subflow 同一套 fake 名链）——注册里写的键和生成物里的节点是同一批名字。
+      同名参数跨层同样合并；同名【选择】仍以后者为准（整份替换语义，不合并）。
     形状与 App 端 TaskPack.kt 的解析逐字段对齐：type=input + inputs + pipeline_override。
-    顺序按节点编号 —— 与画布上看到的 #号一致。"""
+    顺序按节点编号 —— 与画布上看到的 #号一致（子流程参数排在本层参数之后）。"""
     opts = {}
     items = sorted((node_no(flow, nid, 0), nid, nd)
                    for nid, nd in (flow.get("nodes") or {}).items()
@@ -3523,16 +3635,44 @@ def flow_input_options(flow):
         if desc:
             o["description"] = desc
         opts[name] = o
+    # 【子流程(内联)】→ 递归收集被引用流程内部的参数（override 键 = 内联后的生成名）
+    subs = sorted((node_no(flow, nid, 0), nid, nd)
+                  for nid, nd in (flow.get("nodes") or {}).items()
+                  if isinstance(nd, dict) and nd.get("type") == "subflow")
+    for _no, nid, nd in subs:
+        child, _err = subflow_child(flow, nid)
+        if child is None:
+            continue            # 引用不存在：SUBFLOW_REF 校验已报错，这里只保证不崩
+        fake = _subflow_child_name(flow, nid)
+        if fake in _stack or len(_stack) > 8:
+            continue            # 成环/过深：与 _emit_subflow 同口径截断
+        child = dict(child)
+        child["name"] = fake    # ★ 换成内联假名再递归，内层 jname() 直接产出内联名
+        for name, o in flow_input_options(child, _stack + (fake,)).items():
+            cur = opts.get(name)
+            if cur is None:
+                opts[name] = o
+            elif cur.get("type") == "input" and o.get("type") == "input":
+                # 同名参数（同一子流程被引用两次等）：override 按节点深合并
+                for nn, fields in (o.get("pipeline_override") or {}).items():
+                    cur.setdefault("pipeline_override", {}).setdefault(nn, {}).update(fields)
+            else:
+                opts[name] = o  # select 不合并（整份替换语义），以后者为准
     return opts
 
 
-def upsert_flow_task(data, flow_name, log=None, options=None):
+def upsert_flow_task(data, flow_name, log=None, options=None, queue=None):
     """注册可视化流程到清单：
       - 清单里已有同名正式任务 → 转正（entry 切到 VF_ 流程，主队列直接生效），
         并移除之前的独立小工具条目（避免重复）
-      - 否则 → 追加为【小工具】分组的独立任务
-      其它 VF_ 条目不受影响"""
+      - 否则 → 追加为独立任务（队列按 queue，未指定 = 小工具）
+      其它 VF_ 条目不受影响
+
+    queue = 流程文件顶层的队列分类："daily"=一键长草、"tools"=小工具、
+    None=未指定 —— **不动**既有条目的 group（清单里手写的 daily/battle 保持原样），
+    只有新追加的条目才落【小工具】（与老行为一致）。"""
     entry = f"VF_{flow_name}"
+    target = [queue] if queue in QUEUE_NAMES else None
     tasks = data.setdefault("task", [])
     promoted = False
     for t in tasks:
@@ -3543,26 +3683,69 @@ def upsert_flow_task(data, flow_name, log=None, options=None):
             if log:
                 log(f"清单任务【{flow_name}】入口已切换 → {entry}"
                     + (f"（原 {old}）" if old else "") + "，主队列生效")
-    # 转正后移除指向同一流程的**重复**小工具条目（防重复）。
-    # ★ 只有当同一个流程另外还挂着一个正式任务（非 tools 分组）时才该删 —— 否则删掉的
-    #   就是任务本身，它会被重新追加到清单末尾：任务在 App 里跳到最后一行，标签页上手写的
-    #   label / description / default_check 也一起丢。查找器者就是这种（它本来就在【小工具】
-    #   分组里，迁移后 entry 变成 VF_查找器者，同步一次就会被挪到清单末尾）。
-    if any(t.get("entry") == entry and t.get("group") != ["tools"] for t in tasks):
-        tasks[:] = [t for t in tasks
-                    if not (t.get("entry") == entry and t.get("group") == ["tools"])]
-    if not any(t.get("entry") == entry for t in tasks):
+    # 同一个流程只留一个条目：转正后留着指向同一入口的重复条目，App 里会显示两个
+    # 同名任务。★ 保留靠前的那个 —— 标签页上手写的 label/description/default_check
+    #   都在它身上，删除不改其它条目的位置（任务不能被挪到清单末尾，老事故）。
+    #   优先级：分类已经对的 > 正式任务（非 tools）> 第一个。
+    mine = [t for t in tasks if t.get("entry") == entry]
+    if not mine:
         tasks.append({"name": flow_name, "label": flow_name, "entry": entry,
-                      "group": ["tools"]})
+                      "group": target or ["tools"]})
+    else:
+        keep = mine[0]
+        if target:
+            for t in mine:
+                if t.get("group") == target:
+                    keep = t
+                    break
+        else:
+            for t in mine:
+                if t.get("group") != ["tools"]:
+                    keep = t
+                    break
+        for extra in mine:
+            if extra is not keep:
+                tasks.remove(extra)
+        # ★ 流程改名后 entry 已指到新名字，旧条目的 name/label 却还是旧流程名 ——
+        #   App 标签页显示的就是它（每日免费礼包购买→每日免费礼包 实锤）。
+        #   注册即对齐，不改 entry/分组/参数，动不了手机上手动挪位的记忆。
+        if keep.get("name") != flow_name or keep.get("label") != flow_name:
+            old_n = keep.get("name")
+            keep["name"] = flow_name
+            keep["label"] = flow_name
+            if log:
+                log(f"清单任务【{old_n}】名称已更新 → 【{flow_name}】")
+        if target and keep.get("group") != target:
+            old_g = "、".join(keep.get("group") or []) or "未分组"
+            keep["group"] = target
+            if log:
+                log(f"清单任务【{flow_name}】队列已切换 → 【{queue_label(queue)}】"
+                    f"（原 {old_g}）")
     # 【输入】节点声明的参数 → 顶层 option + 挂到本任务上（App 的任务编辑栏显示的就是它们）。
     # 只增改、不删除：手工维护的那些参数（升好感度/装卸装备/刷冬谷币…）不能被自动清掉，
     # 流程里没有【输入】节点时连任务的 option 列表都不动。
     if options:
         book = data.setdefault("option", {})
         for nm in options:
-            if nm in book and book[nm] != options[nm] and log:
-                log(f"参数【{nm}】已存在，按流程里的【输入】节点覆盖它的定义", "warn")
-            book[nm] = options[nm]
+            cur = book.get(nm)
+            if cur is not None and cur != options[nm] and log:
+                log(f"参数【{nm}】已存在，inputs 按本流程的【输入】节点更新，"
+                    f"pipeline_override 与已有键并集", "warn")
+            if (isinstance(cur, dict) and cur.get("type") == "input"
+                    and options[nm].get("type") == "input"):
+                # ★ 同名参数跨流程共享同一份顶层定义（App 的参数按名字引用），
+                #   而各流程的 override 键不同 —— pipeline_override 必须取【并集】，
+                #   否则后注册的流程会把先注册流程的键整个顶掉，那边参数就静默失效。
+                #   App 把整份 override 深合并后随任务下发，引擎忽略本任务用不到的键
+                #   （手写『目标角色』时代就是三流程键并集，装卸/升好感/查找器者共用）。
+                merged = dict(options[nm])
+                old_ov = cur.get("pipeline_override") or {}
+                if old_ov:
+                    merged["pipeline_override"] = {
+                        **old_ov, **(options[nm].get("pipeline_override") or {})}
+                book[nm] = merged
+            else:
+                book[nm] = options[nm]      # select 不合并（整份替换语义），以后者为准
         for t in tasks:
             if t.get("entry") == entry:
                 t["option"] = list(options)
@@ -3570,8 +3753,9 @@ def upsert_flow_task(data, flow_name, log=None, options=None):
             log("已写入参数: " + "、".join(options))
 
 
-def register_on_phone(flow_name, log, options=None):
-    """把流程注册进手机端 interface.json（group=tools），重启 App 后出现在【小工具】栏。
+def register_on_phone(flow_name, log, options=None, queue=None):
+    """把流程注册进手机端 interface.json，重启 App 后出现在 queue 对应的标签页
+    （daily=一键长草主队列、tools=小工具栏、None=保持清单原分组，新任务落小工具）。
     只改手机上的运行副本，本地 whmx/interface.json 不动；改前手机端备份 .bak。
     options = 流程里【输入】节点声明的参数（App 任务编辑栏里的可填项）。"""
     text = adb_text(adb("shell",
@@ -3579,7 +3763,47 @@ def register_on_phone(flow_name, log, options=None):
     if not text:
         raise RuntimeError("读取手机 interface.json 失败（任务包是否已安装?）")
     data = jsonc_loads(text)
-    upsert_flow_task(data, flow_name, log, options=options)
+    upsert_flow_task(data, flow_name, log, options=options, queue=queue)
+    push_interface_to_phone(data, expect=f"VF_{flow_name}")
+    log(f"已注册到手机清单（队列：{queue_label(queue)}）: {flow_name} → entry VF_{flow_name}"
+        f"（原清单已备份为 interface.json.bak）")
+
+
+def local_interface_tasks(path=None):
+    """读本地任务包 interface.json → {任务名: entry}，供「注册到任务包」对话框
+    标注哪些流程已经写进去过。文件缺失/解析失败都返回空 dict（不影响打开对话框）。"""
+    tasks = (load_interface_data(path) or {}).get("task", [])
+    return {t.get("name"): t.get("entry") for t in tasks
+            if isinstance(t, dict) and t.get("name")}
+
+
+def dump_interface(data, path):
+    """把清单 dict 写回本地 interface.json：写前备份 .bak；`{` 后面的头部 // 注释块
+    原样保留（App 解析器兼容注释），其余注释随重排丢弃。文件不存在则直接创建。"""
+    comments = []
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        if lines and lines[0].strip() == "{":
+            for ln in lines[1:]:
+                if ln.strip().startswith("//"):
+                    comments.append(ln.strip())
+                else:
+                    break
+        shutil.copy2(path, path + ".bak")
+    body = json.dumps(data, ensure_ascii=False, indent=2)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("{\n")
+        for ln in comments:
+            f.write("    " + ln + "\n")
+        f.write(body[1:] + "\n")
+
+
+def push_interface_to_phone(data, expect=None):
+    """把清单 dict 写回手机运行副本 files/taskpacks/whmx/interface.json：
+    手机端先备份 .bak → push 到 /data/local/tmp → run-as cp 覆盖 → 回读验证。
+    expect = 写回后回读文本里必须出现的子串（None 只要求回读非空）。
+    失败抛 RuntimeError（手机没连 / 推送失败 / 验证不过）。"""
     adb("shell",
         f"run-as {PKG} sh -c 'cp files/taskpacks/whmx/interface.json"
         f" files/taskpacks/whmx/interface.json.bak'")
@@ -3597,61 +3821,88 @@ def register_on_phone(flow_name, log, options=None):
         f"run-as {PKG} sh -c 'cp {remote} files/taskpacks/whmx/interface.json'")
     check = adb_text(adb("shell",
                          f"run-as {PKG} sh -c 'cat files/taskpacks/whmx/interface.json'"))
-    if f"VF_{flow_name}" not in check:
-        raise RuntimeError("写回 interface.json 后验证失败（未看到新流程条目）")
-    log(f"已注册到手机【小工具】清单: {flow_name} → entry VF_{flow_name}"
-        f"（原清单已备份为 interface.json.bak）")
+    if not check or (expect and expect not in check):
+        raise RuntimeError("写回 interface.json 后验证失败（回读对不上）")
 
 
-def local_interface_tasks(path=None):
-    """读本地任务包 interface.json → {任务名: entry}，供「注册到任务包」对话框
-    标注哪些流程已经写进去过。文件缺失/解析失败都返回空 dict（不影响打开对话框）。"""
+def regroup_task(t, to_tools):
+    """拖动切换栏目时改任务条目的 group（就地改，无返回值）。
+    → 小工具：group = ["tools"]（覆盖；App 只看 contains("tools")）
+    → 主队列：摘掉 "tools"，其余细分组（daily/battle…）保留；原来只有 tools
+      就给 ["daily"]（一键长草），不留空 group。"""
+    g = [x for x in (t.get("group") or []) if x != "tools"]
+    if to_tools:
+        t["group"] = ["tools"]
+    else:
+        t["group"] = g or ["daily"]
+
+
+def load_interface_data(path=None):
+    """读本地任务包 interface.json → 完整 dict（task 列表 + 顶层 group 定义）；
+    文件缺失/解析失败返回 None。"""
     if path is None:
         path = os.path.join(ROOT, "whmx", "interface.json")
     if not os.path.isfile(path):
-        return {}
+        return None
     try:
         with open(path, encoding="utf-8") as f:
-            data = jsonc_loads(f.read())
-        return {t.get("name"): t.get("entry") for t in data.get("task", [])
-                if isinstance(t, dict) and t.get("name")}
+            return jsonc_loads(f.read())
     except Exception:
-        return {}
+        return None
 
 
-def register_local_interface(flow_name, log=None, options=None, path=None):
-    """把流程注册进本地任务包 whmx/interface.json（与手机同一个 upsert_flow_task 口径）。
+def load_phone_interface():
+    """读手机运行副本 files/taskpacks/whmx/interface.json → dict；失败返回 None。
+    「同步到手机」写的是这一份，「⤴ 注册到任务包」写的是本地那份，两份可能不同步。"""
+    text = adb_text(adb("shell",
+                        f"run-as {PKG} sh -c 'cat files/taskpacks/whmx/interface.json'"))
+    if not text:
+        return None
+    try:
+        return jsonc_loads(text)
+    except Exception:
+        return None
+
+
+def split_queues(data):
+    """清单 data → (主队列条目, 小工具条目)，各自保持清单顺序。
+    与 App 的 taskHome 同口径：group 含 "tools" → 小工具栏，其余（daily/battle/
+    operator/other/…/没写 group）都算一键长草主队列。★ 手机上用户手动挪过位置的
+    任务以 QueueStore.homeOf 为准，清单 group 只是默认归属 —— 这里显示的就是默认归属。"""
+    main, tools = [], []
+    for t in (data or {}).get("task", []):
+        if not isinstance(t, dict):
+            continue
+        (tools if "tools" in (t.get("group") or []) else main).append(t)
+    return main, tools
+
+
+def group_labels_of(data):
+    """清单顶层的 group 定义 → {组名: 中文 label}（启动/日常/战斗/器者/其他/…）。
+    手写任务可能挂在 tools 以外的组上，队列一览里用它标注主队列任务的细分归属。"""
+    return {g.get("name"): (g.get("label") or g.get("name"))
+            for g in (data or {}).get("group", []) if isinstance(g, dict)}
+
+
+def register_local_interface(flow_name, log=None, options=None, path=None, queue=None):
+    """把流程注册进本地任务包 whmx/interface.json（与手机同一个 upsert_flow_task 口径，
+    queue 语义同上：daily=一键长草、tools=小工具、None=保持清单原分组）。
 
     ★ 必须回写这一份：打 APK 时 assets 装的就是本地任务包，只注册到手机运行副本的话，
       新设备装包看不到这个流程（清体力 2026-09-17 就是这样丢的）。
     子流程不用注册：注册只影响清单显示，执行是整目录加载 pipeline，不查清单。
-    文件是带 // 注释的 JSONC：`{` 后面的头部注释块原样保留（App 解析器兼容注释），
+    文件是带 // 注释的 JSONC：头部注释块原样保留（App 解析器兼容注释），
     其余注释随重排丢弃——与手机副本同一处理；改前备份 interface.json.bak。"""
     if path is None:
         path = os.path.join(ROOT, "whmx", "interface.json")
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    lines = text.splitlines()
-    comments = []
-    if lines and lines[0].strip() == "{":
-        for ln in lines[1:]:
-            if ln.strip().startswith("//"):
-                comments.append(ln.strip())
-            else:
-                break
     data = jsonc_loads(text)
-    upsert_flow_task(data, flow_name, log, options=options)
-    if os.path.isfile(path):
-        shutil.copy2(path, path + ".bak")
-    body = json.dumps(data, ensure_ascii=False, indent=2)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("{\n")
-        for ln in comments:
-            f.write("    " + ln + "\n")
-        f.write(body[1:] + "\n")
+    upsert_flow_task(data, flow_name, log, options=options, queue=queue)
+    dump_interface(data, path)
     if log:
-        log(f"已注册到本地任务包 whmx/interface.json: {flow_name} → entry VF_{flow_name}"
-            "（原文件已备份 interface.json.bak）")
+        log(f"已注册到本地任务包 whmx/interface.json（队列：{queue_label(queue)}）:"
+            f" {flow_name} → entry VF_{flow_name}（原文件已备份 interface.json.bak）")
 
 
 def grab_frame_to(path):
@@ -3673,17 +3924,18 @@ def grab_frame_to(path):
 
 
 def sync_pipeline_file(json_path, log):
-    """推送生成物到手机 pipeline 目录（只新增 vf_*.json，不动项目文件）。"""
+    """推送生成物到手机 pipeline 目录（只新增 vf_*.json，不动项目文件）。
+    ★ 先复制成 ASCII 临时名再 push：中文文件名在 host 侧 push 会出编码问题
+      （推上去的文件名/内容是坏的——vf_刷活动关 2026-09-17 实测 md5 对不上）。"""
     base = os.path.basename(json_path)
-    remote = "/data/local/tmp/" + base
-    log(f"推送 {base} …")
-    r = adb("push", json_path, remote, timeout=120)
+    tmp = "/data/local/tmp/_vf_pipeline.json"
+    r = adb("push", json_path, tmp, timeout=120)
     if r.returncode != 0:
         raise RuntimeError("push 失败: " +
                            (r.stderr.decode("utf-8", "replace") or adb_text(r)))
-    adb("shell", "chmod", "644", remote)
+    adb("shell", "chmod", "644", tmp)
     adb("shell",
-        f"run-as {PKG} sh -c 'cp {remote} files/taskpacks/whmx/pipeline/{base}'",
+        f"run-as {PKG} sh -c 'cp {tmp} files/taskpacks/whmx/pipeline/{base}'",
         timeout=60)
     names = adb_text(adb("shell",
                          f"run-as {PKG} sh -c 'ls files/taskpacks/whmx/pipeline/'")).splitlines()
@@ -3819,7 +4071,8 @@ class InterfaceSyncDialog(tk.Toplevel):
         self.configure(bg=THEME["panel"])
         self.resizable(False, False)
         self.transient(parent)
-        self.attributes("-topmost", True)
+        # 不置顶：用户要边勾选边对照别处（手机/队列一览），压着别的东西碍事
+        # （2026-09-17 按用户要求去掉；transient 仍保证随主窗口收起）
         ttk.Label(self, text="勾选要写进 whmx/interface.json 的流程",
                   style="Title.TLabel").pack(pady=(12, 2))
         ttk.Label(self, text="未同步过 = 任务包里还没有它的 pipeline 文件，勾了也先要同步一次才能跑",
@@ -3869,13 +4122,18 @@ class InterfaceSyncDialog(tk.Toplevel):
             if not os.path.isfile(os.path.join(ROOT, "whmx", "pipeline",
                                                "vf_" + name + ".json")):
                 status += " ·未同步过"
+            try:
+                with open(p, encoding="utf-8") as f:
+                    q = json.load(f).get("queue")
+            except Exception:
+                q = None
             # 默认只勾「未注册」的；「测试流程」是自测数据，再未注册也不默认勾
             var = tk.BooleanVar(value=(not reg and not name.startswith("测试")))
             self.vars[name] = var
             self.paths[name] = p
             # 勾选用项目统一的 ✓/✗ 文字开关（clam 的 ttk.Checkbutton 指示器像 ✗，语义反读）
             self.ed._make_toggle(body, var,
-                                 text=f"{name}（{status}）").grid(
+                                 text=f"{name}（{status} · 队列:{queue_label(q)}）").grid(
                 row=r, column=c, sticky="w", padx=10, pady=2)
             c += 1
             if c >= 2:
@@ -3897,21 +4155,25 @@ class InterfaceSyncDialog(tk.Toplevel):
         if not picked:
             messagebox.showinfo("注册到任务包", "没有勾选任何流程。")
             return
-        # 入口已被清单里别的任务名占用 → 再写会冒出重复条目，拦下（重写同名的不拦，
-        # upsert 幂等，勾它就是想刷新参数）
+        # 入口已被清单里别的任务名占用 → 多半是流程改过名留下的旧条目（name 还挂着
+        # 旧流程名、entry 已指到新管线，每日免费礼包 实锤），也可能是刻意手写的别名。
+        # 让用户选：对齐写入 / 跳过（别名保护）。只"跳过"的话改名流程永远注册不进去
+        # （死锁）。重写同名的不拦，upsert 幂等，勾它就是想刷新参数。
         tasks = local_interface_tasks()
         clash = [n for n in picked
                  if tasks.get(n) != "VF_" + n and "VF_" + n in tasks.values()]
         if clash:
             if not messagebox.askyesno(
                     "注册到任务包",
-                    "这些流程的入口已被清单里的别的任务名占用：\n\n    "
+                    "这些流程的入口已被清单里别的名字的条目占用"
+                    "（常见于流程改过名，旧条目还挂着旧名）：\n\n    "
                     + "、".join(clash) +
-                    "\n\n将跳过它们（其余照常写入）。继续？"):
-                return
-            picked = [n for n in picked if n not in clash]
-            if not picked:
-                return
+                    "\n\n「是」＝把旧条目的名称对齐成当前流程名后照常写入"
+                    "（原地对齐、不冒出重复条目；若那是刻意起的手写别名，会被覆盖）\n"
+                    "「否」＝跳过它们，其余照常写入"):
+                picked = [n for n in picked if n not in clash]
+                if not picked:
+                    return
         unsynced = [n for n in picked
                     if not os.path.isfile(os.path.join(ROOT, "whmx", "pipeline",
                                                        "vf_" + n + ".json"))]
@@ -3926,13 +4188,293 @@ class InterfaceSyncDialog(tk.Toplevel):
             with open(self.paths[name], encoding="utf-8") as f:
                 flow = normalize_flow(json.load(f))
             register_local_interface(name, self.ed.log,
-                                     options=flow_input_options(flow))
+                                     options=flow_input_options(flow),
+                                     queue=flow.get("queue"))
         self.ed.log(f"✓ 已把 {len(picked)} 个流程注册进本地 whmx/interface.json："
                     + "、".join(picked))
         messagebox.showinfo("注册到任务包",
                             "已写入 " + str(len(picked)) + " 个流程。\n"
                             "重新打包 APK 后新设备即可看到它们（原文件已备份 .bak）。")
         self.destroy()
+
+
+class QueueViewDialog(tk.Toplevel):
+    """「☰ 队列一览」：按【一键长草】/【小工具】两个标签页展示清单里的任务。
+
+    ★ 任务行可以拖动：同列上下拖 = 调整顺序；拖到另一列 = 切换标签页归属
+      （条目的 group 随之改写，见 regroup_task）。松手立即写回当前数据源
+      （本地 whmx/interface.json 或手机运行副本），写前自动备份 .bak，
+      写失败弹错并回滚显示。
+    数据默认来自本地任务包（打 APK 的那份）；「↻ 从手机读取」切到手机运行副本
+    核对/调整 —— 同步只写手机、注册只写本地，两份可能不同步（清体力 2026-09-17
+    就这么丢过）。App 里手动挪过位置的任务以手机 homeOf 记录为准。
+    ★ 流程文件自己的 queue（工具栏「队列」下拉）是另一份记忆：拖动只改清单条目，
+      不动流程文件；两者矛盾时行尾标 ⚠ —— 下次「同步/注册」会按流程文件的
+      queue 写回清单（upsert_flow_task 的语义）。"""
+
+    def __init__(self, parent, ed, data=None, path=None):
+        super().__init__(parent)
+        self.ed = ed
+        self.path = path                 # None = 默认本地路径（测试可注入临时文件）
+        self.on_phone = False            # 当前显示/写回的是不是手机运行副本
+        self.src_text = ""
+        self.lists = {"main": [], "tools": []}
+        self._boxes = {}
+        self._rows = {"main": [], "tools": []}
+        self._drag = None                # {"from": 列, "idx": 行号, "widget": 行}
+        self._pending = None             # 拖动悬停的落点 (列, 行号)
+        self._line = None                # 插入位置指示线
+        self._fq = {}                    # {任务名: 流程文件 queue} 缓存（⚠ 标注用）
+        self.title("队列一览 · 清单任务")
+        self.configure(bg=THEME["panel"])
+        self.resizable(False, False)
+        self.transient(parent)
+        # 不置顶：查看用的窗口，可能要切到编辑器/别处对照着看（各对话框统一如此）
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=14, pady=(10, 2))
+        self.src_var = tk.StringVar(value="")
+        ttk.Label(top, textvariable=self.src_var,
+                  style="Title.TLabel").pack(side="left")
+        ttk.Button(top, text="↻ 从手机读取",
+                   command=self._from_phone).pack(side="right")
+        self.body = ttk.Frame(self)
+        self.body.pack(padx=14, pady=(6, 4))
+        self.foot_var = tk.StringVar(value="")
+        self._show(data if data is not None else load_interface_data(path),
+                   "本地任务包 whmx/interface.json")
+        self.geometry("+%d+%d" % (parent.winfo_rootx() + parent.winfo_width() // 2 - 370,
+                                  parent.winfo_rooty() + parent.winfo_height() // 2 - 240))
+        self.lift()
+        self.focus_force()
+
+    def _from_phone(self):
+        try:
+            data = load_phone_interface()
+        except Exception:
+            data = None
+        if not data:
+            messagebox.showerror(
+                "队列一览",
+                "读取手机 interface.json 失败（手机没连 / 任务包没装?）。\n"
+                "当前显示的仍是本地任务包那份。")
+            return
+        self.on_phone = True
+        self._show(data, "手机运行副本 files/taskpacks/whmx/interface.json")
+
+    def _show(self, data, source):
+        """按两个标签页重铺列内容（打开/切数据源/拖完写回后都走这里）"""
+        for w in self.body.winfo_children():
+            w.destroy()
+        self._boxes = {}
+        self._rows = {"main": [], "tools": []}
+        self._line = None
+        self.src_text = source
+        self.src_var.set(source)
+        if not data:
+            self.foot_var.set("")
+            self.data = None
+            ttk.Label(self.body, text="清单不存在或解析失败"
+                      "（本地 whmx/interface.json 还没生成?）",
+                      style="Dim.TLabel").grid(row=0, column=0, columnspan=2)
+            return
+        self.data = data
+        self.lists["main"], self.lists["tools"] = split_queues(data)
+        gl = group_labels_of(data)
+        self.foot_var.set(
+            f"一键长草 {len(self.lists['main'])} 个 · 小工具 {len(self.lists['tools'])} 个"
+            " · 拖动任务可排序 / 拖到另一列换栏目，松手即写回"
+            "（手机上手动挪过位置的任务以手机记录为准；App 需重启生效）")
+        self._col("main", "一键长草（主队列）", gl, show_group=True)
+        self._col("tools", "小工具", gl)
+
+    def _col(self, key, title, gl, show_group=False):
+        """一列 = 一个标签页的任务清单。行 = 任务名 + 小字（细分组 / 入口 / 参数）"""
+        items = self.lists[key]
+        box = tk.Frame(self.body, bg=THEME["bg"])
+        box.grid(row=0, column=0 if key == "main" else 1, padx=(0, 10), sticky="ns")
+        self._boxes[key] = box
+        self._rows[key] = []
+        tk.Label(box, text=f"{title} · {len(items)}", anchor="w",
+                 bg=THEME["bg"], fg=THEME["accent"], font=FONT_B).pack(
+            fill="x", padx=10, pady=(8, 3))
+        if not items:
+            tk.Label(box, text="（空）", bg=THEME["bg"], fg=THEME["text_dim"],
+                     font=FONT).pack(anchor="w", padx=10, pady=2)
+        for i, t in enumerate(items):
+            row = tk.Frame(box, bg=THEME["bg"])
+            row.pack(fill="x", padx=10, pady=1)
+            self._rows[key].append(row)
+            tk.Label(row, text=t.get("label") or t.get("name") or "?",
+                     bg=THEME["bg"], fg=THEME["text"], font=FONT).pack(side="left")
+            subs = []
+            if show_group:
+                gs = "、".join(dict.fromkeys(
+                    gl.get(g, g) for g in (t.get("group") or []) if g))
+                if gs:
+                    subs.append(gs)
+            if t.get("entry"):
+                subs.append(str(t["entry"]))
+            if t.get("option"):
+                subs.append("参数: " + "、".join(t["option"]))
+            warn = self._queue_mismatch(t)
+            if warn:
+                subs.append(warn)
+            if subs:
+                tk.Label(row, text=" · ".join(subs), bg=THEME["bg"],
+                         fg=THEME["text_dim"], font=FONT_SM,
+                         wraplength=330, justify="left").pack(side="left", padx=(6, 0))
+            self._bind_drag(row, key, i)
+
+    def _queue_mismatch(self, t):
+        """流程文件的 queue 与清单条目当前归属矛盾 → ⚠ 提示（下次同步会按文件写回）。
+        只查编辑器流程（entry == VF_任务名）；手写任务没有流程文件，不查。"""
+        name = t.get("name") or ""
+        if not name or t.get("entry") != "VF_" + name:
+            return None
+        fq = self._flow_queue_of(name)
+        if not fq:
+            return None
+        in_tools = "tools" in (t.get("group") or [])
+        if (fq == "tools") == in_tools:
+            return None
+        return f"⚠ 流程文件队列：{queue_label(fq)}（下次同步会按它写回）"
+
+    def _flow_queue_of(self, name):
+        """流程文件顶层 queue（None=未指定/没有该文件）；结果缓存在对话框存活期"""
+        if name in self._fq:
+            return self._fq[name]
+        q = None
+        p = os.path.join(FLOWS_DIR, safe_name(name) + ".flow.json")
+        if os.path.isfile(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    q = json.load(f).get("queue")
+            except Exception:
+                q = None
+        if q not in QUEUE_NAMES:
+            q = None
+        self._fq[name] = q
+        return q
+
+    # ---------- 拖动：按下记录行 → 移动画插入指示线 → 松手落位并写回 ----------
+
+    def _bind_drag(self, row, key, i):
+        for w in (row,) + tuple(row.winfo_children()):
+            w.bind("<Button-1>", lambda e, c=key, k=i, r=row: self._drag_start(c, k, r))
+            w.bind("<B1-Motion>", self._drag_motion)
+            w.bind("<ButtonRelease-1>", self._drag_drop)
+
+    def _drag_start(self, col, idx, row):
+        self._drag = {"from": col, "idx": idx, "widget": row}
+        row.config(bg=THEME["card_hi"])
+        for lbl in row.winfo_children():
+            try:
+                lbl.config(bg=THEME["card_hi"])
+            except tk.TclError:
+                pass
+
+    def _drag_motion(self, e):
+        if not self._drag:
+            return
+        hit = None
+        for c in ("main", "tools"):
+            b = self._boxes[c]
+            if (b.winfo_rootx() - 6 <= e.x_root <= b.winfo_rootx() + b.winfo_width() + 6
+                    and b.winfo_rooty() <= e.y_root <= b.winfo_rooty() + b.winfo_height()):
+                hit = c
+                break
+        if hit is None:
+            self._clear_line()
+            self._pending = None
+            return
+        rows = self._rows[hit]
+        idx = len(rows)
+        for k, rw in enumerate(rows):
+            if e.y_root < rw.winfo_rooty() + rw.winfo_height() / 2:
+                idx = k
+                break
+        self._pending = (hit, idx)
+        self._place_line(hit, idx)
+
+    def _place_line(self, col, idx):
+        """在目标列第 idx 行之前画一条插入指示线（同一列内复用，跨列重建）"""
+        if self._line is not None and self._line.master is not self._boxes[col]:
+            self._clear_line()
+        if self._line is None:
+            self._line = tk.Frame(self._boxes[col], height=3, bg=THEME["accent"])
+        ref = self._rows[col][idx] if idx < len(self._rows[col]) else None
+        if ref is not None:
+            self._line.pack_forget()
+            self._line.pack(fill="x", padx=10, before=ref, pady=(1, 0))
+        else:
+            self._line.pack_forget()
+            self._line.pack(fill="x", padx=10, side="bottom", pady=(1, 2))
+
+    def _clear_line(self):
+        if self._line is not None:
+            try:
+                self._line.destroy()
+            except tk.TclError:
+                pass
+            self._line = None
+
+    def _drag_drop(self, _e):
+        if not self._drag:
+            return
+        drag, self._drag = self._drag, None
+        self._clear_line()
+        self._pending, pending = None, self._pending
+        row = drag["widget"]
+        row.config(bg=THEME["bg"])
+        for lbl in row.winfo_children():
+            try:
+                lbl.config(bg=THEME["bg"])
+            except tk.TclError:
+                pass
+        if not pending:
+            return
+        dst, j = pending
+        t = self._move_task(drag["from"], drag["idx"], dst, j)
+        if t is not None:
+            self._commit_write(t.get("name") or "")
+
+    def _move_task(self, src, i, dst, j):
+        """lists 里把 src 列第 i 个移到 dst 列第 j 行之前；跨列时按 regroup_task
+        改 group。放回原位（同列且 j∈{i, i+1}）不动。返回被移动的条目 / None。"""
+        if src == dst and j in (i, i + 1):
+            return None
+        lst = self.lists[src]
+        if not (0 <= i < len(lst)):
+            return None
+        t = lst.pop(i)
+        if src == dst and j > i:
+            j -= 1
+        self.lists[dst].insert(max(0, min(j, len(self.lists[dst]))), t)
+        regroup_task(t, dst == "tools")
+        return t
+
+    def _commit_write(self, moved_name):
+        """task 数组 = 主队列 + 小工具（各自内部相对序不变，App 按 tab 分别取序），
+        写回当前数据源；失败回滚内存并弹错。"""
+        snap = (list(self.lists["main"]), list(self.lists["tools"]))
+        self.data["task"] = self.lists["main"] + self.lists["tools"]
+        try:
+            if self.on_phone:
+                push_interface_to_phone(self.data)
+            else:
+                dump_interface(self.data, self.path
+                               or os.path.join(ROOT, "whmx", "interface.json"))
+        except Exception as ex:
+            self.lists["main"], self.lists["tools"] = snap
+            self.data["task"] = snap[0] + snap[1]
+            self._show(self.data, self.src_text)
+            messagebox.showerror("队列一览", "写回失败（改动未生效）：\n" + str(ex))
+            return
+        self._fq.pop(moved_name, None)      # 该流程的 ⚠ 标注按最新清单重算
+        self._show(self.data, self.src_text + "　✓ 已写回")
+        self.ed.log(f"✓ 队列一览已写回{'手机运行副本' if self.on_phone else '本地任务包'}："
+                    f"一键长草 {len(self.lists['main'])} 个、"
+                    f"小工具 {len(self.lists['tools'])} 个（App 需重启生效）")
 
 
 class FlowEditor:
@@ -4176,17 +4718,24 @@ class FlowEditor:
         self._vsep(bar)
         self._flat_btn(bar, "✓ 校验", self.on_validate).pack(side="left", padx=3)
         self._flat_btn(bar, "⤓ 生成 JSON", self.on_build).pack(side="left", padx=3)
+        self._flat_btn(bar, "⤓ 同步到本地", self.on_sync_local).pack(side="left", padx=3)
         self._flat_btn(bar, "⤴ 注册到任务包", self.on_register_local).pack(side="left", padx=3)
+        # 队列分类：注册/同步时写进清单条目的 group（App 按它决定任务在哪个标签页）
+        ttk.Label(bar, text="队列", style="Dim.TLabel",
+                  background=THEME["bg"]).pack(side="left", padx=(10, 2))
+        self.queue_var = tk.StringVar(value=queue_label(self.flow.get("queue")))
+        self.queue_combo = ttk.Combobox(
+            bar, textvariable=self.queue_var, width=13, state="readonly", font=FONT,
+            values=["一键长草", "小工具", "未指定（跟随清单现状）"])
+        self.queue_combo.pack(side="left", padx=3, ipady=2)
+        self.queue_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_queue_change())
+        self._flat_btn(bar, "☰ 队列一览", self.on_view_queues).pack(side="left", padx=(8, 3))
 
         self._vsep(bar)
         self._btn_sync = self._flat_btn(
-            bar, "⇲ 同步到手机", lambda: self.on_sync(run_after=False),
+            bar, "⇲ 同步到手机", self.on_sync,
             bg="#2c4a86", fg="#eaf1ff", hover="#3a5da8", font=FONT_B)
         self._btn_sync.pack(side="left", padx=3, ipady=1)
-        self._btn_run = self._flat_btn(
-            bar, "▶ 同步并运行", lambda: self.on_sync(run_after=True),
-            bg="#2c6e48", fg="#eafff2", hover="#3a8a5c", font=FONT_B)
-        self._btn_run.pack(side="left", padx=3, ipady=1)
         ttk.Label(bar, text="  同步后需重启 App 生效",
                   style="Dim.TLabel", background=THEME["bg"]).pack(side="left")
 
@@ -4492,12 +5041,29 @@ class FlowEditor:
     def _on_name_change(self):
         self.flow["name"] = self.name_var.get().strip() or "未命名"
 
+    def _on_queue_change(self):
+        """工具栏「队列」下拉 → 流程顶层的 queue 键。
+        「未指定」不落键：缺省 = 注册时保持清单原分组（schema 也只认 daily/tools）。"""
+        label = self.queue_var.get()
+        for val, name in QUEUE_NAMES.items():
+            if label == name:
+                self.flow["queue"] = val
+                self.log(f"队列分类：【{name}】（保存后经「同步到手机」或"
+                         "「⤴ 注册到任务包」写进清单生效）")
+                return
+        self.flow.pop("queue", None)
+
+    def _refresh_queue_var(self):
+        """流程被整体替换（打开/新建/撤销/重做）后，下拉跟着流程数据走"""
+        self.queue_var.set(queue_label(self.flow.get("queue")))
+
     def on_new(self):
         self._undo.clear()
         self._redo.clear()
         self._update_undo_buttons()
         self.flow = new_flow("测试流程")
         self.name_var.set(self.flow["name"])
+        self._refresh_queue_var()
         self.sel = None
         # ★ 新建出来的流程还没有对应文件，必须把「当前打开的文件」清掉：
         #   否则第一次保存时 on_save 会以为这是「改名」，把上次打开的那个流程文件删掉
@@ -4527,6 +5093,7 @@ class FlowEditor:
             self.flow.setdefault("chain", [])
             self.flow.setdefault("nodes", {})
             self.name_var.set(self.flow.get("name", "未命名"))
+            self._refresh_queue_var()
             self.sel = None
             self.flow_combo.set(os.path.basename(path))
             self._loaded_path = path
@@ -4574,6 +5141,9 @@ class FlowEditor:
         self.flow_combo.config(values=[os.path.basename(p) for p in list_flows()])
         self.flow_combo.set(os.path.basename(path))
         self._mark_saved()
+        self.status(f"已保存「{self.flow['name']}」")
+        self.log(f"✓ 已保存 {os.path.basename(path)}"
+                 f"（{len(self.flow.get('chain', []))} 个节点）", "ok")
 
     def on_register_local(self):
         """「⤴ 注册到任务包」：选择流程写进本地 whmx/interface.json。
@@ -4581,7 +5151,11 @@ class FlowEditor:
         同步到手机只注册运行副本，打 APK 进 assets 的是本地这一份——
         不回写它，新设备装包就看不到流程（清体力 2026-09-17 的教训）。"""
         InterfaceSyncDialog(self.root, self)
-        self.log("✓ 已保存 " + path, "ok")
+
+    def on_view_queues(self):
+        """「☰ 队列一览」：按【一键长草】/【小工具】两个标签页查看清单任务
+        （默认本地任务包那份，可切到手机运行副本核对）。"""
+        QueueViewDialog(self.root, self)
 
     # ---------- 节点增删改 ----------
 
@@ -5434,13 +6008,16 @@ class FlowEditor:
             c.create_text(rp["x0"], rp["y0"] - 8, anchor="sw", fill=THEME["warn"],
                           font=self.f_sm, text="新 ROI")
         if ch:
-            first = self.flow["nodes"][ch[0]]
-            entry_txt = f"▶ 入口 VF_{self.flow['name']}"
-            bw = 40 + 12 * len(entry_txt)
-            _round_rect(c, first["x"] + 4, first["y"] - 30, first["x"] + bw,
-                        first["y"] - 8, 9, fill="#3a3418", outline="#d8c86a")
-            c.create_text(first["x"] + 4 + bw / 2, first["y"] - 19, fill="#ffe9a0",
-                          font=self.f_sm, text=entry_txt)
+            # 入口标签跟着连线图的根走（entry_node_id）：谁没人指向谁是起点，
+            # 摆在最顶/链序在前都不算数 —— 与生成物的入口是同一个判定
+            first = self.flow["nodes"].get(entry_node_id(self.flow))
+            if first is not None:
+                entry_txt = f"▶ 入口 VF_{self.flow['name']}"
+                bw = 40 + 12 * len(entry_txt)
+                _round_rect(c, first["x"] + 4, first["y"] - 30, first["x"] + bw,
+                            first["y"] - 8, 9, fill="#3a3418", outline="#d8c86a")
+                c.create_text(first["x"] + 4 + bw / 2, first["y"] - 19,
+                              fill="#ffe9a0", font=self.f_sm, text=entry_txt)
         # 连线拖动临时线
         if self.wire:
             sx, sy = self._port_pos(self.flow["nodes"][self.wire["from"]], self.wire["port"])
@@ -8383,6 +8960,7 @@ class FlowEditor:
         self.flow.setdefault("nodes", {})
         self.sel = None
         self.name_var.set(self.flow.get("name", "未命名"))
+        self._refresh_queue_var()
         self.build_prop_panel()
         self.redraw()
 
@@ -8654,7 +9232,7 @@ class FlowEditor:
         self.status("生成完成: " + os.path.basename(path))
         return path
 
-    def on_sync(self, run_after):
+    def on_sync(self):
         self._on_name_change()
         errs, _ = self._collect_issues()
         if errs:
@@ -8662,20 +9240,36 @@ class FlowEditor:
             return
         if self._syncing:
             return
-        if run_after and not messagebox.askyesno(
-                "同步并运行",
-                "将 force-stop 重启 App 以加载新流程（虚拟屏会自动重建），"
-                "然后立即运行 VF_" + self.flow["name"] + "。继续？"):
-            return
         # adb 在后台线程执行；tk 只能主线程碰 → 线程只往队列放消息，主线程轮询刷新
         q = queue.Queue()
-        dlg = SyncDialog(self.root, "同步并运行" if run_after else "同步到手机")
+        dlg = SyncDialog(self.root, "同步到手机")
         self._syncing = True
         self._btn_sync.config(state="disabled")
-        self._btn_run.config(state="disabled")
         threading.Thread(target=self._sync_worker,
-                         args=(run_after, dlg, q), daemon=True).start()
+                         args=(dlg, q), daemon=True).start()
         self._poll_sync(q, dlg)
+
+    def on_sync_local(self):
+        """「⤓ 同步到本地」：只把生成物写进本地任务包 whmx/pipeline/（打 APK 进
+        assets 的就是这份），不推手机、不注册清单、不运行 —— 手机侧测试用户自己做。
+        清单要显示另点「⤴ 注册到任务包」。全部本地文件操作，同步执行不走进度窗。"""
+        self._on_name_change()
+        errs, _ = self._collect_issues()
+        if errs:
+            messagebox.showerror("校验未通过", "请先修复错误（见日志）")
+            return
+        try:
+            path, _ = write_pipeline_json(self.flow, self.frame_wh)
+            self.log("✓ 已生成 " + path)
+            proj_copy = os.path.join(ROOT, "whmx", "pipeline", os.path.basename(path))
+            shutil.copy2(path, proj_copy)
+            self.log("✓ 已写入本地任务包 " + proj_copy, "ok")
+            self.status("已同步到本地任务包: " + os.path.basename(path))
+        except Exception as ex:
+            self.log("✗ 同步到本地失败: " + str(ex), "err")
+            messagebox.showerror("同步到本地", "失败：\n" + str(ex))
+            return
+        self.log("（App 清单里要看到它：点「⤴ 注册到任务包」；手机上要跑：点「⇲ 同步到手机」）")
 
     def _poll_sync(self, q, dlg):
         """主线程轮询同步消息队列：prog/log/status/done；窗口销毁后停止并恢复按钮"""
@@ -8692,7 +9286,6 @@ class FlowEditor:
                     dlg.finish(a, b)
                     self._syncing = False
                     self._btn_sync.config(state="normal")
-                    self._btn_run.config(state="normal")
                     return
         except queue.Empty:
             pass
@@ -8701,17 +9294,13 @@ class FlowEditor:
             return
         self._syncing = False
         self._btn_sync.config(state="normal")
-        self._btn_run.config(state="normal")
 
-    def _sync_worker(self, run_after, dlg, q):
+    def _sync_worker(self, dlg, q):
         def prog(pct, text):
             q.put(("prog", pct, text))
 
         def tlog(msg, tag=""):
             q.put(("log", msg, tag))
-
-        def tstatus(s):
-            q.put(("status", s, ""))
 
         try:
             prog(8, "生成 pipeline JSON…")
@@ -8728,21 +9317,16 @@ class FlowEditor:
                 tlog("⚠ 项目包副本更新失败: " + str(ex), "warn")
             sync_templates(self.flow, tlog,
                            lambda pct, text: prog(pct, text))
-            prog(60, "注册到【小工具】清单…")
+            prog(60, f"注册到清单（队列：{queue_label(self.flow.get('queue'))}）…")
             try:
                 register_on_phone(self.flow["name"], tlog,
-                                  options=flow_input_options(self.flow))
+                                  options=flow_input_options(self.flow),
+                                  queue=self.flow.get("queue"))
             except Exception as ex:
-                tlog("⚠ 注册【小工具】清单失败（不影响直达入口运行）: " + str(ex), "warn")
-            entry = "VF_" + self.flow["name"]
-            if run_after:
-                prog(80, "重启 App 并运行（虚拟屏会自动重建）…")
-                launch_on_phone(entry, tlog, tstatus, ask=False)
-                prog(96, "已下发运行指令")
-                q.put(("done", True, "✓ 已同步并在手机上启动：" + entry))
-            else:
-                q.put(("done", True,
-                       "✓ 同步完成，重启 App 后在【小工具】栏可见：" + self.flow["name"]))
+                tlog("⚠ 注册清单失败（不影响直达入口运行）: " + str(ex), "warn")
+            dest = (QUEUE_NAMES.get(self.flow.get("queue"), "清单"))
+            q.put(("done", True,
+                   "✓ 同步完成，重启 App 后在【" + dest + "】可见：" + self.flow["name"]))
         except Exception as ex:
             tlog("✗ 同步失败: " + str(ex), "err")
             q.put(("done", False, "✗ 同步失败：" + str(ex)))
@@ -9015,6 +9599,89 @@ def selftest():
     errs, warns = validate_flow(cf, (1280, 720))
     assert not errs, errs
     assert any("字段定义不一样" in w for w in warns), warns
+    # ★ 子流程(subflow)引用的流程也会被递归收集：override 键 = 内联后的生成名
+    #   （VF_<父>_<subflow节点key>_<子内节点key>[_Hit]，与 _emit_subflow 同一套 fake 名链）
+    global FLOWS_DIR
+    _flows_dir_bak = FLOWS_DIR
+    FLOWS_DIR = _tf.mkdtemp()
+    try:
+        sub = {"schemaVersion": SCHEMA_VERSION, "name": "子测", "chain": ["b1"],
+               "nodes": {
+                   "b1": {"type": "branch", "x": 0, "y": 0, "title": "找器者",
+                          "num": 1,
+                          "props": {"template": "蛙锣.png", "threshold": 0.7,
+                                    "ocr_text": "", "roi": "", "timeout": 3000,
+                                    "rate_limit": 0},
+                          "hit_next": None, "miss_next": None},
+                   "i1": {"type": "input", "x": 400.0, "y": 46.0, "title": "角色名",
+                          "num": 2,
+                          "props": {"option": "角色名", "var": "角色", "kind": "文本",
+                                    "default": "蛙锣", "targets": ["b1"],
+                                    "field": "模板图 (template)"}}}}
+        with open(os.path.join(FLOWS_DIR, "子测.flow.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(sub, f, ensure_ascii=False)
+        pf = {"schemaVersion": SCHEMA_VERSION, "name": "父测", "chain": ["sf1"],
+              "nodes": {"sf1": {"type": "subflow", "x": 0.0, "y": 0.0,
+                                "title": "子流程", "num": 1,
+                                "props": {"flow": "子测"}}}}
+        po = flow_input_options(pf)
+        assert list(po) == ["角色名"], po
+        assert po["角色名"]["type"] == "input", po
+        assert po["角色名"]["inputs"] == [
+            {"name": "角色", "label": "角色", "default": "蛙锣",
+             "pipeline_type": "string"}], po["角色名"]
+        # 子内 branch 的模板图参数落在内联后生成名的 _Hit 上（识别块在那儿）
+        assert po["角色名"]["pipeline_override"] == {
+            "VF_父测_01_01_Hit": {"template": "{角色}.png"}}, po["角色名"]
+        # 同一子流程被引用两次 → 同名参数合并，override 汇总两份内联键
+        pf["nodes"]["sf2"] = {"type": "subflow", "x": 100.0, "y": 0.0,
+                              "title": "子流程2", "num": 2,
+                              "props": {"flow": "子测"}}
+        pf["chain"].append("sf2")
+        po2 = flow_input_options(pf)["角色名"]
+        assert set(po2["pipeline_override"]) == {
+            "VF_父测_01_01_Hit", "VF_父测_02_01_Hit"}, po2
+        assert len(po2["inputs"]) == 1, po2          # 定义仍只有一份
+        # 嵌套子流程：fake 名链逐层叠加（父测_01 → 父测_01_03）
+        sub["nodes"]["sb"] = {"type": "subflow", "x": 0.0, "y": 100.0,
+                              "title": "孙流程", "num": 3,
+                              "props": {"flow": "孙测"}}
+        sub["chain"].append("sb")
+        with open(os.path.join(FLOWS_DIR, "子测.flow.json"), "w",
+                  encoding="utf-8") as f:      # subflow_child 从磁盘读，改动要重新落盘
+            json.dump(sub, f, ensure_ascii=False)
+        with open(os.path.join(FLOWS_DIR, "孙测.flow.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"schemaVersion": SCHEMA_VERSION, "name": "孙测",
+                       "chain": ["g1"],
+                       "nodes": {
+                           "g1": {"type": "branch", "x": 0, "y": 0, "title": "g",
+                                  "num": 1,
+                                  "props": {"template": "蛙锣.png",
+                                            "threshold": 0.7, "ocr_text": "",
+                                            "roi": "", "timeout": 3000,
+                                            "rate_limit": 0},
+                                  "hit_next": None, "miss_next": None},
+                           "gi": {"type": "input", "x": 400.0, "y": 46.0,
+                                  "title": "二级参数", "num": 2,
+                                  "props": {"option": "二级参数", "var": "g2",
+                                            "kind": "文本", "default": "",
+                                            "targets": ["g1"],
+                                            "field": "模板图 (template)"}}}},
+                      f, ensure_ascii=False)
+        po3 = flow_input_options(pf)
+        # 两个 subflow（sf1/sf2）都引到孙测 → 同名参数合并出两份内联键
+        assert po3["二级参数"]["pipeline_override"] == {
+            "VF_父测_01_03_01_Hit": {"template": "{g2}.png"},
+            "VF_父测_02_03_01_Hit": {"template": "{g2}.png"}}, po3["二级参数"]
+        # 引用不存在的子流程：不崩、安静跳过（SUBFLOW_REF 校验负责报错）
+        pf["nodes"]["bad"] = {"type": "subflow", "x": 0.0, "y": 200.0,
+                              "title": "坏引用", "num": 4,
+                              "props": {"flow": "不存在的流程"}}
+        assert flow_input_options(pf) is not None
+    finally:
+        FLOWS_DIR = _flows_dir_bak
     # 布局：卡片高度按类型算 + 重叠检测（打开旧流程要能发现"全叠在一起"）
     lay = {"name": "布局测", "chain": ["s", "b"],
            "nodes": {"s": {"type": "switch", "x": 46.0, "y": 46.0, "title": "s",
@@ -9135,6 +9802,208 @@ def selftest():
     assert [t["name"] for t in udata["task"]].count("查找器者") == 1, udata
     assert udata["task"][0]["group"] == ["daily"], udata   # 留下的是正式任务、位置不动
     print("清单同步幂等自测通过")
+
+    # ★ 流程改名：entry 已指到新名字的旧条目，注册时 name/label 要跟上 ——
+    #   App 标签页显示的就是 label，不改的话改名后永远显示旧名
+    #   （每日免费礼包购买→每日免费礼包 实锤）。原地对齐、不追加、分组不动。
+    rdata = {"task": [{"name": "每日免费礼包购买", "label": "每日免费礼包购买",
+                       "entry": "VF_每日免费礼包", "group": ["daily"]}]}
+    upsert_flow_task(rdata, "每日免费礼包")
+    rt = rdata["task"][0]
+    assert rt["name"] == "每日免费礼包" and rt["label"] == "每日免费礼包", rdata
+    assert rt["entry"] == "VF_每日免费礼包" and rt["group"] == ["daily"], rdata
+    assert len(rdata["task"]) == 1, rdata
+    print("清单改名对齐自测通过")
+
+    # ★ 同名 input 参数跨流程共享顶层定义：pipeline_override 取【并集】，
+    #   后注册的流程不能把先注册流程的键顶掉（子流程参数化后各流程的内联键天然不同）
+    odata = {"task": [], "option": {}}
+    upsert_flow_task(odata, "流程甲", options={
+        "角色名": {"type": "input", "label": "角色名", "inputs": [{"name": "角色"}],
+                  "pipeline_override": {"VF_流程甲_01_Hit": {"template": "{角色}.png"}}}})
+    upsert_flow_task(odata, "流程乙", options={
+        "角色名": {"type": "input", "label": "角色名", "inputs": [{"name": "角色"}],
+                  "pipeline_override": {"VF_流程乙_02_Hit": {"template": "{角色}.png"}}}})
+    assert set(odata["option"]["角色名"]["pipeline_override"]) == {
+        "VF_流程甲_01_Hit", "VF_流程乙_02_Hit"}, odata["option"]["角色名"]
+    # 再注册：inputs 以新定义为准，同节点同字段新值覆盖旧值，别的流程的键仍在
+    upsert_flow_task(odata, "流程甲", options={
+        "角色名": {"type": "input", "label": "角色名", "inputs": [{"name": "新变量"}],
+                  "pipeline_override": {"VF_流程甲_01_Hit": {"template": "新.png"}}}})
+    odef = odata["option"]["角色名"]
+    assert odef["inputs"] == [{"name": "新变量"}], odef
+    assert odef["pipeline_override"]["VF_流程甲_01_Hit"] == {"template": "新.png"}, odef
+    assert set(odef["pipeline_override"]) == {
+        "VF_流程甲_01_Hit", "VF_流程乙_02_Hit"}, odef
+    print("同名参数并集自测通过")
+
+    # ★ 队列分类（工具栏「队列」下拉 → 流程顶层 queue → 清单条目 group）：
+    #   daily=一键长草、tools=小工具；未指定 = 既有条目的分组不动、新条目落小工具（老行为）
+    qdata = {"task": []}
+    upsert_flow_task(qdata, "新任务", queue="daily")
+    assert qdata["task"][0]["group"] == ["daily"], qdata
+    upsert_flow_task(qdata, "新任务", queue="tools")
+    assert qdata["task"][0]["group"] == ["tools"], qdata    # 同一条目改分类…
+    assert len(qdata["task"]) == 1, qdata                   # …不追加重复条目
+    upsert_flow_task(qdata, "新任务")                        # 未指定 → 分组保持不动
+    assert qdata["task"][0]["group"] == ["tools"], qdata
+    upsert_flow_task(qdata, "新任务", queue="daily")         # 再切回一键长草
+    assert qdata["task"][0]["group"] == ["daily"] and len(qdata["task"]) == 1, qdata
+    # 未指定 + 正式任务：转正后 group 保持手写分组（升好感度那批靠这个不被改坏）
+    mdata = {"task": [{"name": "手写", "label": "手写", "entry": "老_入口",
+                       "group": ["battle"]}]}
+    upsert_flow_task(mdata, "手写")
+    assert mdata["task"][0]["entry"] == "VF_手写", mdata
+    assert mdata["task"][0]["group"] == ["battle"], mdata
+    assert len(mdata["task"]) == 1, mdata
+    # normalize_flow：非法 queue 摘掉（视为未指定），合法的保留
+    assert normalize_flow({"name": "x", "chain": [], "nodes": {},
+                           "queue": "battle"}).get("queue") is None
+    assert normalize_flow({"name": "x", "chain": [], "nodes": {},
+                           "queue": "daily"}).get("queue") == "daily"
+    assert queue_label("daily") == "一键长草" and queue_label(None) == "未指定"
+    print("队列分类自测通过")
+
+    # ★ 「☰ 队列一览」的分组口径（split_queues）必须与 App 的 taskHome 一致：
+    #   group 含 "tools" → 小工具栏；其余（daily/battle/…/没写 group）都算一键长草主队列
+    sdata = {"task": [
+        {"name": "a", "group": ["tools"]},
+        {"name": "b", "group": ["daily"]},
+        {"name": "c"},
+        {"name": "d", "group": ["battle", "tools"]},   # 多重分组也算 tools
+        "坏数据不是 dict 也不是事",                      # 容错：跳过，不炸
+    ]}
+    smain, stools = split_queues(sdata)
+    assert [t["name"] for t in smain] == ["b", "c"], smain
+    assert [t["name"] for t in stools] == ["a", "d"], stools
+    assert split_queues(None) == ([], [])
+    assert group_labels_of({"group": [
+        {"name": "daily", "label": "日常"}, {"name": "tools"}]}) == \
+        {"daily": "日常", "tools": "tools"}              # 没写 label 的组回退组名
+    print("队列一览分组自测通过")
+
+    # ★ 队列一览里拖动换栏目的 group 变换规则（regroup_task，与清单/App 口径配套）
+    t1 = {"name": "a", "group": ["daily"]}
+    regroup_task(t1, True)
+    assert t1["group"] == ["tools"], t1
+    t2 = {"name": "b", "group": ["tools"]}
+    regroup_task(t2, False)
+    assert t2["group"] == ["daily"], t2           # 只有 tools → 给 daily，不留空 group
+    t3 = {"name": "c", "group": ["battle", "tools"]}
+    regroup_task(t3, False)
+    assert t3["group"] == ["battle"], t3          # 其余细分组保留
+    t4 = {"name": "d"}
+    regroup_task(t4, True)
+    assert t4["group"] == ["tools"], t4           # 没写 group 的也能拖进小工具
+    print("队列拖拽分组规则自测通过")
+
+    # ★ 选项「值」的类型转换（case_value）：expected 是正则文本，纯数字也必须保持
+    #   字符串——引擎 override 时按字符串/字符串数组解析，塞 int 会让任务一下发就死
+    #   （刷活动关「关卡名」"07"→7，2026-09-17 实锤）；repeat 这类数值字段照旧转 int
+    assert case_value("expected", "07") == "07"
+    assert case_value("expected", "9") == "9"
+    assert case_value("template", "1.png") == "1.png"
+    assert case_value("repeat", "2") == 2
+    assert case_value("timeout", "-1") == -1
+    assert case_value("next", "a,b") == ["a", "b"]
+    assert case_value("enabled", "true") is True
+    print("选项值类型转换自测通过")
+
+    # ★ 【循环检测点击】（detect_click）：容器+Hit 结构。容器挂判定窗口（引擎窗口内
+    #   按识别间隔反复识别 = "没检测到就重新执行这个节点"的循环），Hit 命中即点击
+    #   命中处并承接链上后继；容器不挂 on_error —— 窗口耗尽任务失败。
+    dc = {"name": "循环检测测", "chain": ["w", "t"],
+          "nodes": {
+              "w": {"type": "detect_click", "x": 0, "y": 0, "title": "等弹窗",
+                    "props": {"template": "yanxun.png", "threshold": 0.85,
+                              "ocr_text": "", "roi": "100,200,300,400",
+                              "rate_limit": 500, "timeout": 60000,
+                              "pre_delay": 100, "post_delay": 700},
+                    "num": 1, "next": "t"},
+              "t": {"type": "tap", "x": 0, "y": 0, "title": "点", "num": 2,
+                    "props": {"pre_delay": 0, "post_delay": 500, "repeat": 1,
+                              "x": 1, "y": 1}, "next": None}}}
+    dc = normalize_flow(dc)
+    errs, _ = validate_flow(dc, (1280, 720))
+    assert not errs, f"detect_click 校验报错: {errs}"
+    out_dc = build_pipeline(dc, (1280, 720))
+    DW = "VF_循环检测测"
+    assert out_dc[f"{DW}_01"] == {"action": "DoNothing", "timeout": 60000,
+                                  "next": [f"{DW}_01_Hit"]}, out_dc[f"{DW}_01"]
+    hit = out_dc[f"{DW}_01_Hit"]
+    assert hit["recognition"] == "TemplateMatch", hit
+    assert hit["template"] == "yanxun.png" and hit["threshold"] == 0.85, hit
+    assert hit["roi"] == [100, 200, 300, 400] and hit["rate_limit"] == 500, hit
+    assert hit["action"] == "Click", hit
+    assert hit["pre_delay"] == 100 and hit["post_delay"] == 700, hit
+    assert hit["next"] == [f"{DW}_02"], hit          # 链上后继由 Hit 承接
+    # OCR 判定：填了 ocr_text 就忽略模板图（与分支同口径）
+    dc["nodes"]["w"]["props"]["template"] = ""
+    dc["nodes"]["w"]["props"]["ocr_text"] = "确认"
+    errs, _ = validate_flow(dc, (1280, 720))
+    assert not errs, errs
+    h2 = build_pipeline(dc, (1280, 720))[f"{DW}_01_Hit"]
+    assert h2["recognition"] == "OCR" and h2["expected"] == ["确认"], h2
+    assert "template" not in h2 and h2["action"] == "Click", h2
+    # 非法正则在本地拦下（铁律 #2），生成前就报而不是到手机上炸整包
+    dc["nodes"]["w"]["props"]["ocr_text"] = "?"
+    errs, _ = validate_flow(dc, (1280, 720))
+    assert errs and any("不是合法正则" in e for e in errs), errs
+    # 既没模板也没 OCR → 生成时明确报错
+    dc["nodes"]["w"]["props"]["ocr_text"] = ""
+    try:
+        build_pipeline(dc, (1280, 720))
+        assert False, "未配置判定条件应当报错"
+    except FlowValidationError:
+        pass
+    print("循环检测点击自测通过")
+
+    # ★ detect_click 排在链尾（后继=无）：_Hit 不写 next = 到此结束，校验期望也
+    #   必须是空集 —— 写成 {("end",None)} 会永远对不上（每日免费礼包_11 实锤误报
+    #   「画布=<收口 End> ≠ 生成结果=（无）」）
+    dcl = {"name": "循环检测链尾", "chain": ["p", "w"],
+           "nodes": {
+               "p": {"type": "tap", "x": 0, "y": 0, "title": "点", "num": 1,
+                     "props": {"pre_delay": 0, "post_delay": 500, "repeat": 1,
+                               "x": 1, "y": 1}, "next": "w"},
+               "w": {"type": "detect_click", "x": 0, "y": 0, "title": "链尾检测",
+                     "props": {"template": "yanxun.png", "threshold": 0.85,
+                               "ocr_text": "", "roi": "", "rate_limit": 500,
+                               "timeout": 30000, "pre_delay": 0, "post_delay": 600},
+                     "num": 2, "next": None}}}
+    dcl = normalize_flow(dcl)
+    errs, _ = validate_flow(dcl, (1280, 720))
+    assert not errs, errs
+    out_dcl = build_pipeline(dcl, (1280, 720))
+    assert "next" not in out_dcl["VF_循环检测链尾_02_Hit"], out_dcl["VF_循环检测链尾_02_Hit"]
+    pis_dcl = collect_pipeline_issues(dcl, out_dcl, (1280, 720))
+    assert not [i for i in pis_dcl if i.level == "error" and "出口不一致" in i.message], \
+        [i.message for i in pis_dcl if i.level == "error"]
+    print("循环检测链尾不误报出口不一致：通过")
+
+    # I3 边一致性：detect_click 的「容器→_Hit」结构边不能被当成「next 连到自己」
+    # 误报出口不一致（VF_刷活动关_17 实锤过）
+    pis = collect_pipeline_issues(dc, out_dc, (1280, 720))
+    assert not [i for i in pis if i.level == "error" and "出口不一致" in i.message], \
+        [i.message for i in pis if i.level == "error"]
+
+    # ★ 入口 = 连线图的根（链上无人指向的节点）：新起点排在链尾、next 指回原链首
+    #   （用户画布上的「循环检测 → 链首」），入口就是它；链上全被指向（a→b→a 回环）
+    #   才回退链首
+    def _tap(num, nxt):
+        return {"type": "tap", "x": 0, "y": 0, "title": f"点{num}", "num": num,
+                "props": {"pre_delay": 0, "post_delay": 500, "repeat": 1,
+                          "x": 1, "y": 1}, "next": nxt}
+    er = {"name": "入口根测", "chain": ["a", "s"],
+          "nodes": {"a": _tap(1, None), "s": _tap(2, "a")}}
+    out_er = build_pipeline(er, (1280, 720))
+    assert out_er["VF_入口根测"]["next"] == ["VF_入口根测_02"], out_er["VF_入口根测"]
+    # 链上全被指向（a→b→a 回环）：回退链首
+    er2 = {"name": "入口根测2", "chain": ["a", "b"],
+           "nodes": {"a": _tap(1, "b"), "b": _tap(2, "a")}}
+    out_er2 = build_pipeline(er2, (1280, 720))
+    assert out_er2["VF_入口根测2"]["next"] == ["VF_入口根测2_01"], out_er2["VF_入口根测2"]
+    print("入口根节点自测通过")
 
     # ★ 「⤴ 注册到任务包」回写本地 whmx/interface.json：打 APK 进 assets 的是本地这一份，
     #   只注册到手机运行副本的话新设备看不到流程（清体力 2026-09-17 的教训）。

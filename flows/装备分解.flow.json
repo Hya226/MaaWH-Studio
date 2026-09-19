@@ -16,8 +16,8 @@
   "nodes": {
     "n_分_物资库_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 138.0,
       "title": "分_物资库_Hit",
       "props": {
         "threshold": 0.55,
@@ -37,8 +37,8 @@
     },
     "n_分_分解_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 230.0,
       "title": "分_分解_Hit",
       "props": {
         "threshold": 0.55,
@@ -58,12 +58,12 @@
     },
     "n_分_白板": {
       "type": "tap",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 322.0,
       "title": "分_白板",
       "props": {
-        "x": 548,
-        "y": 175,
+        "x": 412,
+        "y": 173,
         "pre_delay": 0,
         "post_delay": 800,
         "post_wait_freezes": 0,
@@ -76,8 +76,8 @@
     },
     "n_分_√右下_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 414.0,
       "title": "分_√右下_Hit",
       "props": {
         "threshold": 0.6,
@@ -97,8 +97,8 @@
     },
     "n_分_√中_Hit": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 506.0,
       "title": "分_√中_Hit",
       "props": {
         "threshold": 0.6,
@@ -118,12 +118,12 @@
     },
     "n_分_中": {
       "type": "tap",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 598.0,
       "title": "分_中",
       "props": {
-        "x": 640,
-        "y": 360,
+        "x": 168,
+        "y": 573,
         "pre_delay": 0,
         "post_delay": 800,
         "post_wait_freezes": 0,
@@ -136,8 +136,8 @@
     },
     "c_Common_回主页": {
       "type": "common",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 690.0,
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
@@ -146,8 +146,8 @@
     },
     "n_分_√中": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 506.0,
       "title": "分_√中?",
       "props": {
         "threshold": 0.6,
@@ -163,8 +163,8 @@
     },
     "n_分_√右下": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 368.0,
       "title": "分_√右下?",
       "props": {
         "threshold": 0.6,
@@ -180,8 +180,8 @@
     },
     "n_分_分解": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 368.0,
+      "y": 230.0,
       "title": "分_分解?",
       "props": {
         "threshold": 0.55,
@@ -197,8 +197,8 @@
     },
     "n_分_物资库": {
       "type": "branch",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 46.0,
       "title": "分_物资库?",
       "props": {
         "threshold": 0.55,

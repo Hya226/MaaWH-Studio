@@ -3,10 +3,9 @@
   "chain": [
     "n_ZJ_Entry",
     "n_ZJ_HasConfirm",
-    "n_ZJ_TiaoGuoCK",
-    "b_ZJ_TiaoGuoCK",
+    "n003710e",
+    "n002b3aa",
     "n_ZJ_DuiGouCK",
-    "c_Common_点中间回主页",
     "b_ZJ_HasConfirm",
     "n_ZJ_GoStart",
     "n_征集_检满检查",
@@ -40,7 +39,7 @@
     },
     "n_ZJ_HasConfirm": {
       "type": "tpl_click",
-      "x": 46,
+      "x": 322.0,
       "y": 138.0,
       "title": "ZJ_HasConfirm",
       "props": {
@@ -56,33 +55,12 @@
         "template": "quanbuqueren.png"
       },
       "num": 2,
-      "next": "b_ZJ_TiaoGuoCK"
-    },
-    "n_ZJ_TiaoGuoCK": {
-      "type": "tpl_click",
-      "x": 46,
-      "y": 230.0,
-      "title": "ZJ_TiaoGuoCK",
-      "props": {
-        "threshold": 0.55,
-        "roi": "",
-        "order_by": "Score",
-        "timeout": 20000,
-        "rate_limit": 500,
-        "pre_delay": 1000,
-        "post_delay": 1000,
-        "post_wait_freezes": 0,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "tiaoguochouka.png"
-      },
-      "num": 3,
-      "next": "n_ZJ_DuiGouCK"
+      "next": "n003710e"
     },
     "n_ZJ_DuiGouCK": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 322.0,
+      "x": 184.0,
+      "y": 552.0,
       "title": "ZJ_DuiGouCK",
       "props": {
         "threshold": 0.6,
@@ -97,22 +75,12 @@
         "template": "duigou.png"
       },
       "num": 4,
-      "next": "c_Common_点中间回主页"
-    },
-    "c_Common_点中间回主页": {
-      "type": "common",
-      "x": 46,
-      "y": 414.0,
-      "title": "Common_点中间回主页",
-      "props": {
-        "node": "Common_点中间回主页"
-      },
-      "num": 5
+      "next": "b_ZJ_GoStart"
     },
     "b_ZJ_HasConfirm": {
       "type": "branch",
-      "x": 368.0,
-      "y": 138.0,
+      "x": 598.0,
+      "y": 322.0,
       "title": "ZJ_HasConfirm?",
       "props": {
         "threshold": 0.6,
@@ -128,8 +96,8 @@
     },
     "n_ZJ_GoStart": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 598.0,
+      "x": 46.0,
+      "y": 782.0,
       "title": "ZJ_GoStart",
       "props": {
         "threshold": 0.6,
@@ -148,8 +116,8 @@
     },
     "n_征集_检满检查": {
       "type": "branch",
-      "x": 46,
-      "y": 690.0,
+      "x": 46.0,
+      "y": 874.0,
       "title": "征集_检满检查?",
       "props": {
         "threshold": 0.7,
@@ -165,7 +133,7 @@
     "c_Common_回主页": {
       "type": "common",
       "x": 46,
-      "y": 782.0,
+      "y": 1058.0,
       "title": "Common_回主页",
       "props": {
         "node": "Common_回主页"
@@ -175,7 +143,7 @@
     "n_ZJ_JiaHao2": {
       "type": "tpl_click",
       "x": 46,
-      "y": 874.0,
+      "y": 1150.0,
       "title": "ZJ_JiaHao2",
       "props": {
         "threshold": 0.65,
@@ -194,8 +162,8 @@
     },
     "n_ZJ_DuiGou2": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 966.0,
+      "x": 460.0,
+      "y": 1012.0,
       "title": "ZJ_DuiGou2",
       "props": {
         "threshold": 0.65,
@@ -214,8 +182,8 @@
     },
     "b_ZJ_GoStart": {
       "type": "branch",
-      "x": 368.0,
-      "y": 598.0,
+      "x": 414.0,
+      "y": 782.0,
       "title": "ZJ_GoStart?",
       "props": {
         "threshold": 0.6,
@@ -231,8 +199,8 @@
     },
     "n_ZJ_Branch": {
       "type": "switch",
-      "x": 368.0,
-      "y": 230.0,
+      "x": 690.0,
+      "y": 506.0,
       "title": "ZJ_Branch（多候选）",
       "props": {
         "candidates": [
@@ -252,7 +220,7 @@
     "n_opt_征集_征集次数": {
       "type": "pick",
       "x": 736.0,
-      "y": 46.0,
+      "y": 966.0,
       "title": "选择(下拉)",
       "num": 14,
       "props": {
@@ -291,8 +259,8 @@
     },
     "n_pass_征集段2": {
       "type": "pass",
-      "x": 368.0,
-      "y": 874.0,
+      "x": 460.0,
+      "y": 1196.0,
       "title": "通道/跳转",
       "num": 15,
       "props": {
@@ -300,22 +268,41 @@
       },
       "next": "n_ZJ_JiaHao2"
     },
-    "b_ZJ_TiaoGuoCK": {
-      "type": "branch",
-      "x": 368.0,
+    "n003710e": {
+      "type": "detect_click",
+      "x": 322.0,
       "y": 230.0,
-      "title": "ZJ_TiaoGuoCK?",
+      "title": "循环检测点击",
       "props": {
-        "threshold": 0.55,
+        "threshold": 0.75,
         "ocr_text": "",
         "roi": "",
-        "timeout": 20000,
-        "rate_limit": 500,
+        "rate_limit": 600,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
         "template": "tiaoguochouka.png"
       },
-      "hit_next": "n_ZJ_TiaoGuoCK",
-      "miss_next": "c_Common_回主页",
-      "num": 16
+      "num": 17,
+      "next": "n002b3aa"
+    },
+    "n002b3aa": {
+      "type": "branch",
+      "x": 184.0,
+      "y": 414.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "duigou.png"
+      },
+      "num": 18,
+      "hit_next": "n_ZJ_DuiGouCK",
+      "miss_next": "b_ZJ_GoStart",
+      "next": "n_ZJ_DuiGouCK"
     }
   },
   "schemaVersion": 4

@@ -50,6 +50,12 @@
 编辑器侧已加同口径检查 `_check_ocr_regex()`（覆盖 ocr_click 的 text、branch 的 ocr_text、
 枝干候选、replace 键）——**别绕过它**，也别在文案上说"填普通文字就行"。
 
+★ 同理，**清单参数（【选择】/【输入】）里 expected/template/roi/order_by 的"值"
+  必须保持字符串**：`case_value()` 对这些字段（`_CASE_TEXT_FIELDS`）不做纯数字→int
+  转换。曾把「关卡名」的 `"07"` 转成 int 7 写进 interface.json，引擎
+  `override_pipeline` 直接 `parse_task failed`，任务一下发就失败（2026-09-17）。
+  坏定义不报错、只在执行时炸，所以改 `case_value` 后要**重新同步/注册**才生效。
+
 ### 3. `#N` 是节点的【固定编号 num】，不是链序下标
 
 编号在建节点时分配、之后永不变（pipeline 名后缀也是它）；链序随时会变。
@@ -128,11 +134,14 @@
 
 ★ **重装 App 不会更新手机上的 `vf_*.json`**：`TaskPack.ensureBundledTaskpack` 整包重放时会先把
 手机上的 `pipeline/vf_*.json` 备份起来、放完再盖回去（"编辑器同步的优先"）。所以改过 `vf_*.json`
-之后装了包，手机上的还是**旧的那一份** —— 要么先删手机上的那几个文件再装，要么直接 adb 直推：
+之后装了包，手机上的还是**旧的那份** —— 要么先删手机上的那几个文件再装，要么直接 adb 直推：
 ```
 adb push <ascii临时名> /data/local/tmp/ && adb shell "run-as com.maawh.app sh -c 'cp /data/local/tmp/<临时名> files/taskpacks/whmx/pipeline/<真名>'"
 ```
 （中文文件名在 host 侧容易 `cannot stat`，先复制成 ASCII 临时名再推。）
+★ `sync_pipeline_file()` 已按上面口径实现（ASCII 名 `_vf_pipeline.json` 中转）——
+别改回直接 push 中文名：2026-09-17 实测中文名 push 上去的内容 md5 对不上（编码坑，
+`/data/local/tmp/` 里躺着一批乱码名的旧推送残留就是证据）。
 
 ---
 
@@ -162,6 +171,12 @@ adb push <ascii临时名> /data/local/tmp/ && adb shell "run-as com.maawh.app sh
   `normalize_flow` 的 `_materialize_next()` 完成）；selftest 有两条断言钉住（v4 不回退 + 老文件回退）
 - `schemaVersion`：语义版本。当前 4 = 边是 `nd["next"]`、链序只管显示顺序（3 = 分支出口只认显式连线）。
   **改流程语义就往 `SCHEMA_VERSION` +1**，迁移写在 `normalize_flow()`（读）里，版本号在 `save_flow()`（写）里盖章
+- ★ **入口 = 连线图的根**（`entry_node_id()`，2026-09-17 按用户要求从"链首即入口"改）：
+  链上【没有任何出口指向】的那个节点是执行起点（next/hit_next/miss_next/候选 next/loop
+  的 body_end 都算指向）；链上全部被指向（收口回环把首尾都指了）才回退链首。
+  场景：把「循环检测」这类起点节点排在链尾、用「下一个」连到原链首，入口自动变成它，
+  画布的「▶ 入口」标签也跟着它画。生成入口在 `_build_nodes` 开头（VF_x 的 next），
+  与画布标签共用 `entry_node_id`——改入口语义只能改这一处函数。
 
 ### 新增一种节点类型要动的地方（清单）
 
@@ -175,6 +190,19 @@ adb push <ascii临时名> /data/local/tmp/ && adb shell "run-as com.maawh.app sh
    `_pull_exit_targets_into_chain`（别把它拽进链）、`normalize_flow` 的链清理、
    `_emit_one`（返回 None）、`_param_col_pos`、`_check_offchain`（离链不算错）、
    ⛔ 未接入徽标、`_has_next_ball`（没有"下一个"）、两处「下一个」下拉候选、`tidy_layout` 的两列
+
+### 【循环检测点击】节点（`detect_click`，2026-09-17 加）
+
+- 语义：判定窗口（timeout，默认 30000ms）内按识别间隔（rate_limit）**反复识别**
+  ——模板图组任一命中，或 OCR（ocr_text 填了就忽略模板图，与【分支】同口径）；
+  命中即**点击命中处**并走链上「下一个」；窗口耗尽仍未命中 = 节点超时失败（任务失败）。
+  "没检测到就重新执行这个节点，一直循环"由引擎窗口重试承担，不需要画任何回环。
+- 生成结构 =【分支】同源的**容器 + `_Hit`**：容器
+  `{action: DoNothing, timeout, next: [_Hit]}`（不挂 on_error），`_Hit` 是
+  `branch_hit_block()` 的识别块 + `action: Click` + 前后延时 + 链上后继。
+- 改动共享点时记得带上它：`branch_hit_block`（识别块）、`_check_ocr_regex`（OCR 正则，
+  铁律 #2）、collect_issues 的模板/ROI/阈值三处 tuple、`input_override_pairs` 的
+  `RECO_FIELDS → *_Hit` 特判（识别类参数注入要落到 `_Hit`，落到容器上无效）。
 
 ### 参数（【输入】/【选择】节点）→ `interface.json`
 
@@ -203,11 +231,63 @@ adb push <ascii临时名> /data/local/tmp/ && adb shell "run-as com.maawh.app sh
   （`查2_Hit`、`升好_礼物`、`征集段2`…）。写在这里的名字会**原样**进 `pipeline_override` 的键 ——
   这样"编辑器里看到的参数"和"手机上真正生效的参数"是同一个，不会一边改一边静默失效。
   【选择】的选项里"目标节点"那一格同样支持写这种名字
-- ★ **一条硬验收**：`flow_input_options(流程) == whmx/interface.json 里那一项`（逐字段）。
-  2026-09-15 就是用它把 5 个老流程的参数（征集次数/刷冬谷币次数/目标角色/礼物次数）
-  补成节点的 —— `flow_input_options()` 对不上就说明画布上缺东西或指向变了
+- ★ **子流程参数也会进注册**（2026-09-18 加）：`flow_input_options()` 遇到【子流程(内联)】
+  节点会**递归**收集被引用流程内部的【输入】/【选择】，override 的键直接按**内联后的生成名**
+  算（递归前把子流程 `name` 换成 `_subflow_child_name()` 的 fake 名，`jname()` 就自动产出
+  `VF_<父>_<key>_…`，与 `_emit_subflow` 同一套 fake 名链，嵌套自动正确）。
+  之前不递归：升好感度/装卸装备引用查找器者子流程后一同步，手机上就只剩父流程自己的参数
+  （子流程里的「角色名」丢了）——2026-09-18 实锤的坑。
+- ★ **同名 input 的顶层定义是 pipeline_override【并集】**（2026-09-18 改 `upsert_flow_task`）：
+  顶层 option 按名字共享一个定义槽，而各流程的键不同（内联前缀不同），整份覆盖会把
+  先注册流程的键顶掉、那边参数静默失效 —— App `buildOverride` 是把整份 override 深合并后
+  随任务下发的、不按本任务过滤键，**引擎忽略本任务用不到的键**（手写『目标角色』时代就是
+  三流程键并集、装卸带着升好感的键跑了几周 = 先例）。inputs/label 以最新注册的定义为准；
+  `select` 仍不合并（以后者为准）。副作用：流程改名/删参数后旧键会留在定义里（死键，被
+  引擎忽略，无害；要清就重建该参数的定义）
+- ★ **一条硬验收**：`flow_input_options(流程)` 的每个参数都要能在 `whmx/interface.json`
+  顶层那一项里找到（同名定义是各流程并集，单流程产出应是它的子集，override 键逐个都在）。
+  2026-09-15 就是用它把 5 个老流程的参数（征集次数/刷冬谷币次数/礼物次数）
+  补成节点的 —— 对不上就说明画布上缺东西或指向变了。
+  （老「目标角色」注册已于 2026-09-18 删除，本地+手机：参数统一用流程里的「角色名」，
+  顶层定义 = 三流程六键并集，与手写版同构）
+
+### 任务队列分类（flow 顶层 `queue` 键，2026-09-17 加）
+
+- 工具栏「⤴ 注册到任务包」旁的「队列」下拉：**一键长草**（`daily`）/ **小工具**（`tools`）/
+  **未指定（跟随清单现状）**（不落键）。改了要**保存流程**才落盘，再经「同步到手机」或
+  「⤴ 注册到任务包」写进清单生效
+- 落点：`upsert_flow_task(..., queue=…)` 把它写进清单条目的 `group`（App 侧
+  `MainActivity.taskHome`：group 含 `tools` → 小工具栏，否则一键长草主队列；
+  ★ 手机上用户手动挪过位置的任务以 `QueueStore.homeOf` 为准，清单 group 只是默认归属）
+- ★ **未指定 ≠ 小工具**：`queue=None` 时**已有条目的分组一字不动**（清单里手写的
+  `daily`/`battle` 靠这个不被改坏），只有新追加的条目才落 `tools`（老行为）
+- 同一条目改分类 = **原地改 `group`**，不追加重复条目；同一入口的重复条目清理时保留
+  清单里**靠前**的那个（标签页手写的 label/description/default_check 在它身上）
+- `normalize_flow()` 读文件时把非法 `queue` 值摘掉（schema 枚举只有 `daily`/`tools`，
+  见 `docs/schema/flow.schema.json`）；`flow.schema.json` 顶层是 `additionalProperties: false`，
+  新加顶层键必须同步登记
+- 工具栏「☰ 队列一览」按钮：按两个标签页展示清单任务（`QueueViewDialog`），
+  **任务行可拖动**——同列上下拖 = 调整顺序、拖到另一列 = 换栏目（`regroup_task()`
+  改条目 group：进小工具 = `["tools"]` 覆盖；回主队列 = 摘掉 tools 保留其余细分组，
+  只剩 tools 则补 `["daily"]`）。**松手立即写回当前数据源**（本地走 `dump_interface()`、
+  手机走 `push_interface_to_phone()`，两个 register 函数也复用它们；写前自动 .bak，
+  失败弹错并回滚显示）。写回后 `task 数组 = 主队列 + 小工具`（各 tab 内相对序不变，
+  App 按 tab 分别取序，交错顺序丢失无影响）。
+  ★ 拖动只改清单条目，**不改流程文件的 queue** —— 两者矛盾时行尾标 ⚠
+  （`_queue_mismatch`，只查 entry == VF_任务名 的编辑器流程），下次同步会按
+  流程文件的 queue 写回清单。
+  分组口径走 `split_queues()`（与 App `taskHome` 同口径：group 含 `tools` → 小工具，
+  其余都算主队列）；数据默认读**本地任务包** `whmx/interface.json`（`load_interface_data()`），
+  对话框里可点「↻ 从手机读取」切到手机运行副本（`load_phone_interface()`）——
+  同步只写手机、注册只写本地，两份可能不同步，看错了先确认数据源。
 
 ### 「同步到手机」做的四件事（`on_sync`）
+
+工具栏现有三个落盘入口（2026-09-17 改：「▶ 同步并运行」已删——用户自己测试，
+`launch_on_phone()` 保留但暂无调用者）：
+**「⤓ 生成 JSON」**= 只写 `flows/build/`；**「⤓ 同步到本地」**（`on_sync_local`）=
+生成 + 复制进本地任务包 `whmx/pipeline/`，不推手机、不注册、不运行；**「⇲ 同步到手机」**
+= 下面这四件事：
 
 1. `write_pipeline_json()` → `flows/build/vf_<名>.json`
 2. `sync_pipeline_file()` → 推 `files/taskpacks/whmx/pipeline/`
@@ -380,7 +460,9 @@ python -c "from maa.resource import Resource; r=Resource(); j=r.post_bundle(r'E:
 - 改完**必须跑 `--selftest`**；行为变化要补断言（现在的 selftest 覆盖：枝干级联与候选条件来源、
   输入节点与多目标注入、离链/断开语义、布局重叠与卡片高度、OCR 正则校验、
   新建流程不牵连旧文件、布局与回环走线、「下一个」拖线小球、空白处拖动平移、
-  清单同步幂等（`upsert_flow_task` 不会把【小工具】分组的任务删掉再追加到清单末尾）
+  清单同步幂等（`upsert_flow_task` 不会把【小工具】分组的任务删掉再追加到清单末尾）、
+  子流程参数收集（override 键=内联名、同引用合并、嵌套 fake 名链）、
+  同名 input 参数顶层定义的 pipeline_override 并集
 
 ### ★ 流程文件丢了 / 被覆盖了，怎么找回（2026-09-15 完整实操过一遍）
 

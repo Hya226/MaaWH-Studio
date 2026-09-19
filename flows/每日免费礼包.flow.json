@@ -4,20 +4,14 @@
     "n00128f5",
     "n0024cc6",
     "n0039749",
-    "n0073f3f",
+    "n0049603",
+    "n0150475",
     "n0052656",
-    "lb6"
+    "n005106a",
+    "n016aa2e",
+    "n0035028"
   ],
   "nodes": {
-    "lb6": {
-      "type": "common",
-      "x": 500,
-      "y": 476,
-      "title": "关弹窗回主页",
-      "props": {
-        "node": "Common_点中间回主页"
-      }
-    },
     "n00128f5": {
       "type": "tpl_click",
       "x": 219.0,
@@ -26,7 +20,6 @@
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
@@ -35,7 +28,9 @@
         "repeat": 1,
         "repeat_delay": 350,
         "template": "shangting.png"
-      }
+      },
+      "next": "n0024cc6",
+      "num": 1
     },
     "n0024cc6": {
       "type": "tpl_click",
@@ -45,7 +40,6 @@
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
@@ -54,7 +48,9 @@
         "repeat": 1,
         "repeat_delay": 350,
         "template": "libao.png"
-      }
+      },
+      "next": "n0039749",
+      "num": 2
     },
     "n0039749": {
       "type": "tpl_click",
@@ -64,7 +60,6 @@
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
@@ -73,17 +68,18 @@
         "repeat": 1,
         "repeat_delay": 350,
         "template": "xunshibuji.png"
-      }
+      },
+      "next": "n0049603",
+      "num": 3
     },
     "n0052656": {
       "type": "tpl_click",
-      "x": 240.0,
-      "y": 393.0,
+      "x": 230.0,
+      "y": 506.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
@@ -92,22 +88,96 @@
         "repeat": 1,
         "repeat_delay": 350,
         "template": "goumai.png"
-      }
+      },
+      "next": "n005106a",
+      "num": 5
     },
-    "n0073f3f": {
+    "n0049603": {
+      "type": "branch",
+      "x": 230.0,
+      "y": 322.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "免费",
+        "roi": "307,633,116,59",
+        "timeout": 3000,
+        "rate_limit": 0
+      },
+      "num": 7,
+      "hit_next": "n0150475",
+      "miss_next": "n016aa2e",
+      "next": null
+    },
+    "n005106a": {
       "type": "tap",
-      "x": 244.0,
-      "y": 306.0,
+      "x": 230.0,
+      "y": 644.0,
       "title": "固定坐标点击",
       "props": {
-        "x": 350,
-        "y": 665,
+        "x": 1206,
+        "y": 377,
         "pre_delay": 0,
-        "post_delay": 500,
+        "post_delay": 800,
         "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350
-      }
+      },
+      "num": 8,
+      "next": "n016aa2e"
+    },
+    "n0150475": {
+      "type": "ocr_click",
+      "x": 230.0,
+      "y": 414.0,
+      "title": "OCR识别点击",
+      "props": {
+        "text": "免费",
+        "roi": "296,638,133,54",
+        "timeout": 8000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 600
+      },
+      "num": 10,
+      "next": "n0052656"
+    },
+    "n016aa2e": {
+      "type": "detect_click",
+      "x": 230.0,
+      "y": 782.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "",
+        "roi": "203,10,74,49",
+        "rate_limit": 200,
+        "timeout": 30000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "zhuye.png"
+      },
+      "num": 11,
+      "next": "n0035028"
+    },
+    "n0035028": {
+      "type": "detect_click",
+      "x": 230.0,
+      "y": 874.0,
+      "title": "循环检测点击",
+      "props": {
+        "threshold": 0.8,
+        "ocr_text": "",
+        "roi": "",
+        "rate_limit": 600,
+        "timeout": 3000,
+        "pre_delay": 0,
+        "post_delay": 600,
+        "template": "zhuye.png"
+      },
+      "num": 12,
+      "next": null
     }
-  }
+  },
+  "schemaVersion": 4
 }

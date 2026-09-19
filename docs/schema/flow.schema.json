@@ -9,6 +9,10 @@
   "properties": {
     "schemaVersion": { "enum": [ 1, 2, 3, 4 ], "$comment": "3 =【分支】命中出口只认显式连线；老文件由编辑器补连线后自动升级" },
     "name": { "type": "string", "minLength": 1 },
+    "queue": {
+      "enum": ["daily", "tools"],
+      "$comment": "任务队列分类：daily=一键长草主队列、tools=小工具栏。注册/同步时写进清单条目的 group（App 按它决定任务在哪个标签页）。缺省=未指定：已有清单条目的分组不动，新追加的落小工具（老行为）。非法值由 normalize_flow 摘除"
+    },
     "chain": {
       "type": "array",
       "items": { "type": "string" },
@@ -50,7 +54,7 @@
       "properties": {
         "type": {
           "enum": ["tpl_click", "ocr_click", "tap", "swipe", "wait_tpl",
-                   "branch", "switch", "loop", "subflow", "common", "startapp",
+                   "branch", "detect_click", "switch", "loop", "subflow", "common", "startapp",
                    "input", "pick", "pass"]
         },
         "key": {
@@ -82,6 +86,26 @@
         {
           "if": {
             "properties": { "type": { "const": "branch" } },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "props": {
+                "type": "object",
+                "required": ["threshold", "timeout"],
+                "properties": {
+                  "template": { "type": "string" },
+                  "ocr_text": { "type": "string" },
+                  "threshold": { "type": "number" },
+                  "timeout": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "detect_click" } },
             "required": ["type"]
           },
           "then": {

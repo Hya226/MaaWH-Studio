@@ -18,6 +18,7 @@
     "n_VF_派遣公司事务_15",
     "n_VF_派遣公司事务_16",
     "n00641f3",
+    "n0035afe",
     "n_VF_派遣公司事务_17",
     "n_VF_派遣公司事务_18",
     "n_VF_派遣公司事务_19",
@@ -189,7 +190,7 @@
       "y": 1058.0,
       "title": "找模板点击",
       "props": {
-        "threshold": 0.5,
+        "threshold": 0.7,
         "roi": "",
         "timeout": 8000,
         "rate_limit": 0,
@@ -201,11 +202,11 @@
     },
     "n_VF_派遣公司事务_13": {
       "type": "branch",
-      "x": 46,
+      "x": 46.0,
       "y": 1150.0,
       "title": "退出办公室按钮还在?",
       "props": {
-        "threshold": 0.5,
+        "threshold": 0.7,
         "ocr_text": "",
         "roi": "",
         "timeout": 1500,
@@ -223,13 +224,13 @@
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
-        "roi": "961,380,166,174",
+        "roi": "",
         "timeout": 8000,
         "rate_limit": 0,
         "post_delay": 800,
         "template": "chashi_rukou.png",
         "order_by": "Vertical",
-        "pre_delay": 800
+        "pre_delay": 1500
       },
       "num": 14,
       "next": "n005c26c"
@@ -567,8 +568,8 @@
     },
     "n_VF_派遣公司事务_37": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 3726.0,
+      "x": 46.0,
+      "y": 3772.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
@@ -583,8 +584,8 @@
     },
     "n_VF_派遣公司事务_38": {
       "type": "tpl_click",
-      "x": 46,
-      "y": 3818.0,
+      "x": 46.0,
+      "y": 3864.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.5,
@@ -599,8 +600,8 @@
     },
     "n_VF_派遣公司事务_39": {
       "type": "branch",
-      "x": 46,
-      "y": 3910.0,
+      "x": 46.0,
+      "y": 3956.0,
       "title": "退出派遣公司按钮还在?",
       "props": {
         "threshold": 0.5,
@@ -662,7 +663,7 @@
       },
       "num": 43,
       "hit_next": "n_VF_派遣公司事务_15",
-      "miss_next": "n_VF_派遣公司事务_37",
+      "miss_next": "n0035afe",
       "next": "n_VF_派遣公司事务_15"
     },
     "n00641f3": {
@@ -680,7 +681,7 @@
       },
       "num": 44,
       "hit_next": "n_VF_派遣公司事务_17",
-      "miss_next": "n_VF_派遣公司事务_37",
+      "miss_next": "n0035afe",
       "next": "n_VF_派遣公司事务_17"
     },
     "n00120c0": {
@@ -698,7 +699,7 @@
       },
       "num": 45,
       "hit_next": "n002498f",
-      "miss_next": "n_VF_派遣公司事务_37",
+      "miss_next": "n0035afe",
       "next": "n_VF_派遣公司事务_37"
     },
     "n002498f": {
@@ -707,9 +708,8 @@
       "y": 3542.0,
       "title": "找模板点击",
       "props": {
-        "threshold": 0.8,
+        "threshold": 0.7,
         "roi": "",
-        "order_by": false,
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 1000,
@@ -721,7 +721,25 @@
       },
       "num": 46,
       "next": "n00120c0"
+    },
+    "n0035afe": {
+      "type": "branch",
+      "x": 414.0,
+      "y": 3634.0,
+      "title": "分支",
+      "props": {
+        "threshold": 0.7,
+        "ocr_text": "",
+        "roi": "",
+        "timeout": 3000,
+        "rate_limit": 0,
+        "template": "chashi_tuichu.png"
+      },
+      "num": 47,
+      "hit_next": "n_VF_派遣公司事务_37",
+      "miss_next": "n_VF_派遣公司事务_38"
     }
   },
-  "schemaVersion": 4
+  "schemaVersion": 4,
+  "queue": "daily"
 }

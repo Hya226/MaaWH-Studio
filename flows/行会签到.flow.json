@@ -2,13 +2,14 @@
   "name": "行会签到",
   "chain": [
     "n_HH_Entry",
+    "n0024be9",
     "n_HH_Loop"
   ],
   "nodes": {
     "n_HH_Entry": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46,
+      "y": 46.0,
       "title": "HH_Entry",
       "props": {
         "threshold": 0.6,
@@ -16,19 +17,19 @@
         "timeout": 8000,
         "rate_limit": 0,
         "pre_delay": 0,
-        "post_delay": 1000,
+        "post_delay": 3000,
         "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350,
         "template": "hanghui_main.png"
       },
       "num": 1,
-      "next": "n_HH_Loop"
+      "next": "n0024be9"
     },
     "n_HH_Loop": {
       "type": "tpl_click",
-      "x": 0,
-      "y": 0,
+      "x": 46.0,
+      "y": 414.0,
       "title": "HH_Loop",
       "props": {
         "threshold": 0.6,
@@ -44,6 +45,23 @@
       },
       "num": 2,
       "next": null
+    },
+    "n0024be9": {
+      "type": "tap",
+      "x": 46.0,
+      "y": 184.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 426,
+        "y": 103,
+        "pre_delay": 0,
+        "post_delay": 1000,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 3,
+      "next": "n_HH_Loop"
     }
   },
   "schemaVersion": 4

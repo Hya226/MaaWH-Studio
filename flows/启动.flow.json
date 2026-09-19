@@ -2,9 +2,9 @@
   "name": "启动",
   "chain": [
     "n0018d7f",
-    "n0025701",
-    "n0067984",
-    "n002c32e",
+    "n0086071",
+    "n005a67d",
+    "n0068636",
     "n003882b",
     "n0081576",
     "n0094d42",
@@ -23,32 +23,12 @@
         "post_delay": 25000
       },
       "num": 1,
-      "next": "n0025701"
-    },
-    "n002c32e": {
-      "type": "tpl_click",
-      "x": 506.0,
-      "y": 322.0,
-      "title": "找模板点击",
-      "props": {
-        "threshold": 0.8,
-        "roi": "1135,62,90,62",
-        "timeout": 8000,
-        "rate_limit": 0,
-        "pre_delay": 0,
-        "post_delay": 800,
-        "post_wait_freezes": 0,
-        "repeat": 1,
-        "repeat_delay": 350,
-        "template": "ks_cha.png"
-      },
-      "num": 2,
-      "next": "n003882b"
+      "next": "n0086071"
     },
     "n003882b": {
       "type": "tap",
       "x": 138.0,
-      "y": 552.0,
+      "y": 736.0,
       "title": "固定坐标点击",
       "props": {
         "x": 611,
@@ -65,7 +45,7 @@
     "n0081576": {
       "type": "branch",
       "x": 138.0,
-      "y": 644.0,
+      "y": 828.0,
       "title": "分支",
       "props": {
         "threshold": 0.7,
@@ -82,7 +62,7 @@
     "n0094d42": {
       "type": "tap",
       "x": 138.0,
-      "y": 782.0,
+      "y": 966.0,
       "title": "固定坐标点击",
       "props": {
         "x": 640,
@@ -99,7 +79,7 @@
     "n010ccd9": {
       "type": "tpl_click",
       "x": 138.0,
-      "y": 874.0,
+      "y": 1058.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.85,
@@ -119,7 +99,7 @@
     "n011b55e": {
       "type": "branch",
       "x": 138.0,
-      "y": 1012.0,
+      "y": 1196.0,
       "title": "分支",
       "props": {
         "threshold": 0.8,
@@ -136,7 +116,7 @@
     "n0130b97": {
       "type": "tpl_click",
       "x": 552.0,
-      "y": 1012.0,
+      "y": 1196.0,
       "title": "找模板点击",
       "props": {
         "threshold": 0.8,
@@ -153,41 +133,54 @@
       "num": 9,
       "next": "n011b55e"
     },
-    "n0067984": {
+    "n005a67d": {
       "type": "branch",
       "x": 138.0,
-      "y": 368.0,
+      "y": 414.0,
       "title": "分支",
       "props": {
         "threshold": 0.7,
         "ocr_text": "",
-        "roi": "1141,67,68,55",
+        "roi": "1116,65,122,62",
         "timeout": 3000,
         "rate_limit": 0,
         "template": "ks_cha.png"
       },
       "num": 10,
-      "hit_next": "n002c32e",
-      "miss_next": "n0025701",
-      "next": "n002c32e"
+      "hit_next": "n0068636",
+      "miss_next": "n0086071"
     },
-    "n0025701": {
-      "type": "branch",
+    "n0068636": {
+      "type": "tap",
+      "x": 138.0,
+      "y": 552.0,
+      "title": "固定坐标点击",
+      "props": {
+        "x": 1173,
+        "y": 95,
+        "pre_delay": 0,
+        "post_delay": 500,
+        "post_wait_freezes": 0,
+        "repeat": 1,
+        "repeat_delay": 350
+      },
+      "num": 11,
+      "next": "n003882b"
+    },
+    "n0086071": {
+      "type": "wait_tpl",
       "x": 138.0,
       "y": 184.0,
-      "title": "分支",
+      "title": "等待模板出现",
       "props": {
-        "threshold": 0.7,
-        "ocr_text": "",
-        "roi": "",
-        "timeout": 3000,
+        "threshold": 0.8,
+        "roi": "1108,59,125,68",
+        "timeout": 20000,
         "rate_limit": 0,
         "template": "ks_cha.png"
       },
-      "num": 11,
-      "hit_next": "n0067984",
-      "miss_next": "n0067984",
-      "next": "n0067984"
+      "num": 12,
+      "next": "n005a67d"
     }
   },
   "schemaVersion": 4
