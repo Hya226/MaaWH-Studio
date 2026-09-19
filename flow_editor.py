@@ -82,9 +82,9 @@ SCHEMA_VERSION = 4
 TIDY_X = GRID               # 「整理布局」时主链的 x（贴左边一格，保证点完就能看见）
 
 # 任务队列分类：注册/同步时写进清单条目的 group（App 按它决定任务出现在哪个标签页，
-# 见 MainActivity.taskHome：group 含 "tools" → 小工具栏，否则 → 一键长草主队列）。
-# 流程文件缺这个键 = 未指定：已有清单条目的分组不动，新追加的落【小工具】（老行为）。
-QUEUE_NAMES = {"daily": "一键长草", "tools": "小工具"}
+# 见 MainActivity.taskHome：group 含 "tools" → 额外队列栏，否则 → 一键长草主队列）。
+# 流程文件缺这个键 = 未指定：已有清单条目的分组不动，新追加的落【额外队列】（老行为）。
+QUEUE_NAMES = {"daily": "一键长草", "tools": "额外队列"}
 
 
 def queue_label(queue):
@@ -3664,13 +3664,13 @@ def flow_input_options(flow, _stack=()):
 def upsert_flow_task(data, flow_name, log=None, options=None, queue=None):
     """注册可视化流程到清单：
       - 清单里已有同名正式任务 → 转正（entry 切到 VF_ 流程，主队列直接生效），
-        并移除之前的独立小工具条目（避免重复）
-      - 否则 → 追加为独立任务（队列按 queue，未指定 = 小工具）
+        并移除之前的独立额外队列条目（避免重复）
+      - 否则 → 追加为独立任务（队列按 queue，未指定 = 额外队列）
       其它 VF_ 条目不受影响
 
-    queue = 流程文件顶层的队列分类："daily"=一键长草、"tools"=小工具、
+    queue = 流程文件顶层的队列分类："daily"=一键长草、"tools"=额外队列、
     None=未指定 —— **不动**既有条目的 group（清单里手写的 daily/battle 保持原样），
-    只有新追加的条目才落【小工具】（与老行为一致）。"""
+    只有新追加的条目才落【额外队列】（与老行为一致）。"""
     entry = f"VF_{flow_name}"
     target = [queue] if queue in QUEUE_NAMES else None
     tasks = data.setdefault("task", [])
@@ -3755,7 +3755,7 @@ def upsert_flow_task(data, flow_name, log=None, options=None, queue=None):
 
 def register_on_phone(flow_name, log, options=None, queue=None):
     """把流程注册进手机端 interface.json，重启 App 后出现在 queue 对应的标签页
-    （daily=一键长草主队列、tools=小工具栏、None=保持清单原分组，新任务落小工具）。
+    （daily=一键长草主队列、tools=额外队列栏、None=保持清单原分组，新任务落额外队列）。
     只改手机上的运行副本，本地 whmx/interface.json 不动；改前手机端备份 .bak。
     options = 流程里【输入】节点声明的参数（App 任务编辑栏里的可填项）。"""
     text = adb_text(adb("shell",
@@ -3827,7 +3827,7 @@ def push_interface_to_phone(data, expect=None):
 
 def regroup_task(t, to_tools):
     """拖动切换栏目时改任务条目的 group（就地改，无返回值）。
-    → 小工具：group = ["tools"]（覆盖；App 只看 contains("tools")）
+    → 额外队列：group = ["tools"]（覆盖；App 只看 contains("tools")）
     → 主队列：摘掉 "tools"，其余细分组（daily/battle…）保留；原来只有 tools
       就给 ["daily"]（一键长草），不留空 group。"""
     g = [x for x in (t.get("group") or []) if x != "tools"]
@@ -3865,8 +3865,8 @@ def load_phone_interface():
 
 
 def split_queues(data):
-    """清单 data → (主队列条目, 小工具条目)，各自保持清单顺序。
-    与 App 的 taskHome 同口径：group 含 "tools" → 小工具栏，其余（daily/battle/
+    """清单 data → (主队列条目, 额外队列条目)，各自保持清单顺序。
+    与 App 的 taskHome 同口径：group 含 "tools" → 额外队列栏，其余（daily/battle/
     operator/other/…/没写 group）都算一键长草主队列。★ 手机上用户手动挪过位置的
     任务以 QueueStore.homeOf 为准，清单 group 只是默认归属 —— 这里显示的就是默认归属。"""
     main, tools = [], []
@@ -3886,7 +3886,7 @@ def group_labels_of(data):
 
 def register_local_interface(flow_name, log=None, options=None, path=None, queue=None):
     """把流程注册进本地任务包 whmx/interface.json（与手机同一个 upsert_flow_task 口径，
-    queue 语义同上：daily=一键长草、tools=小工具、None=保持清单原分组）。
+    queue 语义同上：daily=一键长草、tools=额外队列、None=保持清单原分组）。
 
     ★ 必须回写这一份：打 APK 时 assets 装的就是本地任务包，只注册到手机运行副本的话，
       新设备装包看不到这个流程（清体力 2026-09-17 就是这样丢的）。
@@ -4000,7 +4000,7 @@ def launch_on_phone(entry_name, log, status, ask=True):
     _t.sleep(2)
     adb("shell", "am", "start", "-n", f"{PKG}/.MainActivity", "--activity-single-top",
         "--es", "entry", entry_name, "--ez", "vd", "true")
-    log(f"已下发直达入口: entry={entry_name} vd=true（任务进入小工具队列自动执行，虚拟屏会先重建）")
+    log(f"已下发直达入口: entry={entry_name} vd=true（任务进入额外队列自动执行，虚拟屏会先重建）")
     log("查看运行日志：手机端 App 日志区，或 adb logcat -s MaaWH")
 
 
@@ -4199,7 +4199,7 @@ class InterfaceSyncDialog(tk.Toplevel):
 
 
 class QueueViewDialog(tk.Toplevel):
-    """「☰ 队列一览」：按【一键长草】/【小工具】两个标签页展示清单里的任务。
+    """「☰ 队列一览」：按【一键长草】/【额外队列】两个标签页展示清单里的任务。
 
     ★ 任务行可以拖动：同列上下拖 = 调整顺序；拖到另一列 = 切换标签页归属
       （条目的 group 随之改写，见 regroup_task）。松手立即写回当前数据源
@@ -4281,11 +4281,11 @@ class QueueViewDialog(tk.Toplevel):
         self.lists["main"], self.lists["tools"] = split_queues(data)
         gl = group_labels_of(data)
         self.foot_var.set(
-            f"一键长草 {len(self.lists['main'])} 个 · 小工具 {len(self.lists['tools'])} 个"
+            f"一键长草 {len(self.lists['main'])} 个 · 额外队列 {len(self.lists['tools'])} 个"
             " · 拖动任务可排序 / 拖到另一列换栏目，松手即写回"
             "（手机上手动挪过位置的任务以手机记录为准；App 需重启生效）")
         self._col("main", "一键长草（主队列）", gl, show_group=True)
-        self._col("tools", "小工具", gl)
+        self._col("tools", "额外队列", gl)
 
     def _col(self, key, title, gl, show_group=False):
         """一列 = 一个标签页的任务清单。行 = 任务名 + 小字（细分组 / 入口 / 参数）"""
@@ -4454,7 +4454,7 @@ class QueueViewDialog(tk.Toplevel):
         return t
 
     def _commit_write(self, moved_name):
-        """task 数组 = 主队列 + 小工具（各自内部相对序不变，App 按 tab 分别取序），
+        """task 数组 = 主队列 + 额外队列（各自内部相对序不变，App 按 tab 分别取序），
         写回当前数据源；失败回滚内存并弹错。"""
         snap = (list(self.lists["main"]), list(self.lists["tools"]))
         self.data["task"] = self.lists["main"] + self.lists["tools"]
@@ -4474,7 +4474,7 @@ class QueueViewDialog(tk.Toplevel):
         self._show(self.data, self.src_text + "　✓ 已写回")
         self.ed.log(f"✓ 队列一览已写回{'手机运行副本' if self.on_phone else '本地任务包'}："
                     f"一键长草 {len(self.lists['main'])} 个、"
-                    f"小工具 {len(self.lists['tools'])} 个（App 需重启生效）")
+                    f"额外队列 {len(self.lists['tools'])} 个（App 需重启生效）")
 
 
 class FlowEditor:
@@ -4726,7 +4726,7 @@ class FlowEditor:
         self.queue_var = tk.StringVar(value=queue_label(self.flow.get("queue")))
         self.queue_combo = ttk.Combobox(
             bar, textvariable=self.queue_var, width=13, state="readonly", font=FONT,
-            values=["一键长草", "小工具", "未指定（跟随清单现状）"])
+            values=["一键长草", "额外队列", "未指定（跟随清单现状）"])
         self.queue_combo.pack(side="left", padx=3, ipady=2)
         self.queue_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_queue_change())
         self._flat_btn(bar, "☰ 队列一览", self.on_view_queues).pack(side="left", padx=(8, 3))
@@ -5153,7 +5153,7 @@ class FlowEditor:
         InterfaceSyncDialog(self.root, self)
 
     def on_view_queues(self):
-        """「☰ 队列一览」：按【一键长草】/【小工具】两个标签页查看清单任务
+        """「☰ 队列一览」：按【一键长草】/【额外队列】两个标签页查看清单任务
         （默认本地任务包那份，可切到手机运行副本核对）。"""
         QueueViewDialog(self.root, self)
 
@@ -9779,7 +9779,7 @@ def selftest():
 
     # ★ 「同步到手机」写清单走的是 upsert_flow_task，它必须是**幂等**的：只按流程里的
     #   【输入】节点写参数，跑一遍和跑两遍结果一样。以前它把「group=tools 且 entry==VF_x」
-    #   的条目一律删掉再追加 —— 【小工具】分组里的任务（查找器者 / 刷活动关 / 博物研学）
+    #   的条目一律删掉再追加 —— 【额外队列】分组里的任务（查找器者 / 刷活动关 / 博物研学）
     #   每同步一次就被挪到清单末尾，标签页上手写的 label/description/default_check 一起丢。
     #   （迁移后查找器者的 entry 变成 VF_查找器者，正好踩到这条。）
     udata = {"task": [
@@ -9792,7 +9792,7 @@ def selftest():
     upsert_flow_task(udata, "查找器者", options={"目标角色": {"type": "input"}})
     upsert_flow_task(udata, "刷冬谷币", options={"刷冬谷币次数": {"type": "select"}})
     assert json.dumps(udata, ensure_ascii=False, sort_keys=True) == before, udata
-    # 真正的重复条目（同一个流程既转正、又留着一个【小工具】条目）仍然要清掉
+    # 真正的重复条目（同一个流程既转正、又留着一个【额外队列】条目）仍然要清掉
     udata["task"].append({"name": "查找器者", "label": "查找器者",
                           "entry": "VF_查找器者", "group": ["tools"]})
     udata["task"].insert(0, {"name": "查找器者", "label": "查找器者",
@@ -9838,7 +9838,7 @@ def selftest():
     print("同名参数并集自测通过")
 
     # ★ 队列分类（工具栏「队列」下拉 → 流程顶层 queue → 清单条目 group）：
-    #   daily=一键长草、tools=小工具；未指定 = 既有条目的分组不动、新条目落小工具（老行为）
+    #   daily=一键长草、tools=额外队列；未指定 = 既有条目的分组不动、新条目落额外队列（老行为）
     qdata = {"task": []}
     upsert_flow_task(qdata, "新任务", queue="daily")
     assert qdata["task"][0]["group"] == ["daily"], qdata
@@ -9865,7 +9865,7 @@ def selftest():
     print("队列分类自测通过")
 
     # ★ 「☰ 队列一览」的分组口径（split_queues）必须与 App 的 taskHome 一致：
-    #   group 含 "tools" → 小工具栏；其余（daily/battle/…/没写 group）都算一键长草主队列
+    #   group 含 "tools" → 额外队列栏；其余（daily/battle/…/没写 group）都算一键长草主队列
     sdata = {"task": [
         {"name": "a", "group": ["tools"]},
         {"name": "b", "group": ["daily"]},
@@ -9894,7 +9894,7 @@ def selftest():
     assert t3["group"] == ["battle"], t3          # 其余细分组保留
     t4 = {"name": "d"}
     regroup_task(t4, True)
-    assert t4["group"] == ["tools"], t4           # 没写 group 的也能拖进小工具
+    assert t4["group"] == ["tools"], t4           # 没写 group 的也能拖进额外队列
     print("队列拖拽分组规则自测通过")
 
     # ★ 选项「值」的类型转换（case_value）：expected 是正则文本，纯数字也必须保持
