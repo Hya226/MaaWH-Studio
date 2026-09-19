@@ -1,5 +1,7 @@
 # MaaWH Studio —— 流程编辑器工作目录
 
+![流程编辑器界面](docs/screenshot.png)
+
 可视化流程编辑器 + 模板框选工具。2026-09-14 从 `E:\MaaWH\FlowEditor\` 独立出来，
 以后**流程编辑器相关的改动都在本目录进行**，MaaWH 仓库只保留 App 与任务包。
 
