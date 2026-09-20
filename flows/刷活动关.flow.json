@@ -289,7 +289,7 @@
       "y": 1058.0,
       "title": "循环检测点击",
       "props": {
-        "threshold": 0.8,
+        "threshold": 0.7,
         "ocr_text": "",
         "roi": "",
         "rate_limit": 600,
