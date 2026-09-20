@@ -51,7 +51,7 @@
         "threshold": 0.7,
         "ocr_text": "",
         "roi": "",
-        "timeout": 3000,
+        "timeout": 20000,
         "rate_limit": 0,
         "template": "wu.png"
       },
@@ -68,7 +68,7 @@
         "x": 640,
         "y": 360,
         "pre_delay": 0,
-        "post_delay": 0,
+        "post_delay": 600,
         "post_wait_freezes": 0,
         "repeat": 1,
         "repeat_delay": 350
@@ -175,7 +175,7 @@
       "props": {
         "threshold": 0.8,
         "roi": "1108,59,125,68",
-        "timeout": 20000,
+        "timeout": 40000,
         "rate_limit": 0,
         "template": "ks_cha.png"
       },
